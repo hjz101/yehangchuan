@@ -15,6 +15,7 @@ struct YeHangChuanApp: App {
 
 struct RootView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
     @State private var tab: AppTab = .shelf
 
     var body: some View {
@@ -56,12 +57,22 @@ struct RootView: View {
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: store.toast)
         .preferredColorScheme(store.appearance.colorScheme)
+        .overlay {
+            EyeCareLayer(settings: store.eyeCare)
+        }
         .fullScreenCover(isPresented: $player.showFullPlayer) {
             if let book = player.book {
                 AudioPlayerView(book: book)
             }
         }
         .onAppear(perform: handleLaunchArguments)
+        .onChange(of: store.settings.snapshot) { _, _ in store.saveSnapshot() }
+        .onChange(of: store.eyeCare) { _, _ in store.saveSnapshot() }
+        .onChange(of: store.appearance) { _, _ in store.saveSnapshot() }
+        .onChange(of: store.goalMinutes) { _, _ in store.saveSnapshot() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { store.saveSnapshot() }
+        }
     }
 
     private func handleLaunchArguments() {
@@ -72,6 +83,26 @@ struct RootView: View {
         if arguments.contains("-openSettings") { tab = .settings }
         if arguments.contains("-openExcerpts") { tab = .excerpts }
         if arguments.contains("-openStats") { tab = .stats }
+        if arguments.contains("-openImport") { tab = .shelf }
+        if arguments.contains("-openComic") { tab = .shelf }
+        if arguments.contains("-openReader") { tab = .shelf }
+        if arguments.contains("-openSync") { tab = .settings }
+        if arguments.contains("-openBackup") { tab = .settings }
+        if arguments.contains("-openCache") { tab = .settings }
+        if arguments.contains("-openSourceDetail") { tab = .source }
+        if arguments.contains("-openAI") { tab = .settings }
+        if arguments.contains("-openSandbox") { tab = .settings }
+        if arguments.contains("-openDiscover") { tab = .settings }
+        if arguments.contains("-openVoice") { tab = .settings }
+        if arguments.contains("-openCompliance") { tab = .settings }
+        if arguments.contains("-openExport") { tab = .settings }
+        if arguments.contains("-openSourceImport") { tab = .source }
+        if arguments.contains("-eyeCare") {
+            store.eyeCare.enabled = true
+            store.eyeCare.warmth = 0.42
+            store.eyeCare.dim = 0.08
+            store.saveSnapshot()
+        }
         if arguments.contains("-startAudio"), let audio = store.books.first(where: { $0.kind == .audio }) {
             store.player.load(audio)
         }

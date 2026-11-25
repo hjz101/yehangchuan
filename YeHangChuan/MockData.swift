@@ -118,16 +118,30 @@ enum MockData {
             name: "示例书源",
             host: "demo.example.com",
             kind: .json,
-            enabled: true,
-            bookCount: 3
+            enabled: false,
+            bookCount: 3,
+            rule: """
+            {
+              "search": "https://demo.example.com/search?q={kw}",
+              "detail": "https://demo.example.com/book/{id}",
+              "chapter": "https://demo.example.com/chapter/{id}"
+            }
+            """
         ),
         BookSource(
             id: "source-js",
             name: "自建脚本源",
             host: "script.local",
             kind: .js,
-            enabled: true,
-            bookCount: 6
+            enabled: false,
+            bookCount: 6,
+            username: "demo-reader",
+            rule: """
+            {
+              "search": "https://script.local/search?q={kw}",
+              "chapter": "https://script.local/chapter/{id}"
+            }
+            """
         )
     ]
 
@@ -269,6 +283,12 @@ enum MockData {
 
     static func chapters(for book: Book) -> [Chapter] {
         book.id == "yehangchuan" ? nightBoatChapters : genericChapters
+    }
+
+    static func audioScript(for book: Book) -> String {
+        let passages = genericChapters.flatMap(\.paragraphs).map(\.text)
+        let intro = "这里是潮汐电台。今晚为你读《\(book.title)》，作者\(book.author)。"
+        return ([intro] + passages).joined(separator: "\n")
     }
 
     static let nightBoatChapters: [Chapter] = [

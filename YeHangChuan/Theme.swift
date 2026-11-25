@@ -184,6 +184,24 @@ struct AppBackdrop: View {
     }
 }
 
+/// 全局暖色滤光与亮度层。只做视觉压低，不拦截触摸。
+struct EyeCareLayer: View {
+    let settings: EyeCareSettings
+
+    var body: some View {
+        if settings.enabled {
+            ZStack {
+                Color(hex: 0xFF9E4A)
+                    .opacity(settings.warmth * 0.13)
+                Color.black
+                    .opacity(settings.dim)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        }
+    }
+}
+
 // MARK: - Glass
 
 extension View {

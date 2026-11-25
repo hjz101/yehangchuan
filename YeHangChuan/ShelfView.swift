@@ -14,8 +14,13 @@ struct ShelfView: View {
     @State private var filter: BookKind?
     @State private var status: ShelfStatus = .all
     @State private var query = ""
-    @State private var readingBook: Book?
+    @State private var groupFilter: String?
+    @State private var readerTarget: ReaderTarget?
     @State private var detailBook: Book?
+    @State private var comicBook: Book?
+    @State private var showImport = false
+    @State private var showNewGroup = false
+    @State private var newGroupName = ""
     @State private var showSearch = false
     @State private var columns = 3
 
@@ -30,7 +35,8 @@ struct ShelfView: View {
             let queryMatches = query.isEmpty
                 || book.title.localizedCaseInsensitiveContains(query)
                 || book.author.localizedCaseInsensitiveContains(query)
-            return kindMatches && statusMatches && queryMatches
+            let groupMatches = groupFilter == nil || book.group == groupFilter
+            return kindMatches && statusMatches && queryMatches && groupMatches
         }
     }
 
@@ -58,7 +64,7 @@ struct ShelfView: View {
                     .padding(.bottom, 28)
                 }
                 .scrollIndicators(.hidden)
-                .contentMargins(.bottom, 96, for: .scrollContent)
+                .contentMargins(.bottom, 170, for: .scrollContent)
             }
             .navigationTitle("夜航船")
             .navigationSubtitle(subtitle)
@@ -83,10 +89,41 @@ struct ShelfView: View {
                     }
                     .accessibilityLabel("切换网格密度")
                 }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            showImport = true
+                        } label: {
+                            Label("导入本地书", systemImage: "square.and.arrow.down")
+                        }
+
+                        Button {
+                            showNewGroup = true
+                        } label: {
+                            Label("新建分组", systemImage: "folder.badge.plus")
+                        }
+
+                        if !store.groups.isEmpty {
+                            Menu("书架分组") {
+                                Button("全部") { groupFilter = nil }
+                                ForEach(store.groups, id: \.self) { group in
+                                    Button(group) { groupFilter = group }
+                                }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("更多书架操作")
+                }
             }
         }
-        .fullScreenCover(item: $readingBook) { book in
-            ReaderView(book: book)
+        .fullScreenCover(item: $readerTarget) { target in
+            ReaderView(book: target.book, initialChapterTitle: target.chapterTitle)
+        }
+        .fullScreenCover(item: $comicBook) { book in
+            ComicReaderView(book: book)
         }
         .sheet(item: $detailBook) { book in
             MediaDetailView(book: book)
@@ -99,14 +136,37 @@ struct ShelfView: View {
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
         }
+        .sheet(isPresented: $showImport) {
+            SmartImportSheet()
+                .presentationDetents([.large])
+                .presentationCornerRadius(38)
+        }
+        .alert("新建分组", isPresented: $showNewGroup) {
+            TextField("分组名称", text: $newGroupName)
+            Button("取消", role: .cancel) { newGroupName = "" }
+            Button("创建") {
+                store.addGroup(newGroupName)
+                newGroupName = ""
+            }
+        } message: {
+            Text("分组保存在本机，可长按书籍移动。")
+        }
         .task {
             #if DEBUG
             let arguments = ProcessInfo.processInfo.arguments
-            if arguments.contains("-openReader"), readingBook == nil {
-                readingBook = store.books.first { $0.id == "yehangchuan" }
+            if arguments.contains("-openReader"), readerTarget == nil {
+                if let book = store.books.first(where: { $0.id == "yehangchuan" }) {
+                    readerTarget = ReaderTarget(book: book)
+                }
             }
             if arguments.contains("-openSearch") {
                 showSearch = true
+            }
+            if arguments.contains("-openImport") {
+                showImport = true
+            }
+            if arguments.contains("-openComic"), let book = store.books.first(where: { $0.kind == .comic }) {
+                comicBook = book
             }
             #endif
         }
@@ -188,6 +248,12 @@ struct ShelfView: View {
                             filter = kind
                         }
                     }
+
+                    if let groupFilter {
+                        chip(groupFilter, selected: true, tint: Palette.jade) {
+                            self.groupFilter = nil
+                        }
+                    }
                 }
                 .padding(.vertical, 2)
             }
@@ -253,6 +319,17 @@ struct ShelfView: View {
                             Label("查看详情", systemImage: "info.circle")
                         }
 
+                        if !store.groups.isEmpty {
+                            Menu {
+                                Button("未分组") { store.setGroup(nil, for: book.id) }
+                                ForEach(store.groups, id: \.self) { group in
+                                    Button(group) { store.setGroup(group, for: book.id) }
+                                }
+                            } label: {
+                                Label("移动到分组", systemImage: "folder")
+                            }
+                        }
+
                         if book.kind == .audio {
                             Button {
                                 store.player.load(book)
@@ -290,6 +367,15 @@ struct ShelfView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Palette.accent)
                     .padding(.top, 2)
+            } else {
+                Button {
+                    showImport = true
+                } label: {
+                    Label("导入本地书", systemImage: "square.and.arrow.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.accent)
+                        .padding(.top, 4)
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -299,11 +385,11 @@ struct ShelfView: View {
     private func open(_ book: Book) {
         switch book.kind {
         case .novel:
-            readingBook = book
+            readerTarget = ReaderTarget(book: book)
         case .audio:
             store.player.load(book)
         case .comic:
-            detailBook = book
+            comicBook = book
         }
     }
 }
@@ -441,6 +527,9 @@ struct MediaDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     let book: Book
+    @State private var showComic = false
+    @State private var showReader = false
+    @State private var showListen = false
 
     var body: some View {
         ZStack {
@@ -460,6 +549,23 @@ struct MediaDetailView: View {
         }
         .safeAreaInset(edge: .bottom) {
             actionBar
+        }
+        .fullScreenCover(isPresented: $showComic) {
+            ComicReaderView(book: book)
+        }
+        .fullScreenCover(isPresented: $showReader) {
+            ReaderView(book: book)
+        }
+        .sheet(isPresented: $showListen) {
+            ListenSheet(
+                book: book,
+                chapterTitle: book.lastPosition,
+                text: book.kind == .novel
+                    ? store.chapters(for: book).flatMap(\.paragraphs).map(\.text).joined(separator: "\n")
+                    : MockData.audioScript(for: book)
+            )
+            .presentationDetents([.large])
+            .presentationCornerRadius(38)
         }
     }
 
@@ -583,6 +689,16 @@ struct MediaDetailView: View {
     private var actionBar: some View {
         HStack(spacing: 10) {
             Button {
+                showListen = true
+            } label: {
+                Image(systemName: "speaker.wave.2")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(Palette.text)
+                    .glassCircle(diameter: 50)
+            }
+            .buttonStyle(PressableStyle())
+
+            Button {
                 store.toggleFinished(book.id)
             } label: {
                 Image(systemName: book.isFinished ? "checkmark.circle.fill" : "checkmark.circle")
@@ -593,14 +709,13 @@ struct MediaDetailView: View {
             .buttonStyle(PressableStyle())
 
             Button {
-                dismiss()
                 switch book.kind {
                 case .audio:
                     store.player.load(book)
                 case .comic:
-                    store.showToast("漫画阅读器将在后续版本接入")
+                    showComic = true
                 case .novel:
-                    store.showToast("已回到书架，点封面继续阅读")
+                    showReader = true
                 }
             } label: {
                 HStack(spacing: 7) {

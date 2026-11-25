@@ -3,7 +3,7 @@ import Observation
 
 // MARK: - Book
 
-enum BookKind: String, CaseIterable, Identifiable {
+enum BookKind: String, CaseIterable, Identifiable, Codable {
     case novel = "小说"
     case comic = "漫画"
     case audio = "有声"
@@ -27,7 +27,7 @@ enum BookKind: String, CaseIterable, Identifiable {
     }
 }
 
-struct Book: Identifiable, Hashable {
+struct Book: Identifiable, Hashable, Codable {
     let id: String
     var title: String
     var author: String
@@ -39,35 +39,50 @@ struct Book: Identifiable, Hashable {
     var pageCount: Int?
     var duration: String?
     var isFinished: Bool
+    var group: String? = nil
+    var sourceID: String? = nil
+    var lastReadAt: Date? = nil
 
     var unitLabel: String { kind == .comic ? "话" : "章" }
 }
 
 // MARK: - Source
 
-enum SourceKind: String, CaseIterable {
+enum SourceKind: String, CaseIterable, Codable {
     case json = "JSON"
     case js = "JS"
 }
 
-struct BookSource: Identifiable, Hashable {
+struct BookSource: Identifiable, Hashable, Codable {
     let id: String
     var name: String
     var host: String
     var kind: SourceKind
     var enabled: Bool
     var bookCount: Int
+    var group: String = "小说"
+    var login: SourceLoginState = .signedOut
+    var latency: Int? = nil
+    var lastError: String? = nil
+    var username: String = ""
+    var rule: String = ""
+}
+
+enum SourceLoginState: String, Codable {
+    case signedOut = "未登录"
+    case signedIn = "已登录"
+    case expired = "登录过期"
 }
 
 // MARK: - Reading Content
 
-struct Paragraph: Identifiable, Hashable {
+struct Paragraph: Identifiable, Hashable, Codable {
     let id: String
     let text: String
     var comments: [SegmentComment] = []
 }
 
-struct SegmentComment: Identifiable, Hashable {
+struct SegmentComment: Identifiable, Hashable, Codable {
     let id: String
     let author: String
     let text: String
@@ -76,10 +91,10 @@ struct SegmentComment: Identifiable, Hashable {
     var minutesAgo: Int = 0
 }
 
-struct Chapter: Identifiable, Hashable {
+struct Chapter: Identifiable, Hashable, Codable {
     let id: String
     let title: String
-    let paragraphs: [Paragraph]
+    var paragraphs: [Paragraph]
 }
 
 struct ReaderPage: Identifiable {
@@ -90,7 +105,7 @@ struct ReaderPage: Identifiable {
 
 // MARK: - Appearance
 
-enum AppAppearance: String, CaseIterable, Identifiable {
+enum AppAppearance: String, CaseIterable, Identifiable, Codable {
     case system = "跟随系统"
     case light = "浅色"
     case dark = "深色"
@@ -116,9 +131,10 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 
 // MARK: - Reader Settings
 
-enum ReaderTheme: String, CaseIterable, Identifiable {
+enum ReaderTheme: String, CaseIterable, Identifiable, Codable {
     case day = "日间"
     case paper = "羊皮纸"
+    case eye = "护眼"
     case voyage = "夜航"
     case night = "夜间"
 
@@ -128,6 +144,7 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
         switch self {
         case .day: Color(hex: 0xFAF7F1)
         case .paper: Color(hex: 0xF0E4CB)
+        case .eye: Color(hex: 0xE7EFE3)
         case .voyage: Color(hex: 0x0D1B2A)
         case .night: Color(hex: 0x101013)
         }
@@ -137,6 +154,7 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
         switch self {
         case .day: Color(hex: 0xEFE9DD)
         case .paper: Color(hex: 0xE2D1B0)
+        case .eye: Color(hex: 0xD3E1CE)
         case .voyage: Color(hex: 0x081119)
         case .night: Color(hex: 0x08080A)
         }
@@ -146,6 +164,7 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
         switch self {
         case .day: Color(hex: 0x1E1B16)
         case .paper: Color(hex: 0x3A2D1D)
+        case .eye: Color(hex: 0x263829)
         case .voyage: Color(hex: 0xD9E2EC)
         case .night: Color(hex: 0xC9C4BA)
         }
@@ -155,6 +174,7 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
         switch self {
         case .day: Color(hex: 0x877B69)
         case .paper: Color(hex: 0x8C7656)
+        case .eye: Color(hex: 0x667865)
         case .voyage: Color(hex: 0x6E869D)
         case .night: Color(hex: 0x7A766D)
         }
@@ -164,6 +184,7 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
         switch self {
         case .day: Color(hex: 0xB6402A)
         case .paper: Color(hex: 0x96502C)
+        case .eye: Color(hex: 0x4F7A55)
         case .voyage: Color(hex: 0xE8A76A)
         case .night: Color(hex: 0xB49C7E)
         }
@@ -175,13 +196,14 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
         switch self {
         case .day: "sun.max"
         case .paper: "text.book.closed"
+        case .eye: "leaf"
         case .voyage: "moon.stars"
         case .night: "moon"
         }
     }
 }
 
-enum PageMode: String, CaseIterable, Identifiable {
+enum PageMode: String, CaseIterable, Identifiable, Codable {
     case slide = "横向翻页"
     case scroll = "上下滚动"
 
@@ -195,6 +217,59 @@ enum PageMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum PageTurnEffect: String, CaseIterable, Identifiable, Codable {
+    case slide = "平移"
+    case cover = "覆盖"
+    case none = "无动画"
+
+    var id: String { rawValue }
+    var symbol: String {
+        switch self {
+        case .slide: "arrow.left.and.right"
+        case .cover: "rectangle.on.rectangle"
+        case .none: "bolt.slash"
+        }
+    }
+}
+
+enum ReadingDirection: String, CaseIterable, Identifiable, Codable {
+    case ltr = "从左到右"
+    case rtl = "从右到左"
+
+    var id: String { rawValue }
+    var layoutDirection: LayoutDirection { self == .rtl ? .rightToLeft : .leftToRight }
+}
+
+enum ReaderFontDesign: String, CaseIterable, Identifiable, Codable {
+    case serif = "宋体"
+    case system = "系统"
+    case rounded = "圆体"
+
+    var id: String { rawValue }
+    var design: Font.Design {
+        switch self {
+        case .serif: .serif
+        case .system: .default
+        case .rounded: .rounded
+        }
+    }
+}
+
+enum ReaderWeight: String, CaseIterable, Identifiable, Codable {
+    case regular = "常规"
+    case medium = "中等"
+    case semibold = "加粗"
+
+    var id: String { rawValue }
+    var weight: Font.Weight {
+        switch self {
+        case .regular: .regular
+        case .medium: .medium
+        case .semibold: .semibold
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class ReaderSettings {
@@ -202,12 +277,74 @@ final class ReaderSettings {
     var lineSpacing: Double = 0.75
     var theme: ReaderTheme = .voyage
     var pageMode: PageMode = .slide
+    var pageTurnEffect: PageTurnEffect = .slide
+    var direction: ReadingDirection = .ltr
+    var fontDesign: ReaderFontDesign = .serif
+    var fontWeight: ReaderWeight = .regular
+    var sideMargin: Double = 28
+    var indent: Bool = true
+    var showHeaderFooter: Bool = true
+    var volumeKeyTurn: Bool = false
     var hideSourceComments = false
+    var purifyText = false
+
+    var snapshot: ReaderSnapshot {
+        ReaderSnapshot(
+            fontSize: fontSize,
+            lineSpacing: lineSpacing,
+            theme: theme,
+            pageMode: pageMode,
+            pageTurnEffect: pageTurnEffect,
+            direction: direction,
+            fontDesign: fontDesign,
+            fontWeight: fontWeight,
+            sideMargin: sideMargin,
+            indent: indent,
+            showHeaderFooter: showHeaderFooter,
+            volumeKeyTurn: volumeKeyTurn,
+            hideSourceComments: hideSourceComments,
+            purifyText: purifyText
+        )
+    }
+
+    func apply(_ snapshot: ReaderSnapshot) {
+        fontSize = snapshot.fontSize
+        lineSpacing = snapshot.lineSpacing
+        theme = snapshot.theme
+        pageMode = snapshot.pageMode
+        pageTurnEffect = snapshot.pageTurnEffect
+        direction = snapshot.direction
+        fontDesign = snapshot.fontDesign
+        fontWeight = snapshot.fontWeight
+        sideMargin = snapshot.sideMargin
+        indent = snapshot.indent
+        showHeaderFooter = snapshot.showHeaderFooter
+        volumeKeyTurn = snapshot.volumeKeyTurn
+        hideSourceComments = snapshot.hideSourceComments
+        purifyText = snapshot.purifyText
+    }
+}
+
+struct ReaderSnapshot: Codable, Equatable {
+    var fontSize: Double = 18
+    var lineSpacing: Double = 0.75
+    var theme: ReaderTheme = .voyage
+    var pageMode: PageMode = .slide
+    var pageTurnEffect: PageTurnEffect = .slide
+    var direction: ReadingDirection = .ltr
+    var fontDesign: ReaderFontDesign = .serif
+    var fontWeight: ReaderWeight = .regular
+    var sideMargin: Double = 28
+    var indent: Bool = true
+    var showHeaderFooter: Bool = true
+    var volumeKeyTurn: Bool = false
+    var hideSourceComments: Bool = false
+    var purifyText: Bool = false
 }
 
 // MARK: - Excerpts
 
-struct Excerpt: Identifiable, Hashable {
+struct Excerpt: Identifiable, Hashable, Codable {
     let id: String
     let bookID: String
     let bookTitle: String
@@ -223,6 +360,63 @@ struct Excerpt: Identifiable, Hashable {
         formatter.unitsStyle = .short
         return formatter.localizedString(for: createdAt, relativeTo: Date())
     }
+}
+
+// MARK: - Bookmarks & Search
+
+struct Bookmark: Identifiable, Hashable, Codable {
+    let id: String
+    let bookID: String
+    let bookTitle: String
+    let chapterTitle: String
+    let pageIndex: Int
+    let progress: Double
+    var note: String
+    let createdAt: Date
+
+    var percentLabel: String { "\(Int((progress * 100).rounded()))%" }
+}
+
+struct TextHit: Identifiable, Hashable {
+    let id: String
+    let book: Book
+    let chapterTitle: String
+    let paragraphID: String
+    let snippet: String
+}
+
+struct ReaderTarget: Identifiable {
+    let book: Book
+    var chapterTitle: String? = nil
+    var id: String { "\(book.id)-\(chapterTitle ?? "start")" }
+}
+
+struct ReadingPosition: Codable, Equatable {
+    let bookID: String
+    var chapterTitle: String
+    var paragraphID: String
+    var offset: Int
+    var progress: Double
+    var updatedAt: Date
+}
+
+// MARK: - Eye care
+
+struct EyeCareSettings: Codable, Equatable {
+    var enabled = false
+    var warmth: Double = 0.35
+    var dim: Double = 0.08
+    var restReminder = true
+    var restMinutes = 20
+}
+
+struct ImportDraft: Identifiable {
+    let id = UUID()
+    var title: String
+    var author: String
+    var kind: BookKind
+    var detail: String
+    var chapters: [Chapter]
 }
 
 // MARK: - Stats
@@ -345,7 +539,21 @@ final class AppStore {
     var goalMinutes: Int = 60
     var appearance: AppAppearance = .dark
     var player = AudioPlayer()
+    var speech = SpeechPlayer()
+    var backend = MockBackend()
+    var bookmarks: [Bookmark] = []
+    var positions: [String: ReadingPosition] = [:]
+    var groups: [String] = ["夜读", "待读"]
+    var customChapters: [String: [Chapter]] = [:]
+    var eyeCare = EyeCareSettings()
     var toast: String?
+    var syncSheetRequested = false
+
+    private static let snapshotKey = "yehangchuan.snapshot.v5"
+
+    init() {
+        loadSnapshot()
+    }
 
     // MARK: Shelf
 
@@ -361,10 +569,33 @@ final class AppStore {
         books.filter(\.isFinished).count
     }
 
-    func updateProgress(bookID: String, progress: Double, position: String) {
+    func updateProgress(
+        bookID: String,
+        progress: Double,
+        position: String,
+        chapterTitle: String? = nil,
+        paragraphID: String? = nil,
+        offset: Int = 0
+    ) {
         guard let index = books.firstIndex(where: { $0.id == bookID }) else { return }
         books[index].progress = min(max(progress, 0), 0.99)
         books[index].lastPosition = position
+        books[index].lastReadAt = Date()
+        if let chapterTitle, let paragraphID {
+            positions[bookID] = ReadingPosition(
+                bookID: bookID,
+                chapterTitle: chapterTitle,
+                paragraphID: paragraphID,
+                offset: offset,
+                progress: progress,
+                updatedAt: Date()
+            )
+        }
+        saveSnapshot()
+    }
+
+    func position(for bookID: String) -> ReadingPosition? {
+        positions[bookID]
     }
 
     func toggleFinished(_ bookID: String) {
@@ -373,17 +604,21 @@ final class AppStore {
         books[index].progress = books[index].isFinished ? 1 : 0.02
         books[index].lastPosition = books[index].isFinished ? "已读完" : "未开始"
         showToast(books[index].isFinished ? "已标记为读完" : "已移回在读")
+        saveSnapshot()
     }
 
     func removeBook(_ bookID: String) {
         books.removeAll { $0.id == bookID }
+        bookmarks.removeAll { $0.bookID == bookID }
         showToast("已从书架移除")
+        saveSnapshot()
     }
 
     func addToShelf(_ book: Book) {
         guard !books.contains(where: { $0.id == book.id }) else { return }
         books.insert(book, at: 0)
         showToast("已加入书架：\(book.title)")
+        saveSnapshot()
     }
 
     func isOnShelf(_ bookID: String) -> Bool {
@@ -402,21 +637,37 @@ final class AppStore {
             name: name.isEmpty ? "未命名书源" : name,
             host: kind == .js ? "script.local" : "custom.example.com",
             kind: kind,
-            enabled: true,
+            enabled: false,
             bookCount: 0
         )
         sources.insert(source, at: 0)
-        showToast("已添加书源：\(source.name)")
+        showToast("已添加书源：\(source.name) · 默认关闭")
+        saveSnapshot()
+    }
+
+    func addSources(_ newSources: [BookSource]) {
+        guard !newSources.isEmpty else { return }
+        sources.insert(contentsOf: newSources, at: 0)
+        showToast("已导入 \(newSources.count) 个书源")
+        saveSnapshot()
     }
 
     func setSourceEnabled(_ sourceID: String, enabled: Bool) {
         guard let index = sources.firstIndex(where: { $0.id == sourceID }) else { return }
         sources[index].enabled = enabled
+        saveSnapshot()
     }
 
     func removeSource(_ sourceID: String) {
         sources.removeAll { $0.id == sourceID }
         showToast("已删除书源")
+        saveSnapshot()
+    }
+
+    func updateSource(_ source: BookSource) {
+        guard let index = sources.firstIndex(where: { $0.id == source.id }) else { return }
+        sources[index] = source
+        saveSnapshot()
     }
 
     // MARK: Excerpts
@@ -434,21 +685,25 @@ final class AppStore {
         )
         excerpts.insert(excerpt, at: 0)
         showToast("已摘录这一句")
+        saveSnapshot()
     }
 
     func updateNote(_ excerptID: String, note: String) {
         guard let index = excerpts.firstIndex(where: { $0.id == excerptID }) else { return }
         excerpts[index].note = note
+        saveSnapshot()
     }
 
     func toggleExcerptLike(_ excerptID: String) {
         guard let index = excerpts.firstIndex(where: { $0.id == excerptID }) else { return }
         excerpts[index].liked.toggle()
+        saveSnapshot()
     }
 
     func removeExcerpt(_ excerptID: String) {
         excerpts.removeAll { $0.id == excerptID }
         showToast("已删除摘录")
+        saveSnapshot()
     }
 
     func excerpts(for bookID: String) -> [Excerpt] {
@@ -516,6 +771,138 @@ final class AppStore {
         return min(Double(todayMinutes) / Double(goalMinutes), 1)
     }
 
+    // MARK: Library
+
+    func chapters(for book: Book) -> [Chapter] {
+        if let custom = customChapters[book.id], !custom.isEmpty { return custom }
+        return MockData.chapters(for: book)
+    }
+
+    func importBook(_ draft: ImportDraft) {
+        let book = Book(
+            id: "import-\(UUID().uuidString.prefix(8))",
+            title: draft.title,
+            author: draft.author,
+            kind: draft.kind,
+            coverStyle: abs(draft.title.hashValue) % 6,
+            chapterCount: draft.chapters.count,
+            progress: 0,
+            lastPosition: "未开始",
+            pageCount: draft.kind == .comic ? max(draft.chapters.count * 8, 20) : nil,
+            duration: draft.kind == .audio ? "12:30" : nil,
+            isFinished: false,
+            group: groups.first,
+            sourceID: "local"
+        )
+        customChapters[book.id] = draft.chapters
+        books.insert(book, at: 0)
+        showToast("已导入《\(book.title)》· \(draft.chapters.count) 章")
+        saveSnapshot()
+    }
+
+    func setGroup(_ group: String?, for bookID: String) {
+        guard let index = books.firstIndex(where: { $0.id == bookID }) else { return }
+        books[index].group = group
+        if let group, !groups.contains(group) { groups.append(group) }
+        saveSnapshot()
+    }
+
+    func addGroup(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !groups.contains(trimmed) else { return }
+        groups.append(trimmed)
+        saveSnapshot()
+        showToast("已创建分组「\(trimmed)」")
+    }
+
+    func switchSource(bookID: String, to sourceID: String) {
+        guard let index = books.firstIndex(where: { $0.id == bookID }) else { return }
+        books[index].sourceID = sourceID
+        let name = sources.first { $0.id == sourceID }?.name ?? "本地"
+        showToast("已切换到「\(name)」，阅读位置保留")
+        saveSnapshot()
+    }
+
+    // MARK: Bookmarks
+
+    func bookmarks(for bookID: String) -> [Bookmark] {
+        bookmarks.filter { $0.bookID == bookID }.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func isBookmarked(bookID: String, pageIndex: Int) -> Bool {
+        bookmarks.contains { $0.bookID == bookID && $0.pageIndex == pageIndex }
+    }
+
+    @discardableResult
+    func toggleBookmark(book: Book, chapterTitle: String, pageIndex: Int, progress: Double) -> Bool {
+        if let existing = bookmarks.firstIndex(where: { $0.bookID == book.id && $0.pageIndex == pageIndex }) {
+            bookmarks.remove(at: existing)
+            saveSnapshot()
+            showToast("已移除书签")
+            return false
+        }
+        bookmarks.insert(
+            Bookmark(
+                id: UUID().uuidString,
+                bookID: book.id,
+                bookTitle: book.title,
+                chapterTitle: chapterTitle,
+                pageIndex: pageIndex,
+                progress: progress,
+                note: "",
+                createdAt: Date()
+            ),
+            at: 0
+        )
+        saveSnapshot()
+        showToast("已添加书签")
+        return true
+    }
+
+    func removeBookmark(_ bookmarkID: String) {
+        bookmarks.removeAll { $0.id == bookmarkID }
+        saveSnapshot()
+    }
+
+    func updateBookmarkNote(_ bookmarkID: String, note: String) {
+        guard let index = bookmarks.firstIndex(where: { $0.id == bookmarkID }) else { return }
+        bookmarks[index].note = note
+        saveSnapshot()
+    }
+
+    // MARK: Full text
+
+    func fullTextHits(query: String) -> [TextHit] {
+        let key = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard key.count >= 1 else { return [] }
+        var hits: [TextHit] = []
+        for book in books where book.kind == .novel {
+            for chapter in chapters(for: book) {
+                for paragraph in chapter.paragraphs where paragraph.text.localizedCaseInsensitiveContains(key) {
+                    let text = paragraph.text
+                    let snippet: String
+                    if let range = text.range(of: key, options: .caseInsensitive) {
+                        let start = text.index(range.lowerBound, offsetBy: -18, limitedBy: text.startIndex) ?? text.startIndex
+                        let end = text.index(range.upperBound, offsetBy: 28, limitedBy: text.endIndex) ?? text.endIndex
+                        snippet = String(text[start..<end])
+                    } else {
+                        snippet = String(text.prefix(60))
+                    }
+                    hits.append(
+                        TextHit(
+                            id: "\(book.id)-\(paragraph.id)",
+                            book: book,
+                            chapterTitle: chapter.title,
+                            paragraphID: paragraph.id,
+                            snippet: snippet
+                        )
+                    )
+                }
+            }
+        }
+        return hits
+    }
+
     // MARK: Toast
 
     func showToast(_ text: String) {
@@ -524,6 +911,56 @@ final class AppStore {
             try? await Task.sleep(for: .seconds(2))
             if toast == text { toast = nil }
         }
+    }
+
+    // MARK: Persistence
+
+    private struct Snapshot: Codable {
+        var books: [Book]
+        var sources: [BookSource]
+        var excerpts: [Excerpt]
+        var settings: ReaderSnapshot
+        var goalMinutes: Int
+        var appearance: AppAppearance
+        var bookmarks: [Bookmark]
+        var positions: [String: ReadingPosition]
+        var groups: [String]
+        var customChapters: [String: [Chapter]]
+        var eyeCare: EyeCareSettings
+    }
+
+    func saveSnapshot() {
+        let snapshot = Snapshot(
+            books: books,
+            sources: sources,
+            excerpts: excerpts,
+            settings: settings.snapshot,
+            goalMinutes: goalMinutes,
+            appearance: appearance,
+            bookmarks: bookmarks,
+            positions: positions,
+            groups: groups,
+            customChapters: customChapters,
+            eyeCare: eyeCare
+        )
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        UserDefaults.standard.set(data, forKey: Self.snapshotKey)
+    }
+
+    private func loadSnapshot() {
+        guard let data = UserDefaults.standard.data(forKey: Self.snapshotKey),
+              let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
+        books = snapshot.books
+        sources = snapshot.sources
+        excerpts = snapshot.excerpts
+        settings.apply(snapshot.settings)
+        goalMinutes = snapshot.goalMinutes
+        appearance = snapshot.appearance
+        bookmarks = snapshot.bookmarks
+        positions = snapshot.positions
+        groups = snapshot.groups
+        customChapters = snapshot.customChapters
+        eyeCare = snapshot.eyeCare
     }
 }
 
@@ -535,9 +972,10 @@ enum Paginator {
         for chapters: [Chapter],
         fontSize: Double,
         lineSpacing: Double,
-        viewport: CGSize = CGSize(width: 390, height: 844)
+        viewport: CGSize = CGSize(width: 390, height: 844),
+        sideMargin: Double = 28
     ) -> [ReaderPage] {
-        let horizontalInset: Double = 56
+        let horizontalInset = sideMargin * 2
         let verticalChrome: Double = 78 + 150   // 顶部页眉 + 底部浮层避让
 
         let lineHeight = fontSize * (1 + lineSpacing)
