@@ -24,7 +24,26 @@ struct ReaderView: View {
     private var settings: ReaderSettings { store.settings }
     private var chapters: [Chapter] { store.chapters(for: book) }
     private var currentPage: ReaderPage? { pages.indices.contains(pageIndex) ? pages[pageIndex] : nil }
-    private var isBookmarked: Bool { store.isBookmarked(bookID: book.id, pageIndex: pageIndex) }
+    private var isBookmarked: Bool {
+        store.isBookmarked(
+            bookID: book.id,
+            pageIndex: pageIndex,
+            chapterTitle: currentPage?.chapterTitle,
+            paragraphID: anchorParagraphID
+        )
+    }
+
+    /// 当前页首段 ID，作为书签与位置恢复的稳定锚点。
+    private var anchorParagraphID: String? { currentPage?.paragraphs.first?.id }
+
+    /// 当前页首段在所属章节内的 UTF-16 偏移，仅用于展示与兼容旧数据。
+    private var anchorOffset: Int {
+        guard let page = currentPage,
+              let chapter = chapters.first(where: { $0.title == page.chapterTitle }),
+              let first = page.paragraphs.first,
+              let index = chapter.paragraphs.firstIndex(where: { $0.id == first.id }) else { return 0 }
+        return chapter.paragraphs.prefix(index).reduce(0) { $0 + $1.text.utf16.count }
+    }
 
     private var progress: Double {
         pages.count <= 1 ? 0 : Double(pageIndex) / Double(pages.count - 1)
@@ -141,9 +160,7 @@ struct ReaderView: View {
         }
         .sheet(isPresented: $showBookmarks) {
             BookmarkListSheet(book: book) { bookmark in
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
-                    pageIndex = min(max(bookmark.pageIndex, 0), max(pages.count - 1, 0))
-                }
+                jump(to: bookmark)
             }
             .presentationDetents([.medium, .large])
             .presentationCornerRadius(38)
@@ -312,7 +329,9 @@ struct ReaderView: View {
                         book: book,
                         chapterTitle: currentPage?.chapterTitle ?? book.lastPosition,
                         pageIndex: pageIndex,
-                        progress: progress
+                        progress: progress,
+                        paragraphID: anchorParagraphID,
+                        offset: anchorOffset
                     )
                 } label: {
                     Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
@@ -423,7 +442,9 @@ struct ReaderView: View {
                             book: book,
                             chapterTitle: currentPage?.chapterTitle ?? book.lastPosition,
                             pageIndex: pageIndex,
-                            progress: progress
+                            progress: progress,
+                            paragraphID: anchorParagraphID,
+                            offset: anchorOffset
                         )
                     }
                     toolButton("听书", symbol: "speaker.wave.2") { showListen = true }
@@ -537,7 +558,10 @@ struct ReaderView: View {
     }
 
     private func rebuild(restore: Bool, targetChapter: String? = nil) {
-        let anchor = pages.indices.contains(pageIndex) ? pages[pageIndex] : nil
+        // 锚点用「当前页首段的段落 ID」而不是页序号：重排后同一段文字可能不再是某页的第一段，
+        // 所以要按「包含该段」来找，而不是按页 id 相等来找。
+        let anchorParagraphID = pages.indices.contains(pageIndex) ? pages[pageIndex].paragraphs.first?.id : nil
+        let anchorChapter = pages.indices.contains(pageIndex) ? pages[pageIndex].chapterTitle : nil
         let newPages = Paginator.pages(
             for: chapters,
             fontSize: settings.fontSize,
@@ -552,15 +576,10 @@ struct ReaderView: View {
             return
         }
 
-        if restore, let targetChapter, let index = newPages.firstIndex(where: { $0.chapterTitle == targetChapter }) {
+        if restore, let targetChapter, let index = pageIndexContaining(chapterTitle: targetChapter, paragraphID: nil, in: newPages) {
             pageIndex = index
         } else if restore, let position = store.position(for: book.id) {
-            if let index = newPages.firstIndex(where: {
-                $0.chapterTitle == position.chapterTitle
-                    && $0.paragraphs.contains(where: { $0.id == position.paragraphID })
-            }) {
-                pageIndex = index
-            } else if let index = newPages.firstIndex(where: { $0.chapterTitle == position.chapterTitle }) {
+            if let index = pageIndexContaining(chapterTitle: position.chapterTitle, paragraphID: position.paragraphID, in: newPages) {
                 pageIndex = index
             } else {
                 let target = Int((book.progress * Double(max(newPages.count - 1, 0))).rounded())
@@ -569,7 +588,8 @@ struct ReaderView: View {
         } else if restore {
             let target = Int((book.progress * Double(max(newPages.count - 1, 0))).rounded())
             pageIndex = min(max(target, 0), newPages.count - 1)
-        } else if let anchor, let index = newPages.firstIndex(where: { $0.id == anchor.id }) {
+        } else if let anchorParagraphID,
+                  let index = pageIndexContaining(chapterTitle: anchorChapter, paragraphID: anchorParagraphID, in: newPages) {
             pageIndex = index
         } else {
             pageIndex = min(pageIndex, newPages.count - 1)
@@ -578,22 +598,40 @@ struct ReaderView: View {
         syncProgress()
     }
 
+    /// 找到包含指定段落的页；段落 ID 缺失时退化为「该章的第一页」。
+    private func pageIndexContaining(chapterTitle: String?, paragraphID: String?, in pages: [ReaderPage]) -> Int? {
+        guard let chapterTitle else { return nil }
+        if let paragraphID,
+           let index = pages.firstIndex(where: {
+               $0.chapterTitle == chapterTitle && $0.paragraphs.contains { $0.id == paragraphID }
+           }) {
+            return index
+        }
+        return pages.firstIndex { $0.chapterTitle == chapterTitle }
+    }
+
+    /// 跳转到书签：优先按段落锚点定位，旧书签没有锚点时才回退到页序号。
+    private func jump(to bookmark: Bookmark) {
+        let target = pageIndexContaining(
+            chapterTitle: bookmark.chapterTitle,
+            paragraphID: bookmark.paragraphID,
+            in: pages
+        )
+        let resolved = target ?? min(max(bookmark.pageIndex, 0), max(pages.count - 1, 0))
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+            pageIndex = resolved
+        }
+    }
+
     private func syncProgress() {
         guard !pages.isEmpty, let page = currentPage else { return }
-        let chapter = chapters.first { $0.title == page.chapterTitle }
-        let firstParagraph = page.paragraphs.first
-        var offset = 0
-        if let chapter, let firstParagraph,
-           let index = chapter.paragraphs.firstIndex(where: { $0.id == firstParagraph.id }) {
-            offset = chapter.paragraphs.prefix(index).reduce(0) { $0 + $1.text.utf16.count }
-        }
         store.updateProgress(
             bookID: book.id,
             progress: progress,
             position: page.chapterTitle,
             chapterTitle: page.chapterTitle,
-            paragraphID: firstParagraph?.id,
-            offset: offset
+            paragraphID: page.paragraphs.first?.id,
+            offset: anchorOffset
         )
     }
 }

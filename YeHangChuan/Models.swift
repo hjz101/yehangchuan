@@ -373,6 +373,10 @@ struct Bookmark: Identifiable, Hashable, Codable, Sendable {
     let progress: Double
     var note: String
     let createdAt: Date
+    /// 定位锚点：段落 ID。改字号重排后页序号会变，段落 ID 不会。
+    /// 旧版本写入的书签没有这两个字段，解码后为 nil，回退用 pageIndex。
+    var paragraphID: String? = nil
+    var offset: Int? = nil
 
     var percentLabel: String { "\(Int((progress * 100).rounded()))%" }
 }
@@ -833,13 +837,47 @@ final class AppStore {
         bookmarks.filter { $0.bookID == bookID }.sorted { $0.createdAt > $1.createdAt }
     }
 
-    func isBookmarked(bookID: String, pageIndex: Int) -> Bool {
-        bookmarks.contains { $0.bookID == bookID && $0.pageIndex == pageIndex }
+    /// 书签是否命中当前位置。优先按段落 ID 比较；没有锚点的旧书签回退到页序号。
+    func isBookmarked(bookID: String, pageIndex: Int, chapterTitle: String?, paragraphID: String?) -> Bool {
+        bookmarks.contains {
+            $0.bookID == bookID && Self.bookmarkMatches(
+                $0,
+                pageIndex: pageIndex,
+                chapterTitle: chapterTitle,
+                paragraphID: paragraphID
+            )
+        }
+    }
+
+    private static func bookmarkMatches(
+        _ bookmark: Bookmark,
+        pageIndex: Int,
+        chapterTitle: String?,
+        paragraphID: String?
+    ) -> Bool {
+        if let anchor = bookmark.paragraphID, let paragraphID {
+            return bookmark.chapterTitle == chapterTitle && anchor == paragraphID
+        }
+        return bookmark.pageIndex == pageIndex
     }
 
     @discardableResult
-    func toggleBookmark(book: Book, chapterTitle: String, pageIndex: Int, progress: Double) -> Bool {
-        if let existing = bookmarks.firstIndex(where: { $0.bookID == book.id && $0.pageIndex == pageIndex }) {
+    func toggleBookmark(
+        book: Book,
+        chapterTitle: String,
+        pageIndex: Int,
+        progress: Double,
+        paragraphID: String? = nil,
+        offset: Int = 0
+    ) -> Bool {
+        if let existing = bookmarks.firstIndex(where: {
+            $0.bookID == book.id && Self.bookmarkMatches(
+                $0,
+                pageIndex: pageIndex,
+                chapterTitle: chapterTitle,
+                paragraphID: paragraphID
+            )
+        }) {
             bookmarks.remove(at: existing)
             saveSnapshot()
             showToast("已移除书签")
@@ -854,7 +892,9 @@ final class AppStore {
                 pageIndex: pageIndex,
                 progress: progress,
                 note: "",
-                createdAt: Date()
+                createdAt: Date(),
+                paragraphID: paragraphID,
+                offset: offset
             ),
             at: 0
         )
@@ -1047,35 +1087,36 @@ enum Paginator {
 
         var result: [ReaderPage] = []
 
-        for (chapterIndex, chapter) in chapters.enumerated() {
+        for chapter in chapters {
             var buffer: [Paragraph] = []
             var length = 0
+
+            func flush() {
+                guard let anchor = buffer.first?.id else { return }
+                // 用首段 ID 做身份：改字号重新分页后，仍能凭它找回「同一段文字」落在第几页。
+                // 段落 ID 在全书内唯一（Mock 数据手写、导入书籍用 UUID），因此不会撞车。
+                result.append(
+                    ReaderPage(
+                        id: anchor,
+                        chapterTitle: chapter.title,
+                        paragraphs: buffer
+                    )
+                )
+                buffer.removeAll()
+                length = 0
+            }
 
             for paragraph in chapter.paragraphs {
                 let count = max(1, paragraph.text.count)
                 if !buffer.isEmpty && length + count > capacity {
-                    result.append(
-                        ReaderPage(
-                            id: "\(chapterIndex)-\(result.count)",
-                            chapterTitle: chapter.title,
-                            paragraphs: buffer
-                        )
-                    )
-                    buffer.removeAll()
-                    length = 0
+                    flush()
                 }
                 buffer.append(paragraph)
                 length += count
             }
 
             if !buffer.isEmpty {
-                result.append(
-                    ReaderPage(
-                        id: "\(chapterIndex)-\(result.count)",
-                        chapterTitle: chapter.title,
-                        paragraphs: buffer
-                    )
-                )
+                flush()
             }
         }
         return result
