@@ -14,6 +14,7 @@ struct ReaderView: View {
     @State private var commentParagraph: Paragraph?
     @State private var isBookmarked = false
     @State private var flash: String?
+    @State private var viewport: CGSize = CGSize(width: 390, height: 844)
 
     private var settings: ReaderSettings { store.settings }
     private var chapters: [Chapter] { MockData.chapters(for: book) }
@@ -23,82 +24,130 @@ struct ReaderView: View {
         pages.count <= 1 ? 0 : Double(pageIndex) / Double(pages.count - 1)
     }
 
+    private var chromeColor: Color {
+        settings.theme.isDark ? .white : Palette.text
+    }
+
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [settings.theme.background, settings.theme.backgroundDeep],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            readerBackground
 
             readingContent
 
-            if showChrome {
-                topBar
-                bottomBar
+            // 顶部浮层
+            VStack {
+                if showChrome {
+                    topBar
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                Spacer()
+            }
+
+            // 底部浮层
+            VStack {
+                Spacer()
+                if showChrome {
+                    bottomBar
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
 
             if let flash {
                 Text(flash)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.text)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial, in: Capsule())
-                    .transition(.opacity)
+                    .foregroundStyle(settings.theme.text)
+                    .padding(.horizontal, 15)
+                    .padding(.vertical, 9)
+                    .glassCapsule(tint: settings.theme.isDark ? .white.opacity(0.08) : .white.opacity(0.5))
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
+
+            // 边缘翻页热区
+            if settings.pageMode == .slide && showChrome == false {
+                HStack(spacing: 0) {
+                    tapZone(.backward)
+                    tapZone(.forward)
+                }
+            }
+        }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { newSize in
+            guard newSize.width > 1, newSize.height > 1 else { return }
+            guard abs(newSize.width - viewport.width) > 1 || abs(newSize.height - viewport.height) > 1 else { return }
+            viewport = newSize
+            guard !pages.isEmpty else { return }
+            rebuild(restore: false)
         }
         .preferredColorScheme(settings.theme.isDark ? .dark : .light)
         .statusBarHidden(!showChrome)
-        .onAppear {
-            rebuild(restore: true)
-
-            #if DEBUG
-            let arguments = ProcessInfo.processInfo.arguments
-            if arguments.contains("-showReaderSettings") {
-                showSettings = true
-            } else if arguments.contains("-showComments") {
-                commentParagraph = chapters.flatMap(\.paragraphs).first { !$0.comments.isEmpty }
-            }
-            #endif
-        }
-        .onChange(of: settings.fontSize) { _, _ in
-            rebuild(restore: false)
-        }
-        .onChange(of: settings.pageMode) { _, _ in
-            rebuild(restore: false)
-        }
-        .onChange(of: pageIndex) { _, _ in
-            syncProgress()
-        }
+        .persistentSystemOverlays(.hidden)
+        .onAppear(perform: bootstrap)
+        .onChange(of: settings.fontSize) { _, _ in rebuild(restore: false) }
+        .onChange(of: settings.lineSpacing) { _, _ in rebuild(restore: false) }
+        .onChange(of: settings.pageMode) { _, _ in rebuild(restore: false) }
+        .onChange(of: pageIndex) { _, _ in syncProgress() }
         .sheet(isPresented: $showTOC) {
-            TOCSheet(
-                chapters: chapters,
-                currentTitle: currentPage?.chapterTitle ?? ""
-            ) { title in
+            TOCSheet(chapters: chapters, currentTitle: currentPage?.chapterTitle ?? "") { title in
                 if let index = pages.firstIndex(where: { $0.chapterTitle == title }) {
                     pageIndex = index
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        showChrome = false
-                    }
+                    hideChromeAfterDelay()
                 }
                 showTOC = false
             }
             .presentationDetents([.medium, .large])
+            .presentationCornerRadius(38)
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showSettings) {
             ReaderSettingsSheet(settings: settings)
                 .presentationDetents([.large])
+                .presentationCornerRadius(38)
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: $commentParagraph) { paragraph in
             SegmentCommentsSheet(paragraph: paragraph)
-                .presentationDetents([.large])
+                .presentationDetents([.fraction(0.62), .large])
+                .presentationCornerRadius(38)
                 .presentationDragIndicator(.visible)
         }
     }
+
+    // MARK: Background
+
+    private var readerBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: [settings.theme.background, settings.theme.backgroundDeep],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            if settings.theme == .voyage {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color(hex: 0x2B5C7A).opacity(0.35), .clear],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 220
+                        )
+                    )
+                    .frame(width: 440, height: 440)
+                    .blur(radius: 60)
+                    .offset(x: 120, y: -280)
+            }
+
+            if settings.theme == .paper {
+                LinearGradient(
+                    colors: [Color(hex: 0xFFFFFF).opacity(0.35), .clear],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+        }
+        .ignoresSafeArea()
+    }
+
+    // MARK: Content
 
     @ViewBuilder
     private var readingContent: some View {
@@ -114,6 +163,7 @@ struct ReaderView: View {
                         bookTitle: book.title,
                         settings: settings,
                         onComment: { commentParagraph = $0 },
+                        onExcerpt: { paragraph in excerpt(paragraph) },
                         onTap: toggleChrome
                     )
                     .tag(index)
@@ -125,96 +175,127 @@ struct ReaderView: View {
                 chapters: chapters,
                 settings: settings,
                 onComment: { commentParagraph = $0 },
+                onExcerpt: { paragraph in excerpt(paragraph) },
                 onTap: toggleChrome
             )
         }
     }
 
+    private enum TapZone { case backward, forward }
+
+    private func tapZone(_ zone: TapZone) -> some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                    if zone == .backward {
+                        pageIndex = max(pageIndex - 1, 0)
+                    } else {
+                        pageIndex = min(pageIndex + 1, pages.count - 1)
+                    }
+                }
+            }
+    }
+
+    // MARK: Chrome
+
     private var topBar: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 14) {
+        GlassEffectContainer(spacing: 12) {
+            HStack(spacing: 10) {
                 Button {
                     dismiss()
                 } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
-                        .frame(width: 28, height: 28)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(chromeColor)
+                        .glassCircle(diameter: 40)
                 }
+                .buttonStyle(PressableStyle())
 
-                VStack(alignment: .leading, spacing: 1) {
+                Spacer(minLength: 0)
+
+                VStack(spacing: 1) {
                     Text(book.title)
                         .font(.system(size: 13, weight: .semibold, design: .serif))
+                        .foregroundStyle(chromeColor)
+                        .lineLimit(1)
 
                     Text(currentPage?.chapterTitle ?? book.lastPosition)
                         .font(.system(size: 10))
                         .foregroundStyle(settings.theme.secondary)
+                        .lineLimit(1)
                 }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .glassCapsule()
 
-                Spacer()
+                Spacer(minLength: 0)
 
                 Button {
                     isBookmarked.toggle()
                     showFlash(isBookmarked ? "已添加书签" : "已移除书签")
-                } label: {
-                    Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 15, weight: .medium))
-                        .frame(width: 28, height: 28)
-                }
+            } label: {
+                Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(isBookmarked ? Palette.accent : chromeColor)
+                    .glassCircle(diameter: 40)
             }
-            .foregroundStyle(Theme.text)
-            .padding(.horizontal, 18)
-            .padding(.top, 6)
-            .padding(.bottom, 10)
-            .background(.ultraThinMaterial, ignoresSafeAreaEdges: .top)
-
-            Spacer()
+            .buttonStyle(PressableStyle())
+            }
         }
-        .transition(.move(edge: .top).combined(with: .opacity))
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
     }
 
     private var bottomBar: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 10) {
-                Text("\(Int(progress * 100))%")
+        GlassEffectContainer(spacing: 12) {
+            VStack(spacing: 12) {
+                HStack(spacing: 9) {
+                    Text(settings.pageMode == .scroll ? "滚动" : "\(pageIndex + 1) / \(pages.count)")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(settings.theme.secondary)
+                        .monospacedDigit()
 
-                ProgressView(value: progress)
-                    .tint(Theme.accent)
-                    .scaleEffect(y: 0.8)
+                    ProgressBar(
+                        value: progress,
+                        tint: settings.theme.accent,
+                        track: settings.theme.text.opacity(0.16),
+                        height: 2.5
+                    )
 
-                Text(settings.pageMode == .scroll ? "滚动" : "\(pageIndex + 1) / \(pages.count)")
-            }
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(Theme.secondary)
-
-            HStack(spacing: 0) {
-                toolButton("目录", symbol: "list.bullet") {
-                    showTOC = true
+                    Text("\(Int(progress * 100))%")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(settings.theme.secondary)
+                        .monospacedDigit()
                 }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 13)
+                .glassCapsule(tint: settings.theme.isDark ? .white.opacity(0.06) : .white.opacity(0.45))
 
-                toolButton("书签", symbol: isBookmarked ? "bookmark.fill" : "bookmark") {
-                    isBookmarked.toggle()
-                    showFlash(isBookmarked ? "已添加书签" : "已移除书签")
+                HStack(spacing: 0) {
+                    toolButton("目录", symbol: "list.bullet") { showTOC = true }
+                    toolButton("书签", symbol: isBookmarked ? "bookmark.fill" : "bookmark") {
+                        isBookmarked.toggle()
+                        showFlash(isBookmarked ? "已添加书签" : "已移除书签")
+                    }
+                    toolButton(
+                        "段评",
+                        symbol: settings.hideSourceComments ? "text.bubble" : "text.bubble.fill"
+                    ) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            settings.hideSourceComments.toggle()
+                        }
+                        showFlash(settings.hideSourceComments ? "已屏蔽段评" : "已显示段评")
+                    }
+                    toolButton("设置", symbol: "textformat.size") { showSettings = true }
                 }
-
-                toolButton(
-                    "段评",
-                    symbol: settings.hideSourceComments ? "text.bubble" : "text.bubble.fill"
-                ) {
-                    settings.hideSourceComments.toggle()
-                    showFlash(settings.hideSourceComments ? "已屏蔽段评" : "已显示段评")
-                }
-
-                toolButton("设置", symbol: "textformat.size") {
-                    showSettings = true
-                }
+                .padding(.vertical, 7)
+                .padding(.horizontal, 6)
+                .glassSurface(cornerRadius: 30, tint: settings.theme.isDark ? .white.opacity(0.05) : .white.opacity(0.4))
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 10)
-        .padding(.bottom, 2)
-        .background(.ultraThinMaterial, ignoresSafeAreaEdges: .bottom)
-        .frame(maxHeight: .infinity, alignment: .bottom)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
     }
 
     private func toolButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
@@ -222,41 +303,78 @@ struct ReaderView: View {
             VStack(spacing: 5) {
                 Image(systemName: symbol)
                     .font(.system(size: 16, weight: .medium))
-
                 Text(title)
-                    .font(.system(size: 10))
+                    .font(.system(size: 9.5, weight: .medium))
             }
-            .foregroundStyle(Theme.text)
+            .foregroundStyle(chromeColor)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
     }
 
+    // MARK: Actions
+
     private func toggleChrome() {
-        withAnimation(.easeOut(duration: 0.2)) {
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             showChrome.toggle()
         }
     }
 
+    private func hideChromeAfterDelay() {
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+            showChrome = false
+        }
+    }
+
+    private func excerpt(_ paragraph: Paragraph) {
+        store.addExcerpt(
+            book: book,
+            chapter: currentPage?.chapterTitle ?? book.lastPosition,
+            text: paragraph.text
+        )
+        showFlash("已摘录这一句")
+    }
+
     private func showFlash(_ text: String) {
-        withAnimation(.easeOut(duration: 0.15)) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             flash = text
         }
 
         Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.4))
+            try? await Task.sleep(for: .seconds(1.5))
             if flash == text {
-                withAnimation(.easeOut(duration: 0.2)) {
+                withAnimation(.easeOut(duration: 0.24)) {
                     flash = nil
                 }
             }
         }
     }
 
+    private func bootstrap() {
+        rebuild(restore: true)
+
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-showReaderSettings") {
+            showSettings = true
+        } else if arguments.contains("-showComments") {
+            commentParagraph = chapters.flatMap(\.paragraphs).first { !$0.comments.isEmpty }
+        } else if arguments.contains("-hideChrome") {
+            showChrome = false
+        }
+        #endif
+    }
+
     private func rebuild(restore: Bool) {
         let anchor = pages.indices.contains(pageIndex) ? pages[pageIndex] : nil
-        let newPages = Paginator.pages(for: chapters, fontSize: settings.fontSize)
+        let newPages = Paginator.pages(
+            for: chapters,
+            fontSize: settings.fontSize,
+            lineSpacing: settings.lineSpacing,
+            viewport: viewport
+        )
         pages = newPages
 
         guard !newPages.isEmpty else {
@@ -286,6 +404,8 @@ struct ReaderView: View {
     }
 }
 
+// MARK: - Page
+
 struct ReaderPageView: View {
     let page: ReaderPage
     let pageIndex: Int
@@ -293,6 +413,7 @@ struct ReaderPageView: View {
     let bookTitle: String
     let settings: ReaderSettings
     let onComment: (Paragraph) -> Void
+    let onExcerpt: (Paragraph) -> Void
     let onTap: () -> Void
 
     var body: some View {
@@ -301,18 +422,20 @@ struct ReaderPageView: View {
                 Text(page.chapterTitle)
                 Spacer()
                 Text("\(pageIndex + 1) / \(total)")
+                    .monospacedDigit()
             }
             .font(.system(size: 10, weight: .medium))
-            .tracking(0.8)
+            .tracking(0.9)
             .foregroundStyle(settings.theme.secondary)
-            .padding(.bottom, 18)
+            .padding(.bottom, 20)
 
-            VStack(alignment: .leading, spacing: settings.fontSize * 0.85) {
+            VStack(alignment: .leading, spacing: settings.fontSize * (0.72 + settings.lineSpacing * 0.5)) {
                 ForEach(page.paragraphs) { paragraph in
                     ParagraphView(
                         paragraph: paragraph,
                         settings: settings,
-                        onComment: onComment
+                        onComment: onComment,
+                        onExcerpt: onExcerpt
                     )
                 }
             }
@@ -324,12 +447,12 @@ struct ReaderPageView: View {
                 Spacer()
                 Text(page.chapterTitle)
             }
-            .font(.system(size: 10))
-            .foregroundStyle(settings.theme.secondary.opacity(0.7))
+            .font(.system(size: 9.5))
+            .foregroundStyle(settings.theme.secondary.opacity(0.55))
         }
-        .padding(.horizontal, 26)
-        .padding(.top, 62)
-        .padding(.bottom, 104)
+        .padding(.horizontal, 28)
+        .padding(.top, 72)
+        .padding(.bottom, 134)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
@@ -340,6 +463,7 @@ struct ParagraphView: View {
     let paragraph: Paragraph
     let settings: ReaderSettings
     let onComment: (Paragraph) -> Void
+    let onExcerpt: (Paragraph) -> Void
 
     private var showsComments: Bool {
         !paragraph.comments.isEmpty && !settings.hideSourceComments
@@ -351,24 +475,48 @@ struct ParagraphView: View {
                 .font(.system(size: settings.fontSize, design: .serif))
                 .lineSpacing(settings.fontSize * settings.lineSpacing)
                 .foregroundStyle(settings.theme.text)
+                .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, showsComments ? 26 : 0)
+                .padding(.trailing, showsComments ? 30 : 0)
 
             if showsComments {
                 Button {
                     onComment(paragraph)
                 } label: {
-                    HStack(spacing: 2) {
+                    HStack(spacing: 2.5) {
                         Image(systemName: "text.bubble.fill")
                         Text("\(paragraph.comments.count)")
+                            .monospacedDigit()
                     }
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 3)
-                    .background(Theme.accent.opacity(0.09), in: Capsule())
+                    .foregroundStyle(settings.theme.accent)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3.5)
+                    .glassCapsule(tint: settings.theme.accent.opacity(0.14))
                 }
                 .buttonStyle(.plain)
+                .offset(y: 2)
+            }
+        }
+        .contextMenu {
+            Button {
+                onExcerpt(paragraph)
+            } label: {
+                Label("摘录这一段", systemImage: "quote.opening")
+            }
+
+            if !paragraph.comments.isEmpty {
+                Button {
+                    onComment(paragraph)
+                } label: {
+                    Label("查看 \(paragraph.comments.count) 条段评", systemImage: "text.bubble")
+                }
+            }
+
+            Button {
+                UIPasteboard.general.string = paragraph.text
+            } label: {
+                Label("复制", systemImage: "doc.on.doc")
             }
         }
     }
@@ -378,35 +526,48 @@ struct ScrollReaderView: View {
     let chapters: [Chapter]
     let settings: ReaderSettings
     let onComment: (Paragraph) -> Void
+    let onExcerpt: (Paragraph) -> Void
     let onTap: () -> Void
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
+            VStack(alignment: .leading, spacing: 30) {
                 ForEach(chapters) { chapter in
-                    Text(chapter.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .tracking(1.2)
-                        .foregroundStyle(settings.theme.secondary)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(chapter.title)
+                            .font(.system(size: 13, weight: .semibold, design: .serif))
+                            .tracking(1.4)
+                            .foregroundStyle(settings.theme.secondary)
 
-                    ForEach(chapter.paragraphs) { paragraph in
-                        ParagraphView(
-                            paragraph: paragraph,
-                            settings: settings,
-                            onComment: onComment
-                        )
+                        Rectangle()
+                            .fill(settings.theme.secondary.opacity(0.3))
+                            .frame(width: 26, height: 1.5)
+                    }
+                    .padding(.top, 8)
+
+                    VStack(alignment: .leading, spacing: settings.fontSize * (0.72 + settings.lineSpacing * 0.5)) {
+                        ForEach(chapter.paragraphs) { paragraph in
+                            ParagraphView(
+                                paragraph: paragraph,
+                                settings: settings,
+                                onComment: onComment,
+                                onExcerpt: onExcerpt
+                            )
+                        }
                     }
                 }
             }
-            .padding(.horizontal, 26)
-            .padding(.top, 70)
-            .padding(.bottom, 120)
+            .padding(.horizontal, 28)
+            .padding(.top, 90)
+            .padding(.bottom, 130)
         }
         .scrollIndicators(.hidden)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
     }
 }
+
+// MARK: - TOC
 
 struct TOCSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -415,42 +576,82 @@ struct TOCSheet: View {
     let currentTitle: String
     let onSelect: (String) -> Void
 
+    @State private var query = ""
+
+    private var filtered: [Chapter] {
+        guard !query.isEmpty else { return chapters }
+        return chapters.filter { $0.title.localizedCaseInsensitiveContains(query) }
+    }
+
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(chapters) { chapter in
-                    Button {
-                        onSelect(chapter.title)
-                    } label: {
-                        HStack {
-                            Text(chapter.title)
-                                .font(.system(size: 15))
-                                .foregroundStyle(Theme.text)
+            ZStack {
+                AppBackdrop()
 
-                            Spacer()
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(filtered) { chapter in
+                            Button {
+                                onSelect(chapter.title)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(chapter.title)
+                                            .font(.system(size: 15, weight: .medium))
+                                            .foregroundStyle(Palette.text)
 
-                            if chapter.title == currentTitle {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Theme.accent)
+                                        Text("\(chapter.paragraphs.count) 段 · \(chapter.paragraphs.reduce(0) { $0 + $1.text.count }) 字")
+                                            .font(.system(size: 10.5))
+                                            .foregroundStyle(Palette.tertiary)
+                                    }
+
+                                    Spacer()
+
+                                    if chapter.title == currentTitle {
+                                        HStack(spacing: 4) {
+                                            Circle()
+                                                .fill(Palette.accent)
+                                                .frame(width: 5, height: 5)
+                                            Text("在读")
+                                                .font(.system(size: 10, weight: .semibold))
+                                                .foregroundStyle(Palette.accent)
+                                        }
+                                    } else {
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundStyle(Palette.tertiary.opacity(0.5))
+                                    }
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .glassSurface(
+                                    cornerRadius: 18,
+                                    tint: chapter.title == currentTitle ? Palette.accent.opacity(0.1) : nil
+                                )
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(PressableStyle(scale: 0.985))
                         }
-                        .padding(.vertical, 5)
                     }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 30)
                 }
+                .scrollIndicators(.hidden)
             }
-            .scrollContentBackground(.hidden)
-            .background(AppBackground())
             .navigationTitle("目录")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "搜索章节")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成") { dismiss() }
+                        .fontWeight(.semibold)
                 }
             }
         }
     }
 }
+
+// MARK: - Reader Settings
 
 struct ReaderSettingsSheet: View {
     @Bindable var settings: ReaderSettings
@@ -459,101 +660,35 @@ struct ReaderSettingsSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                AppBackground()
+                AppBackdrop()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 26) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            SectionHeading(text: "字号")
+                    VStack(alignment: .leading, spacing: 24) {
+                        preview
 
-                            HStack(spacing: 14) {
-                                Text("A")
-                                    .font(.system(size: 12, design: .serif))
-                                    .foregroundStyle(Theme.secondary)
+                        fontSizeSection
+                        lineSpacingSection
+                        themeSection
+                        pageModeSection
 
-                                Slider(value: $settings.fontSize, in: 15...26, step: 1)
-                                    .tint(Theme.accent)
-
-                                Text("A")
-                                    .font(.system(size: 24, design: .serif))
-                                    .foregroundStyle(Theme.text)
-                            }
-
-                            Text("\(Int(settings.fontSize)) pt")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.secondary)
-                        }
-
-                        VStack(alignment: .leading, spacing: 12) {
-                            SectionHeading(text: "行距")
-                            Slider(value: $settings.lineSpacing, in: 0.3...1.4, step: 0.1)
-                                .tint(Theme.accent)
-                        }
-
-                        VStack(alignment: .leading, spacing: 12) {
-                            SectionHeading(text: "主题")
-
-                            HStack(spacing: 10) {
-                                ForEach(ReaderTheme.allCases) { theme in
-                                    Button {
-                                        settings.theme = theme
-                                    } label: {
-                                        VStack(spacing: 7) {
-                                            RoundedRectangle(cornerRadius: 6)
-                                                .fill(theme.background)
-                                                .frame(height: 56)
-                                                .overlay {
-                                                    Text("文")
-                                                        .font(.system(size: 19, design: .serif))
-                                                        .foregroundStyle(theme.text)
-                                                }
-                                                .overlay {
-                                                    RoundedRectangle(cornerRadius: 6)
-                                                        .stroke(
-                                                            settings.theme == theme ? Theme.accent : Theme.hairline,
-                                                            lineWidth: settings.theme == theme ? 2 : 1
-                                                        )
-                                                }
-
-                                            Text(theme.rawValue)
-                                                .font(.system(size: 11, weight: settings.theme == theme ? .semibold : .regular))
-                                                .foregroundStyle(settings.theme == theme ? Theme.accent : Theme.secondary)
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-                                }
+                        Toggle(isOn: $settings.hideSourceComments) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("屏蔽书源段评")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(Palette.text)
+                                Text("只保留干净的正文")
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(Palette.tertiary)
                             }
                         }
-
-                        VStack(alignment: .leading, spacing: 12) {
-                            SectionHeading(text: "翻页方式")
-
-                            Picker("翻页方式", selection: $settings.pageMode) {
-                                ForEach(PageMode.allCases) { mode in
-                                    Text(mode.rawValue).tag(mode)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                        }
-
-                        Toggle("屏蔽书源段评", isOn: $settings.hideSourceComments)
-                            .font(.system(size: 15))
-                            .tint(Theme.accent)
-                            .foregroundStyle(Theme.text)
-
-                        Text("　　夜色漫上船头，灯影落在书页上。远处有人收缆，水声一下一下，像替谁数着日子。")
-                            .font(.system(size: settings.fontSize, design: .serif))
-                            .lineSpacing(settings.fontSize * settings.lineSpacing)
-                            .foregroundStyle(settings.theme.text)
-                            .padding(16)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(settings.theme.background, in: RoundedRectangle(cornerRadius: 8))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline)
-                            }
+                        .tint(Palette.accent)
+                        .padding(.horizontal, 15)
+                        .padding(.vertical, 12)
+                        .glassSurface(cornerRadius: 18)
                     }
-                    .padding(20)
+                    .padding(18)
                 }
+                .scrollIndicators(.hidden)
             }
             .navigationTitle("阅读设置")
             .navigationBarTitleDisplayMode(.inline)
@@ -565,7 +700,152 @@ struct ReaderSettingsSheet: View {
             }
         }
     }
+
+    private var preview: some View {
+        Text("　　夜色漫上船头，灯影落在书页上。远处有人收缆，水声一下一下，像替谁数着日子。")
+            .font(.system(size: settings.fontSize, design: .serif))
+            .lineSpacing(settings.fontSize * settings.lineSpacing)
+            .foregroundStyle(settings.theme.text)
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(settings.theme.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(settings.theme.text.opacity(0.1), lineWidth: 0.8)
+            }
+    }
+
+    private var fontSizeSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeading(text: "字号", trailing: "\(Int(settings.fontSize)) pt")
+
+            HStack(spacing: 14) {
+                Text("A")
+                    .font(.system(size: 12, design: .serif))
+                    .foregroundStyle(Palette.tertiary)
+
+                Slider(value: $settings.fontSize, in: 14...28, step: 1)
+                    .tint(Palette.accent)
+
+                Text("A")
+                    .font(.system(size: 22, design: .serif))
+                    .foregroundStyle(Palette.text)
+            }
+            .padding(.horizontal, 15)
+            .padding(.vertical, 12)
+            .glassSurface(cornerRadius: 18)
+        }
+    }
+
+    private var lineSpacingSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeading(text: "行距", trailing: String(format: "%.1f×", 1 + settings.lineSpacing))
+
+            Slider(value: $settings.lineSpacing, in: 0.3...1.6, step: 0.1)
+                .tint(Palette.accent)
+                .padding(.horizontal, 15)
+                .padding(.vertical, 14)
+                .glassSurface(cornerRadius: 18)
+        }
+    }
+
+    private var themeSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeading(text: "主题")
+
+            HStack(spacing: 9) {
+                ForEach(ReaderTheme.allCases) { theme in
+                    let selected = settings.theme == theme
+                    Button {
+                        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                            settings.theme = theme
+                        }
+                    } label: {
+                        VStack(spacing: 7) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [theme.background, theme.backgroundDeep],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+
+                                Text("文")
+                                    .font(.system(size: 20, design: .serif))
+                                    .foregroundStyle(theme.text)
+
+                                if selected {
+                                    VStack {
+                                        HStack {
+                                            Spacer()
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.system(size: 13))
+                                                .foregroundStyle(theme.accent)
+                                        }
+                                        Spacer()
+                                    }
+                                    .padding(6)
+                                }
+                            }
+                            .frame(height: 62)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                    .strokeBorder(
+                                        selected ? theme.accent : Palette.hairline,
+                                        lineWidth: selected ? 1.8 : 0.8
+                                    )
+                            }
+
+                            Text(theme.rawValue)
+                                .font(.system(size: 10.5, weight: selected ? .semibold : .regular))
+                                .foregroundStyle(selected ? Palette.text : Palette.tertiary)
+                        }
+                    }
+                    .buttonStyle(PressableStyle())
+                }
+            }
+            .padding(12)
+            .glassSurface(cornerRadius: 20)
+        }
+    }
+
+    private var pageModeSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeading(text: "翻页方式")
+
+            HStack(spacing: 9) {
+                ForEach(PageMode.allCases) { mode in
+                    let selected = settings.pageMode == mode
+                    Button {
+                        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                            settings.pageMode = mode
+                        }
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: mode.symbol)
+                                .font(.system(size: 13, weight: .medium))
+                            Text(mode.rawValue)
+                                .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                        }
+                        .foregroundStyle(selected ? Palette.text : Palette.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .glassSurface(
+                            cornerRadius: 16,
+                            tint: selected ? Palette.accent.opacity(0.16) : nil,
+                            interactive: true
+                        )
+                    }
+                    .buttonStyle(PressableStyle())
+                }
+            }
+        }
+    }
 }
+
+// MARK: - Segment Comments
 
 struct SegmentCommentsSheet: View {
     @Environment(AppStore.self) private var store
@@ -573,77 +853,137 @@ struct SegmentCommentsSheet: View {
 
     let paragraph: Paragraph
 
-    var body: some View {
-        @Bindable var settings = store.settings
+    @State private var comments: [SegmentComment] = []
 
+    var body: some View {
         NavigationStack {
             ZStack {
-                AppBackground()
+                AppBackdrop()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text(paragraph.text)
-                            .font(.system(size: 14, design: .serif))
-                            .foregroundStyle(Theme.secondary)
-                            .lineSpacing(5)
-                            .padding(.bottom, 6)
+                        quoteBlock
 
                         HStack {
-                            SectionHeading(text: "本段 \(paragraph.comments.count) 条段评")
+                            SectionHeading(text: "本段 \(comments.count) 条段评")
                             Spacer()
-                            Text("来自书源 · 只读")
-                                .font(.system(size: 10))
-                                .foregroundStyle(Theme.secondary.opacity(0.8))
+                            Text("来自书源")
+                                .font(.system(size: 9.5, weight: .medium))
+                                .foregroundStyle(Palette.tertiary)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .glassCapsule(tint: Palette.jade.opacity(0.12))
                         }
 
-                        ForEach(paragraph.comments) { comment in
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text(comment.author)
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(Theme.text)
-
-                                    Spacer()
-
-                                    Image(systemName: "quote.opening")
-                                        .font(.system(size: 9))
-                                        .foregroundStyle(Theme.accent.opacity(0.5))
-                                }
-
-                                Text(comment.text)
-                                    .font(.system(size: 14, design: .serif))
-                                    .foregroundStyle(Theme.text)
-                                    .lineSpacing(4)
-                            }
-                            .padding(14)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .glassSurface(cornerRadius: 14)
+                        ForEach(Array(comments.enumerated()), id: \.element.id) { index, comment in
+                            commentCard(comment, index: index)
                         }
-
                     }
-                    .padding(20)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 8)
+                    .padding(.bottom, 26)
                 }
-            }
-            .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 0) {
-                    Divider().overlay(Theme.hairline)
-
-                    Toggle("屏蔽此源段评", isOn: $settings.hideSourceComments)
-                        .font(.system(size: 14))
-                        .tint(Theme.accent)
-                        .foregroundStyle(Theme.text)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 14)
-                        .background(.regularMaterial)
-                }
+                .scrollIndicators(.hidden)
             }
             .navigationTitle("段评")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成") { dismiss() }
+                        .fontWeight(.semibold)
                 }
             }
+            .onAppear { comments = paragraph.comments }
         }
+    }
+
+    private var quoteBlock: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 6) {
+                Image(systemName: "quote.opening")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("原文")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .tracking(1.2)
+            }
+            .foregroundStyle(Palette.accent)
+
+            Text(paragraph.text)
+                .font(.system(size: 14, design: .serif))
+                .lineSpacing(5)
+                .foregroundStyle(Palette.secondary)
+        }
+        .padding(15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassSurface(cornerRadius: 20, tint: Palette.accent.opacity(0.07))
+    }
+
+    private func commentCard(_ comment: SegmentComment, index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                // 头像色块
+                Text(String(comment.author.prefix(1)))
+                    .font(.system(size: 12, weight: .semibold, design: .serif))
+                    .foregroundStyle(.white)
+                    .frame(width: 26, height: 26)
+                    .background(
+                        LinearGradient(
+                            colors: [Palette.cover(index).0, Palette.cover(index).1],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: Circle()
+                    )
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(comment.author)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(Palette.text)
+
+                    Text(relativeTime(comment.minutesAgo))
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Palette.tertiary)
+                }
+
+                Spacer()
+
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        if let i = comments.firstIndex(where: { $0.id == comment.id }) {
+                            comments[i].liked.toggle()
+                            comments[i].likes += comments[i].liked ? 1 : -1
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 3.5) {
+                        Image(systemName: comment.liked ? "heart.fill" : "heart")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("\(comment.likes)")
+                            .font(.system(size: 10, weight: .medium))
+                            .monospacedDigit()
+                    }
+                    .foregroundStyle(comment.liked ? Palette.accent : Palette.tertiary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .glassCapsule(tint: comment.liked ? Palette.accent.opacity(0.14) : nil)
+                }
+                .buttonStyle(PressableStyle(scale: 0.9))
+            }
+
+            Text(comment.text)
+                .font(.system(size: 14, design: .serif))
+                .lineSpacing(4)
+                .foregroundStyle(Palette.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .glassSurface(cornerRadius: 20)
+    }
+
+    private func relativeTime(_ minutes: Int) -> String {
+        if minutes < 1 { return "刚刚" }
+        if minutes < 60 { return "\(minutes) 分钟前" }
+        if minutes < 1_440 { return "\(minutes / 60) 小时前" }
+        return "\(minutes / 1_440) 天前"
     }
 }

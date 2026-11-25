@@ -1,6 +1,8 @@
 import Foundation
 
 enum MockData {
+    // MARK: Books
+
     static let books: [Book] = [
         Book(
             id: "yehangchuan",
@@ -8,7 +10,7 @@ enum MockData {
             author: "张岱",
             kind: .novel,
             coverStyle: 0,
-            chapterCount: 12,
+            chapterCount: 4,
             progress: 0.37,
             lastPosition: "卷二 · 方物",
             pageCount: nil,
@@ -108,6 +110,8 @@ enum MockData {
         )
     ]
 
+    // MARK: Sources
+
     static let sources: [BookSource] = [
         BookSource(
             id: "source-json",
@@ -126,6 +130,8 @@ enum MockData {
             bookCount: 6
         )
     ]
+
+    // MARK: Search
 
     static let searchResults: [Book] = [
         Book(
@@ -166,8 +172,100 @@ enum MockData {
             pageCount: 24,
             duration: nil,
             isFinished: false
+        ),
+        Book(
+            id: "tingyu",
+            title: "听雨楼杂记",
+            author: "陆玑",
+            kind: .audio,
+            coverStyle: 0,
+            chapterCount: 5,
+            progress: 0,
+            lastPosition: "未开始",
+            pageCount: nil,
+            duration: "07:12",
+            isFinished: false
         )
     ]
+
+    // MARK: Excerpts
+
+    static let excerpts: [Excerpt] = [
+        Excerpt(
+            id: "ex-1",
+            bookID: "yehangchuan",
+            bookTitle: "夜航船",
+            chapterTitle: "卷一 · 夜航",
+            text: "所谓远行，不过是把熟悉的东西一件件留在身后。",
+            note: "每次离家都会想起这句。",
+            createdAt: Date().addingTimeInterval(-3_600 * 5),
+            liked: true
+        ),
+        Excerpt(
+            id: "ex-2",
+            bookID: "yehangchuan",
+            bookTitle: "夜航船",
+            chapterTitle: "卷二 · 方物",
+            text: "做布和读书一样，急不得。染缸里的颜色要等，纸上的意思也要等。",
+            note: "",
+            createdAt: Date().addingTimeInterval(-3_600 * 26),
+            liked: false
+        ),
+        Excerpt(
+            id: "ex-3",
+            bookID: "yehangchuan",
+            bookTitle: "夜航船",
+            chapterTitle: "卷三 · 灯下",
+            text: "夜里的许多事，天亮以后都不作数。",
+            note: "适合写在扉页。",
+            createdAt: Date().addingTimeInterval(-3_600 * 50),
+            liked: true
+        ),
+        Excerpt(
+            id: "ex-4",
+            bookID: "shanhaishiyi",
+            bookTitle: "山海拾遗",
+            chapterTitle: "第七章 · 归墟",
+            text: "海把所有的声音都收走了，只留下一层一层推上岸的白色。",
+            note: "",
+            createdAt: Date().addingTimeInterval(-3_600 * 74),
+            liked: false
+        ),
+        Excerpt(
+            id: "ex-5",
+            bookID: "changyexing",
+            bookTitle: "长夜行",
+            chapterTitle: "第三章 · 灯下",
+            text: "灯是给人看的，路是给船看的。",
+            note: "结构很漂亮的对照。",
+            createdAt: Date().addingTimeInterval(-3_600 * 96),
+            liked: false
+        )
+    ]
+
+    // MARK: Stats
+
+    static var dayStats: [DayStat] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let minutes: [Int] = [
+            42, 18, 0, 65, 88, 24, 51, 37, 12, 0, 74, 96, 48, 31,
+            0, 22, 58, 82, 44, 19, 67, 35, 0, 91, 63, 28, 47, 12,
+            76, 54, 38, 0, 69, 45, 88, 26, 57, 71, 34, 0,
+            48, 62, 91, 37, 55, 28, 0, 74, 66, 41, 83, 52, 29, 94,
+            47, 0, 63, 38, 71, 44, 26, 0, 58, 92, 36, 0, 47, 61,
+            82, 24, 0, 55, 71, 39, 0, 88, 64, 30, 0, 52, 76, 41,
+            0, 68, 93, 35, 0, 47, 58, 22, 0, 72, 44
+        ]
+
+        return minutes.enumerated().map { offset, value in
+            let date = calendar.date(byAdding: .day, value: offset - (minutes.count - 1), to: today) ?? today
+            let key = ISO8601DateFormatter.dayFormatter.string(from: date)
+            return DayStat(id: key, date: date, minutes: value)
+        }
+    }
+
+    // MARK: Chapters
 
     static func chapters(for book: Book) -> [Chapter] {
         book.id == "yehangchuan" ? nightBoatChapters : genericChapters
@@ -186,9 +284,9 @@ enum MockData {
                     id: "nb-1-2",
                     text: "同船的人不多。一个卖布的老人，一个抱着孩子的妇人，还有一个总在甲板上踱步的年轻人。他不与人说话，只在暮色里一遍遍数着岸边的灯。",
                     comments: [
-                        SegmentComment(id: "c1", author: "临江客", text: "数灯的人，像是舍不得岸。"),
-                        SegmentComment(id: "c2", author: "晚风", text: "这一段很有夜船的感觉。"),
-                        SegmentComment(id: "c3", author: "阿七", text: "后面还会再出现吗？")
+                        SegmentComment(id: "c1", author: "临江客", text: "数灯的人，像是舍不得岸。", likes: 128, minutesAgo: 12),
+                        SegmentComment(id: "c2", author: "晚风", text: "这一段很有夜船的感觉，水汽都从字里冒出来了。", likes: 74, minutesAgo: 46),
+                        SegmentComment(id: "c3", author: "阿七", text: "后面还会再出现吗？总觉得他是个引子。", likes: 22, minutesAgo: 130)
                     ]
                 ),
                 Paragraph(
@@ -221,8 +319,8 @@ enum MockData {
                     id: "nb-2-3",
                     text: "老人说，做布和读书一样，急不得。染缸里的颜色要等，纸上的意思也要等。等到了，才算你的。",
                     comments: [
-                        SegmentComment(id: "c4", author: "青苔", text: "染布与读书，这个比喻真好。"),
-                        SegmentComment(id: "c5", author: "半盏", text: "颜色要等，意思也要等。")
+                        SegmentComment(id: "c4", author: "青苔", text: "染布与读书，这个比喻真好。", likes: 96, minutesAgo: 62),
+                        SegmentComment(id: "c5", author: "半盏", text: "颜色要等，意思也要等。这半句我抄下来了。", likes: 51, minutesAgo: 175)
                     ]
                 ),
                 Paragraph(
@@ -247,10 +345,10 @@ enum MockData {
                     id: "nb-3-3",
                     text: "朦胧间听见那年轻人在甲板上念诗。声音不高，被风一吹就散了。我只听清一句：此身合是诗人未。",
                     comments: [
-                        SegmentComment(id: "c6", author: "夜航人", text: "这一句忽然把整章点亮了。"),
-                        SegmentComment(id: "c7", author: "小满", text: "被风吹散的诗，很妙。"),
-                        SegmentComment(id: "c8", author: "山月", text: "所以昨夜他到底念没念？"),
-                        SegmentComment(id: "c9", author: "听雨", text: "天亮以后都不作数。")
+                        SegmentComment(id: "c6", author: "夜航人", text: "这一句忽然把整章点亮了。", likes: 214, minutesAgo: 8),
+                        SegmentComment(id: "c7", author: "小满", text: "被风吹散的诗，很妙。", likes: 63, minutesAgo: 92),
+                        SegmentComment(id: "c8", author: "山月", text: "所以昨夜他到底念没念？", likes: 37, minutesAgo: 210),
+                        SegmentComment(id: "c9", author: "听雨", text: "天亮以后都不作数。", likes: 148, minutesAgo: 320)
                     ]
                 ),
                 Paragraph(
@@ -304,8 +402,8 @@ enum MockData {
                     id: "g-1-2",
                     text: "他把书翻到夹着书签的那一页，却没有立刻读下去。窗外的雨、桌上的茶、远处隐约的车声，都比书里的句子更先抵达。",
                     comments: [
-                        SegmentComment(id: "g1", author: "读者甲", text: "这个开头很安静。"),
-                        SegmentComment(id: "g2", author: "读者乙", text: "像是要发生什么，又什么都没有发生。")
+                        SegmentComment(id: "g1", author: "读者甲", text: "这个开头很安静。", likes: 31, minutesAgo: 24),
+                        SegmentComment(id: "g2", author: "读者乙", text: "像是要发生什么，又什么都没有发生。", likes: 18, minutesAgo: 88)
                     ]
                 ),
                 Paragraph(
@@ -333,4 +431,13 @@ enum MockData {
             ]
         )
     ]
+}
+
+extension ISO8601DateFormatter {
+    static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
 }

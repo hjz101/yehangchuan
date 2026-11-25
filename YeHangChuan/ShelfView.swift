@@ -3,7 +3,7 @@ import SwiftUI
 enum ShelfStatus: String, CaseIterable, Identifiable {
     case all = "全部"
     case reading = "在读"
-    case finished = "已读"
+    case finished = "已读完"
 
     var id: String { rawValue }
 }
@@ -16,6 +16,8 @@ struct ShelfView: View {
     @State private var query = ""
     @State private var readingBook: Book?
     @State private var detailBook: Book?
+    @State private var showSearch = false
+    @State private var columns = 3
 
     private var filteredBooks: [Book] {
         store.books.filter { book in
@@ -35,18 +37,15 @@ struct ShelfView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                AppBackground()
+                AppBackdrop()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        header
-                        searchBar
-
-                        if let book = store.continueBook, query.isEmpty, filter == nil, status == .all {
-                            continueBand(book)
+                    VStack(alignment: .leading, spacing: 22) {
+                        if let book = store.continueBook, query.isEmpty {
+                            hero(book)
                         }
 
-                        filterRow
+                        filterBar
 
                         if filteredBooks.isEmpty {
                             emptyState
@@ -54,20 +53,51 @@ struct ShelfView: View {
                             grid
                         }
                     }
-                    .padding(.top, 16)
-                    .padding(.bottom, 112)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 6)
+                    .padding(.bottom, 28)
                 }
                 .scrollIndicators(.hidden)
+                .contentMargins(.bottom, 96, for: .scrollContent)
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("夜航船")
+            .navigationSubtitle(subtitle)
+            .toolbarTitleDisplayMode(.inlineLarge)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showSearch = true
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .accessibilityLabel("搜索书架")
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation(.spring(response: 0.36, dampingFraction: 0.85)) {
+                            columns = columns == 3 ? 2 : 3
+                        }
+                    } label: {
+                        Image(systemName: columns == 3 ? "rectangle.grid.2x2" : "rectangle.grid.3x2")
+                    }
+                    .accessibilityLabel("切换网格密度")
+                }
+            }
         }
         .fullScreenCover(item: $readingBook) { book in
             ReaderView(book: book)
         }
         .sheet(item: $detailBook) { book in
             MediaDetailView(book: book)
-                .presentationDetents([.fraction(0.62)])
+                .presentationDetents([.fraction(0.72), .large])
                 .presentationDragIndicator(.visible)
+                .presentationCornerRadius(38)
+        }
+        .sheet(isPresented: $showSearch) {
+            ShelfSearchSheet(query: $query)
+                .presentationDetents([.large])
+                .presentationCornerRadius(38)
         }
         .task {
             #if DEBUG
@@ -75,131 +105,93 @@ struct ShelfView: View {
             if arguments.contains("-openReader"), readingBook == nil {
                 readingBook = store.books.first { $0.id == "yehangchuan" }
             }
+            if arguments.contains("-openSearch") {
+                showSearch = true
+            }
             #endif
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 9) {
-                Text("夜航船")
-                    .font(.system(size: 32, weight: .bold, design: .serif))
-                    .foregroundStyle(Theme.text)
-
-                Text("DEMO")
-                    .font(.system(size: 9, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundStyle(Theme.accent)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 3)
-                            .stroke(Theme.accent.opacity(0.5))
-                    }
-            }
-
-            Text("夜读，是一次缓慢的远行")
-                .font(.system(size: 13, design: .serif))
-                .foregroundStyle(Theme.secondary)
+    private var subtitle: String {
+        if store.readingCount == 0 {
+            return "书架空着，去书源找一本"
         }
-        .padding(.horizontal, 20)
+        return "\(store.readingCount) 本在读 · \(store.finishedCount) 本读完"
     }
 
-    private var searchBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.secondary)
+    // MARK: Hero
 
-            TextField("搜索书名或作者", text: $query)
-                .font(.system(size: 14))
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-
-            if !query.isEmpty {
-                Button {
-                    query = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(Theme.secondary.opacity(0.7))
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .glassSurface(cornerRadius: 16, interactive: true)
-        .padding(.horizontal, 20)
-    }
-
-    private func continueBand(_ book: Book) -> some View {
+    private func hero(_ book: Book) -> some View {
         Button {
-            readingBook = book
+            open(book)
         } label: {
-            HStack(alignment: .center, spacing: 14) {
-                BookCover(book: book, compact: true)
-                    .frame(width: 48)
+            HStack(spacing: 16) {
+                BookCover(book: book, cornerRadius: 10, prominent: true)
+                    .frame(width: 78)
 
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 7) {
-                Text("继续阅读")
-                            .font(.system(size: 9, weight: .semibold))
-                            .tracking(1.5)
-                    .foregroundStyle(Theme.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Palette.accent)
+                            .frame(width: 5, height: 5)
 
-                        Text(book.title)
-                            .font(.system(size: 17, weight: .semibold, design: .serif))
-                    .foregroundStyle(Theme.text)
-                            .lineLimit(1)
+                        Text("继续阅读")
+                            .font(.system(size: 10, weight: .semibold))
+                            .tracking(1.4)
+                            .foregroundStyle(Palette.accent)
                     }
 
-                    Text("上次读到 \(book.lastPosition)")
-                        .font(.system(size: 11))
-                    .foregroundStyle(Theme.secondary)
+                    Text(book.title)
+                        .font(.system(size: 21, weight: .semibold, design: .serif))
+                        .foregroundStyle(Palette.text)
                         .lineLimit(1)
 
-                ProgressBar(
-                    value: book.progress,
-                    tint: Theme.accent,
-                    track: Theme.secondary.opacity(0.22)
-                )
-                        .frame(height: 2)
-                        .padding(.top, 2)
+                    Text(book.lastPosition)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.secondary)
+                        .lineLimit(1)
+
+                    HStack(spacing: 8) {
+                        ProgressBar(value: book.progress, tint: Palette.accent, height: 3)
+
+                        Text("\(Int(book.progress * 100))%")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Palette.tertiary)
+                            .monospacedDigit()
+                    }
+                    .padding(.top, 2)
                 }
 
-                Spacer(minLength: 4)
-
-                VStack(spacing: 4) {
-                    Text("\(Int(book.progress * 100))%")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.secondary)
-
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.accent)
-                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Palette.tertiary.opacity(0.6))
             }
-            .padding(14)
-            .glassSurface(cornerRadius: 18, tint: Theme.ink.opacity(0.4), interactive: true)
+            .padding(15)
+            .glassSurface(cornerRadius: 26, tint: Palette.accent.opacity(0.10), interactive: true)
+            .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 20)
+        .buttonStyle(PressableStyle(scale: 0.985))
     }
 
-    private var filterRow: some View {
-        HStack(spacing: 10) {
+    // MARK: Filters
+
+    private var filterBar: some View {
+        HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    chip("全部", selected: filter == nil) {
+                    chip("全部", selected: filter == nil, tint: Palette.accent) {
                         filter = nil
                     }
 
                     ForEach(BookKind.allCases) { kind in
-                        chip(kind.rawValue, selected: filter == kind) {
+                        chip(kind.rawValue, selected: filter == kind, tint: kind.tint) {
                             filter = kind
                         }
                     }
                 }
+                .padding(.vertical, 2)
             }
+            .scrollClipDisabled()
 
             Menu {
                 Picker("阅读状态", selection: $status) {
@@ -208,58 +200,65 @@ struct ShelfView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "line.3.horizontal.decrease")
-                    Text(status == .all ? "筛选" : status.rawValue)
-                }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.text)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .glassSurface(cornerRadius: 14, interactive: true)
+                Image(systemName: status == .all ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(status == .all ? Palette.secondary : Palette.jade)
+                    .frame(width: 36, height: 36)
+                    .glassCircle(diameter: 36, tint: status == .all ? nil : Palette.jade.opacity(0.16))
             }
+            .accessibilityLabel("阅读状态筛选")
         }
-        .padding(.horizontal, 20)
     }
 
-    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    private func chip(_ title: String, selected: Bool, tint: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                .foregroundStyle(Theme.text)
+                .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                .foregroundStyle(selected ? Palette.onAccent : Palette.secondary)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .glassSurface(
-                    cornerRadius: 16,
-                    tint: selected ? Theme.ink.opacity(0.55) : nil,
-                    interactive: true
-                )
+                .padding(.vertical, 8)
+                .background {
+                    if selected {
+                        Capsule().fill(tint)
+                    }
+                }
+                .glassCapsule(tint: selected ? nil : Palette.glassTint, interactive: true)
+                .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
     }
+
+    // MARK: Grid
 
     private var grid: some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 104), spacing: 16, alignment: .top)],
+            columns: Array(repeating: GridItem(.flexible(), spacing: 14, alignment: .top), count: columns),
             alignment: .leading,
-            spacing: 24
+            spacing: 20
         ) {
             ForEach(filteredBooks) { book in
-                BookTile(book: book)
-                    .onTapGesture {
-                        open(book)
-                    }
+                ShelfBookCell(book: book, showProgress: columns == 2)
+                    .onTapGesture { open(book) }
                     .contextMenu {
                         Button {
                             store.toggleFinished(book.id)
                         } label: {
-                            Label(book.isFinished ? "标记为未读" : "标记为已读", systemImage: "checkmark.circle")
+                            Label(book.isFinished ? "标记为在读" : "标记为读完",
+                                  systemImage: book.isFinished ? "arrow.uturn.backward" : "checkmark.circle")
                         }
 
                         Button {
                             detailBook = book
                         } label: {
                             Label("查看详情", systemImage: "info.circle")
+                        }
+
+                        if book.kind == .audio {
+                            Button {
+                                store.player.load(book)
+                            } label: {
+                                Label("开始收听", systemImage: "play.circle")
+                            }
                         }
 
                         Button(role: .destructive) {
@@ -270,195 +269,354 @@ struct ShelfView: View {
                     }
             }
         }
-        .padding(.horizontal, 20)
     }
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             Image(systemName: "books.vertical")
-                .font(.system(size: 30, weight: .light))
-                .foregroundStyle(Theme.secondary.opacity(0.6))
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(Palette.tertiary)
 
             Text(query.isEmpty ? "这里还没有书" : "没有找到匹配的书")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Theme.text)
+                .foregroundStyle(Palette.text)
 
             Text(query.isEmpty ? "去书源页搜索并加入书架" : "换个关键词试试")
                 .font(.system(size: 12))
-                .foregroundStyle(Theme.secondary)
+                .foregroundStyle(Palette.secondary)
+
+            if !query.isEmpty {
+                Button("清除搜索") { query = "" }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .padding(.top, 2)
+            }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 56)
+        .padding(.vertical, 60)
     }
 
     private func open(_ book: Book) {
-        if book.kind == .novel {
+        switch book.kind {
+        case .novel:
             readingBook = book
-        } else {
+        case .audio:
+            store.player.load(book)
+        case .comic:
             detailBook = book
         }
     }
 }
 
-struct BookTile: View {
+// MARK: - Cell
+
+struct ShelfBookCell: View {
     let book: Book
+    var showProgress = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            BookCover(book: book)
-                .overlay(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(book.title)
-                            .font(.system(size: 13, weight: .semibold, design: .serif))
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(1)
-
-                        HStack(spacing: 4) {
-                            Text(book.kind == .novel ? book.author : "\(book.kind.rawValue) · \(book.author)")
-                                .lineLimit(1)
-
-                            Spacer(minLength: 0)
-
-                            if book.progress > 0 && !book.isFinished {
-                                Text("\(Int(book.progress * 100))%")
-                            }
-                        }
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.secondary)
-
-                        ProgressBar(
-                            value: book.progress,
-                            tint: Theme.accent,
-                            track: Theme.secondary.opacity(0.18)
-                        )
-                        .opacity(book.progress > 0 && !book.isFinished ? 1 : 0)
+        VStack(alignment: .leading, spacing: 8) {
+            BookCover(book: book, cornerRadius: 11)
+                .overlay(alignment: .topTrailing) {
+                    if book.isFinished {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(Palette.onAccent)
+                            .frame(width: 18, height: 18)
+                            .background(Palette.jade, in: Circle())
+                            .padding(7)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 7)
-                    .glassSurface(cornerRadius: 10, tint: Theme.ink.opacity(0.32))
-                    .padding(5)
                 }
+                .overlay(alignment: .bottomLeading) {
+                    if book.progress > 0 && !book.isFinished {
+                        HStack(spacing: 4) {
+                            Text("\(Int(book.progress * 100))%")
+                                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .monospacedDigit()
+
+                            ProgressBar(value: book.progress, tint: .white, track: .white.opacity(0.3), height: 2)
+                                .frame(width: 26)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .glassCapsule(tint: .black.opacity(0.28))
+                        .padding(7)
+                    }
+                }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(book.title)
+                    .font(.system(size: showProgress ? 14 : 12.5, weight: .semibold, design: .serif))
+                    .foregroundStyle(Palette.text)
+                    .lineLimit(1)
+
+                Text(book.kind == .novel ? book.author : "\(book.kind.rawValue) · \(book.author)")
+                    .font(.system(size: showProgress ? 11 : 10))
+                    .foregroundStyle(Palette.tertiary)
+                    .lineLimit(1)
+            }
         }
         .contentShape(Rectangle())
     }
 }
 
+// MARK: - Search
+
+struct ShelfSearchSheet: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @Binding var query: String
+
+    @FocusState private var focused: Bool
+
+    private var results: [Book] {
+        guard !query.isEmpty else { return store.books }
+        return store.books.filter {
+            $0.title.localizedCaseInsensitiveContains(query) || $0.author.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AppBackdrop()
+
+                ScrollView {
+                    VStack(spacing: 10) {
+                        ForEach(results) { book in
+                            HStack(spacing: 13) {
+                                BookCover(book: book, cornerRadius: 8)
+                                    .frame(width: 48)
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(book.title)
+                                        .font(.system(size: 15, weight: .semibold, design: .serif))
+                                        .foregroundStyle(Palette.text)
+
+                                    Text("\(book.author) · \(book.kind.rawValue)")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Palette.secondary)
+                                }
+
+                                Spacer()
+
+                                Text(book.lastPosition)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Palette.tertiary)
+                                    .lineLimit(1)
+                            }
+                            .padding(11)
+                            .glassSurface(cornerRadius: 18)
+                        }
+
+                        if results.isEmpty {
+                            ContentUnavailableView("没有这本书", systemImage: "magnifyingglass", description: Text("试试书名或作者"))
+                                .padding(.top, 40)
+                        }
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 30)
+                }
+                .scrollIndicators(.hidden)
+            }
+            .navigationTitle("搜索书架")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, placement: .toolbar, prompt: "书名或作者")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { dismiss() }
+                        .fontWeight(.semibold)
+                }
+            }
+            .onAppear { focused = true }
+        }
+    }
+}
+
+// MARK: - Media Detail
+
 struct MediaDetailView: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
     let book: Book
-    @State private var showDemoAlert = false
 
     var body: some View {
         ZStack {
-            AppBackground()
+            AppBackdrop()
 
-            VStack(spacing: 0) {
-                HStack(alignment: .top, spacing: 16) {
-                    BookCover(book: book)
-                        .frame(width: 96)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(book.kind.rawValue)
-                            .font(.system(size: 10, weight: .semibold))
-                            .tracking(1.5)
-                            .foregroundStyle(Theme.accent)
-
-                        Text(book.title)
-                            .font(.system(size: 23, weight: .semibold, design: .serif))
-                            .foregroundStyle(Theme.text)
-
-                        Text("\(book.author) · \(book.chapterCount) \(book.kind == .comic ? "话" : "章")")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.secondary)
-
-                        Text(book.lastPosition)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Theme.jade)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    header
+                    meta
+                    content
+                    Spacer(minLength: 0)
                 }
                 .padding(20)
-
-                Divider().overlay(Theme.hairline)
-
-                if book.kind == .comic {
-                    comicPreview
-                } else {
-                    audioPreview
-                }
-
-                Spacer(minLength: 12)
-
-                Button {
-                    showDemoAlert = true
-                } label: {
-                    Text(book.kind == .comic ? "继续阅读（演示）" : "开始播放（演示）")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .glassSurface(cornerRadius: 16, tint: Theme.ink.opacity(0.45), interactive: true)
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 18)
+                .padding(.top, 10)
             }
+            .scrollIndicators(.hidden)
         }
-        .alert("演示版本", isPresented: $showDemoAlert) {
-            Button("好", role: .cancel) {}
-        } message: {
-            Text(book.kind == .comic ? "漫画阅读器将在后续版本接入，这里先展示书架与入口形态。" : "音频播放器将在 v2.0 接入，这一版只展示音频书在书架中的呈现。")
+        .safeAreaInset(edge: .bottom) {
+            actionBar
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 16) {
+            BookCover(book: book, cornerRadius: 12, prominent: true)
+                .frame(width: 104)
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text(book.kind.rawValue)
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(1.6)
+                    .foregroundStyle(book.kind.tint)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(book.kind.tint.opacity(0.14), in: Capsule())
+
+                Text(book.title)
+                    .font(.system(size: 24, weight: .semibold, design: .serif))
+                    .foregroundStyle(Palette.text)
+                    .lineLimit(2)
+
+                Text("\(book.author) · \(book.chapterCount) \(book.unitLabel)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.secondary)
+
+                Text(book.lastPosition)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Palette.jade)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var meta: some View {
+        HStack(spacing: 0) {
+            metaItem("进度", "\(Int(book.progress * 100))%")
+            metaDivider
+            metaItem("章节", "\(book.chapterCount)")
+            metaDivider
+            metaItem(book.kind == .audio ? "时长" : "摘录", book.kind == .audio ? (book.duration ?? "—") : "\(store.excerpts(for: book.id).count)")
+        }
+        .padding(.vertical, 14)
+        .glassSurface(cornerRadius: 20)
+    }
+
+    private var metaDivider: some View {
+        Rectangle()
+            .fill(Palette.hairline)
+            .frame(width: 0.6, height: 26)
+    }
+
+    private func metaItem(_ title: String, _ value: String) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.system(size: 17, weight: .semibold, design: .rounded))
+                .foregroundStyle(Palette.text)
+            Text(title)
+                .font(.system(size: 10))
+                .foregroundStyle(Palette.tertiary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if book.kind == .comic {
+            comicPreview
+        } else {
+            audioPreview
         }
     }
 
     private var comicPreview: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionHeading(text: "页面预览")
+        VStack(alignment: .leading, spacing: 11) {
+            SectionHeading(text: "页面预览", trailing: "单页模式")
 
             HStack(spacing: 8) {
                 ForEach(0..<3, id: \.self) { index in
                     ZStack {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(index == 0 ? Color(hex: 0x2C3A48) : Color.white.opacity(0.07))
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(index == 0 ? Color(hex: 0x2C3A48) : Palette.faint)
 
                         Image(systemName: index == 0 ? "cloud.moon" : "photo")
-                            .font(.system(size: 18, weight: .light))
-                            .foregroundStyle(Theme.secondary.opacity(0.7))
+                            .font(.system(size: 17, weight: .light))
+                            .foregroundStyle(Palette.tertiary)
                     }
-                    .frame(height: 92)
+                    .frame(height: 96)
                 }
             }
 
-            HStack {
-                Text("第 12 页 / \(book.pageCount ?? 0) 页")
-                Spacer()
-                Text("单页模式")
-            }
-            .font(.system(size: 11))
-            .foregroundStyle(Theme.secondary)
+            Text("第 12 页 / \(book.pageCount ?? 0) 页")
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.tertiary)
         }
-        .padding(20)
+        .padding(16)
+        .glassSurface(cornerRadius: 22)
     }
 
     private var audioPreview: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SectionHeading(text: "音轨")
+        VStack(alignment: .leading, spacing: 13) {
+            SectionHeading(text: "音轨", trailing: book.duration)
 
             HStack(alignment: .center, spacing: 3) {
-                ForEach(0..<34, id: \.self) { index in
+                ForEach(0..<40, id: \.self) { index in
                     Capsule()
-                        .fill(index < 12 ? Theme.accent : Theme.hairline)
-                        .frame(width: 3, height: CGFloat(8 + (index * 7) % 26))
+                        .fill(index < 14 ? Palette.accent : Palette.faint)
+                        .frame(width: 3, height: CGFloat(8 + (index * 11) % 28))
                 }
             }
-            .frame(height: 34)
+            .frame(height: 36)
 
-            HStack {
-                Text("01:12")
-                Spacer()
-                Text(book.duration ?? "")
-            }
-            .font(.system(size: 11))
-            .foregroundStyle(Theme.secondary)
+            Text("上次听到 01:12")
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.tertiary)
         }
-        .padding(20)
+        .padding(16)
+        .glassSurface(cornerRadius: 22)
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                store.toggleFinished(book.id)
+            } label: {
+                Image(systemName: book.isFinished ? "checkmark.circle.fill" : "checkmark.circle")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(book.isFinished ? Palette.jade : Palette.secondary)
+                    .glassCircle(diameter: 50)
+            }
+            .buttonStyle(PressableStyle())
+
+            Button {
+                dismiss()
+                switch book.kind {
+                case .audio:
+                    store.player.load(book)
+                case .comic:
+                    store.showToast("漫画阅读器将在后续版本接入")
+                case .novel:
+                    store.showToast("已回到书架，点封面继续阅读")
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: book.kind == .audio ? "play.fill" : "book.fill")
+                        .font(.system(size: 13, weight: .bold))
+                    Text(book.kind == .audio ? "开始收听" : "继续阅读")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .foregroundStyle(Palette.onAccent)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 15)
+                .background(Palette.accentSolid, in: Capsule())
+            }
+            .buttonStyle(PressableStyle(scale: 0.97))
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 6)
     }
 }
