@@ -20,21 +20,52 @@ struct ReaderView: View {
     @State private var commentParagraph: Paragraph?
     @State private var flash: String?
     @State private var viewport: CGSize = CGSize(width: 390, height: 844)
+    /// 滚动模式下当前可见段落的 ID，与 ScrollReaderView 的 scrollPosition 双向绑定。
+    @State private var scrollParagraphID: String?
+    /// 滚动模式下据此把段落位置换算成与分页模式一致的百分比。
+    @State private var scrollProgress: Double = 0
 
     private var settings: ReaderSettings { store.settings }
     private var chapters: [Chapter] { store.chapters(for: book) }
     private var currentPage: ReaderPage? { pages.indices.contains(pageIndex) ? pages[pageIndex] : nil }
+
+    /// 当前章节标题，分页与滚动两种模式统一口径。
+    private var currentChapterTitle: String {
+        if isScrollMode { return scrollAnchor.chapterTitle ?? chapters.first?.title ?? book.lastPosition }
+        return currentPage?.chapterTitle ?? book.lastPosition
+    }
+
+    private var isScrollMode: Bool { settings.pageMode == .scroll }
+
     private var isBookmarked: Bool {
         store.isBookmarked(
             bookID: book.id,
             pageIndex: pageIndex,
-            chapterTitle: currentPage?.chapterTitle,
-            paragraphID: anchorParagraphID
+            chapterTitle: currentChapterTitle,
+            paragraphID: currentAnchorParagraphID
         )
     }
 
     /// 当前页首段 ID，作为书签与位置恢复的稳定锚点。
     private var anchorParagraphID: String? { currentPage?.paragraphs.first?.id }
+
+    /// 书签与听书使用的定位锚点，两种阅读模式统一口径。
+    private var currentAnchorParagraphID: String? {
+        isScrollMode ? scrollAnchor.paragraphID : anchorParagraphID
+    }
+
+    /// 当前锚点在所属章节内的 UTF-16 偏移，用于旧数据兼容与导出。
+    private var currentAnchorOffset: Int {
+        if isScrollMode {
+            let anchor = scrollAnchor
+            guard let title = anchor.chapterTitle,
+                  let id = anchor.paragraphID,
+                  let chapter = chapters.first(where: { $0.title == title }),
+                  let index = chapter.paragraphs.firstIndex(where: { $0.id == id }) else { return 0 }
+            return chapter.paragraphs.prefix(index).reduce(0) { $0 + $1.text.utf16.count }
+        }
+        return anchorOffset
+    }
 
     /// 当前页首段在所属章节内的 UTF-16 偏移，仅用于展示与兼容旧数据。
     private var anchorOffset: Int {
@@ -45,11 +76,28 @@ struct ReaderView: View {
         return chapter.paragraphs.prefix(index).reduce(0) { $0 + $1.text.utf16.count }
     }
 
+    /// 滚动模式下的定位锚点：当前可见段落所在章节与段落本身。
+    private var scrollAnchor: (chapterTitle: String?, paragraphID: String?) {
+        guard let id = scrollParagraphID else { return (nil, nil) }
+        for chapter in chapters {
+            if chapter.paragraphs.contains(where: { $0.id == id }) {
+                return (chapter.title, id)
+            }
+        }
+        return (chapters.first?.title, id)
+    }
+
     private var progress: Double {
-        pages.count <= 1 ? 0 : Double(pageIndex) / Double(pages.count - 1)
+        if isScrollMode { return scrollProgress }
+        return pages.count <= 1 ? 0 : Double(pageIndex) / Double(pages.count - 1)
     }
 
     private var chapterText: String {
+        if isScrollMode {
+            let title = scrollAnchor.chapterTitle ?? ""
+            let paragraphs = chapters.first { $0.title == title }?.paragraphs ?? []
+            return paragraphs.map(\.text).joined(separator: "\n")
+        }
         let title = currentPage?.chapterTitle ?? ""
         let paragraphs = chapters.first { $0.title == title }?.paragraphs ?? currentPage?.paragraphs ?? []
         return paragraphs.map(\.text).joined(separator: "\n")
@@ -135,11 +183,17 @@ struct ReaderView: View {
         .onChange(of: settings.pageMode) { _, _ in rebuild(restore: false) }
         .onChange(of: pageIndex) { _, _ in syncProgress() }
         .sheet(isPresented: $showTOC) {
-            TOCSheet(chapters: chapters, currentTitle: currentPage?.chapterTitle ?? "") { title in
-                if let index = pages.firstIndex(where: { $0.chapterTitle == title }) {
+            TOCSheet(chapters: chapters, currentTitle: currentChapterTitle) { title in
+                if isScrollMode {
+                    if let paragraph = chapters.first(where: { $0.title == title })?.paragraphs.first {
+                        scrollParagraphID = paragraph.id
+                        updateScrollProgress()
+                        syncProgress()
+                    }
+                } else if let index = pages.firstIndex(where: { $0.chapterTitle == title }) {
                     pageIndex = index
-                    hideChromeAfterDelay()
                 }
+                hideChromeAfterDelay()
                 showTOC = false
             }
             .presentationDetents([.medium, .large])
@@ -168,7 +222,7 @@ struct ReaderView: View {
         .sheet(isPresented: $showListen) {
             ListenSheet(
                 book: book,
-                chapterTitle: currentPage?.chapterTitle ?? book.lastPosition,
+                chapterTitle: currentChapterTitle,
                 text: chapterText
             )
             .presentationDetents([.large])
@@ -265,11 +319,17 @@ struct ReaderView: View {
             ScrollReaderView(
                 chapters: chapters,
                 settings: settings,
+                visibleParagraphID: $scrollParagraphID,
                 onComment: { commentParagraph = $0 },
                 onExcerpt: { paragraph in excerpt(paragraph) },
                 onTap: toggleChrome
             )
             .environment(\.layoutDirection, settings.direction.layoutDirection)
+            .onChange(of: scrollParagraphID) { _, _ in
+                // 可见段落变化即回写进度；scrollTargetLayout 让每段都是可停靠目标。
+                updateScrollProgress()
+                syncProgress()
+            }
         }
     }
 
@@ -313,7 +373,7 @@ struct ReaderView: View {
                         .foregroundStyle(chromeColor)
                         .lineLimit(1)
 
-                    Text(currentPage?.chapterTitle ?? book.lastPosition)
+                    Text(currentChapterTitle)
                         .font(.system(size: 10))
                         .foregroundStyle(settings.theme.secondary)
                         .lineLimit(1)
@@ -327,11 +387,11 @@ struct ReaderView: View {
                 Button {
                     store.toggleBookmark(
                         book: book,
-                        chapterTitle: currentPage?.chapterTitle ?? book.lastPosition,
+                        chapterTitle: currentChapterTitle,
                         pageIndex: pageIndex,
                         progress: progress,
-                        paragraphID: anchorParagraphID,
-                        offset: anchorOffset
+                        paragraphID: currentAnchorParagraphID,
+                        offset: currentAnchorOffset
                     )
                 } label: {
                     Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
@@ -440,11 +500,11 @@ struct ReaderView: View {
                     toolButton("书签", symbol: isBookmarked ? "bookmark.fill" : "bookmark") {
                         store.toggleBookmark(
                             book: book,
-                            chapterTitle: currentPage?.chapterTitle ?? book.lastPosition,
+                            chapterTitle: currentChapterTitle,
                             pageIndex: pageIndex,
                             progress: progress,
-                            paragraphID: anchorParagraphID,
-                            offset: anchorOffset
+                            paragraphID: currentAnchorParagraphID,
+                            offset: currentAnchorOffset
                         )
                     }
                     toolButton("听书", symbol: "speaker.wave.2") { showListen = true }
@@ -501,7 +561,7 @@ struct ReaderView: View {
     private func excerpt(_ paragraph: Paragraph) {
         store.addExcerpt(
             book: book,
-            chapter: currentPage?.chapterTitle ?? book.lastPosition,
+            chapter: currentChapterTitle,
             text: paragraph.text
         )
         showFlash("已摘录这一句")
@@ -554,14 +614,20 @@ struct ReaderView: View {
         if arguments.contains("-showSourceSwitch") { showSourceSwitch = true }
         if arguments.contains("-coverTurn") { settings.pageTurnEffect = .cover }
         if arguments.contains("-noTurn") { settings.pageTurnEffect = .none }
+        if arguments.contains("-scrollMode") { settings.pageMode = .scroll }
         #endif
     }
 
     private func rebuild(restore: Bool, targetChapter: String? = nil) {
         // 锚点用「当前页首段的段落 ID」而不是页序号：重排后同一段文字可能不再是某页的第一段，
         // 所以要按「包含该段」来找，而不是按页 id 相等来找。
-        let anchorParagraphID = pages.indices.contains(pageIndex) ? pages[pageIndex].paragraphs.first?.id : nil
-        let anchorChapter = pages.indices.contains(pageIndex) ? pages[pageIndex].chapterTitle : nil
+        // 滚动模式下当前页首段没有意义，改取滚动定位到的段落。
+        let anchorParagraphID: String? = isScrollMode
+            ? scrollParagraphID
+            : (pages.indices.contains(pageIndex) ? pages[pageIndex].paragraphs.first?.id : nil)
+        let anchorChapter: String? = isScrollMode
+            ? scrollAnchor.chapterTitle
+            : (pages.indices.contains(pageIndex) ? pages[pageIndex].chapterTitle : nil)
         let newPages = Paginator.pages(
             for: chapters,
             fontSize: settings.fontSize,
@@ -595,6 +661,14 @@ struct ReaderView: View {
             pageIndex = min(pageIndex, newPages.count - 1)
         }
 
+        // 分页算出的落点也是滚动模式的恢复位置：让滚动视图直接滚到那一段。
+        if isScrollMode {
+            scrollParagraphID = newPages.indices.contains(pageIndex)
+                ? newPages[pageIndex].paragraphs.first?.id
+                : nil
+            updateScrollProgress()
+        }
+
         syncProgress()
     }
 
@@ -612,6 +686,12 @@ struct ReaderView: View {
 
     /// 跳转到书签：优先按段落锚点定位，旧书签没有锚点时才回退到页序号。
     private func jump(to bookmark: Bookmark) {
+        if isScrollMode {
+            scrollParagraphID = bookmark.paragraphID
+            updateScrollProgress()
+            syncProgress()
+            return
+        }
         let target = pageIndexContaining(
             chapterTitle: bookmark.chapterTitle,
             paragraphID: bookmark.paragraphID,
@@ -623,7 +703,46 @@ struct ReaderView: View {
         }
     }
 
+    /// 把「当前可见段落在整个阅读顺序中的位置」换算成百分比，与分页模式的口径一致。
+    private func updateScrollProgress() {
+        var total = 0
+        var seen = 0
+        var found = false
+        for chapter in chapters {
+            for paragraph in chapter.paragraphs {
+                total += 1
+                if !found {
+                    if paragraph.id == scrollParagraphID { found = true } else { seen += 1 }
+                }
+            }
+        }
+        guard total > 0 else {
+            scrollProgress = 0
+            return
+        }
+        scrollProgress = min(max(Double(seen) / Double(total), 0), 1)
+    }
+
     private func syncProgress() {
+        if isScrollMode {
+            let anchor = scrollAnchor
+            guard let chapterTitle = anchor.chapterTitle, let paragraphID = anchor.paragraphID else { return }
+            let chapter = chapters.first { $0.title == chapterTitle }
+            let offset: Int = {
+                guard let chapter,
+                      let index = chapter.paragraphs.firstIndex(where: { $0.id == paragraphID }) else { return 0 }
+                return chapter.paragraphs.prefix(index).reduce(0) { $0 + $1.text.utf16.count }
+            }()
+            store.updateProgress(
+                bookID: book.id,
+                progress: scrollProgress,
+                position: chapterTitle,
+                chapterTitle: chapterTitle,
+                paragraphID: paragraphID,
+                offset: offset
+            )
+            return
+        }
         guard !pages.isEmpty, let page = currentPage else { return }
         store.updateProgress(
             bookID: book.id,
@@ -881,44 +1000,69 @@ struct ParagraphView: View {
 struct ScrollReaderView: View {
     let chapters: [Chapter]
     let settings: ReaderSettings
+    @Binding var visibleParagraphID: String?
     let onComment: (Paragraph) -> Void
     let onExcerpt: (Paragraph) -> Void
     let onTap: () -> Void
 
+    /// 章节标题与段落拍平成一行行，这样章节标题也能参与滚动定位，段落之间仍保持原有间距。
+    private enum Row: Identifiable {
+        case heading(String)
+        case paragraph(Paragraph)
+
+        var id: String {
+            switch self {
+            case .heading(let title): return "h-\(title)"
+            case .paragraph(let paragraph): return paragraph.id
+            }
+        }
+    }
+
+    private var rows: [Row] {
+        chapters.flatMap { chapter -> [Row] in
+            [.heading(chapter.title)] + chapter.paragraphs.map { Row.paragraph($0) }
+        }
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
-                ForEach(chapters) { chapter in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(chapter.title)
-                            .font(.system(size: 13, weight: .semibold, design: .serif))
-                            .tracking(1.4)
-                            .foregroundStyle(settings.theme.secondary)
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(rows) { row in
+                    switch row {
+                    case .heading(let title):
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(title)
+                                .font(.system(size: 13, weight: .semibold, design: .serif))
+                                .tracking(1.4)
+                                .foregroundStyle(settings.theme.secondary)
 
-                        Rectangle()
-                            .fill(settings.theme.secondary.opacity(0.3))
-                            .frame(width: 26, height: 1.5)
-                    }
-                    .padding(.top, 8)
-
-                    VStack(alignment: .leading, spacing: settings.fontSize * (0.72 + settings.lineSpacing * 0.5)) {
-                        ForEach(chapter.paragraphs) { paragraph in
-                            ParagraphView(
-                                paragraph: paragraph,
-                                settings: settings,
-                                onComment: onComment,
-                                onExcerpt: onExcerpt
-                            )
+                            Rectangle()
+                                .fill(settings.theme.secondary.opacity(0.3))
+                                .frame(width: 26, height: 1.5)
                         }
+                        .padding(.top, 30)
+                        .padding(.bottom, 14)
+
+                    case .paragraph(let paragraph):
+                        ParagraphView(
+                            paragraph: paragraph,
+                            settings: settings,
+                            onComment: onComment,
+                            onExcerpt: onExcerpt
+                        )
+                        .padding(.bottom, settings.fontSize * (0.72 + settings.lineSpacing * 0.5))
                     }
                 }
             }
+            .scrollTargetLayout()
             .padding(.horizontal, settings.sideMargin)
             .padding(.top, 90)
             .padding(.bottom, 130)
             .environment(\.layoutDirection, .leftToRight)
         }
         .scrollIndicators(.hidden)
+        // 绑定当前可见段落：滚动时回写进度，恢复位置时把绑定值设回去即可自动滚到该段。
+        .scrollPosition(id: $visibleParagraphID)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
     }
