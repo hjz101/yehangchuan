@@ -109,7 +109,9 @@ final class MockBackend {
     var lastSyncAt: Date?
 
     var cacheChapterMB = 12.4
-    var cacheImageMB = 48.6
+    /// 图片缓存已改为真实落盘（见 ImageCacheStore），这里不再保留假数值，
+    /// 免得设置页显示的数字和磁盘对不上。
+    var cacheImageMB: Double = 0
     var cacheAudioMB = 36.2
     var downloadProgress: Double = 0
     var isDownloading = false
@@ -256,7 +258,7 @@ final class MockBackend {
         }
         cacheChapterMB += Double(count) * 0.18
         isDownloading = false
-        lastDownloadLabel = "\(book.title) · \(count) 章已缓存"
+        lastDownloadLabel = "\(book.title) · \(count) 章（演示估算）"
         return count
     }
 

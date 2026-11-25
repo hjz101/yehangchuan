@@ -530,6 +530,23 @@ final class AudioPlayer {
     }
 }
 
+// MARK: - Speed label
+
+/// 倍速文案。`%.2g` 只有两位有效数字，1.25 会被格式化成「1.2」，
+/// 与滑块实际取值不符；这里按是否有小数位分别输出。
+enum SpeedLabel {
+    static func text(_ value: Double) -> String {
+        let rounded = (value * 100).rounded() / 100
+        if rounded == rounded.rounded() {
+            return "\(Int(rounded))×"
+        }
+        if (rounded * 10).rounded() == rounded * 10 {
+            return String(format: "%.1f×", rounded)
+        }
+        return String(format: "%.2f×", rounded)
+    }
+}
+
 // MARK: - Store
 
 @MainActor

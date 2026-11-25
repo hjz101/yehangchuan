@@ -423,7 +423,9 @@ struct ReaderView: View {
                     Button {
                         Task { @MainActor in
                             let count = await store.backend.download(book: book, count: 3)
-                            showFlash("已缓存 \(count) 章")
+                            // 演示工程没有真实章节可下载，这里只更新估算的缓存量，
+                            // 文案里如实标出「演示」，别让读者以为真的离线可用。
+                            showFlash("已记录 \(count) 章缓存（演示数据）")
                         }
                     } label: {
                         Label("缓存后续章节", systemImage: "arrow.down.circle")

@@ -294,7 +294,7 @@ struct SmartImportSheet: View {
                 title: name,
                 author: "本地音频",
                 kind: .audio,
-                detail: "\(ext.uppercased()) 元数据已读取 · 演示音轨",
+                detail: "\(ext.uppercased()) · 未解析音频内容，使用演示音轨",
                 chapters: Self.demoChapters(title: name, count: 2)
             )
         } else {
@@ -304,7 +304,7 @@ struct SmartImportSheet: View {
                 title: name,
                 author: "本地文件",
                 kind: kind,
-                detail: "\(ext.uppercased()) 元数据已读取 · 演示章节",
+                detail: "\(ext.uppercased()) · 未解析文件内容，使用演示章节",
                 chapters: chapters
             )
         }
@@ -540,6 +540,8 @@ struct ComicReaderView: View {
         .persistentSystemOverlays(.hidden)
         .onAppear {
             page = min(max(Int((book.progress * Double(pageCount - 1)).rounded()), 0), pageCount - 1)
+            // 图片缓存是真实文件，重新进入时按磁盘状态显示图标。
+            cached = ImageCacheStore.isCached(bookID: book.id)
             syncProgress()
         }
         .onChange(of: page) { _, _ in
@@ -578,8 +580,16 @@ struct ComicReaderView: View {
                 Spacer()
 
                 Button {
-                    cached.toggle()
-                    store.showToast(cached ? "已缓存 \(pageCount) 页图片" : "已关闭图片缓存")
+                    if cached {
+                        ImageCacheStore.remove(bookID: book.id)
+                        cached = false
+                        store.showToast("已清除 \(book.title) 的图片缓存")
+                    } else if let bytes = ImageCacheStore.store(bookID: book.id, title: book.title, pages: pageCount) {
+                        cached = true
+                        store.showToast("已缓存 \(pageCount) 页图片 · \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))")
+                    } else {
+                        store.showToast("缓存写入失败，请检查存储空间")
+                    }
                 } label: {
                     Image(systemName: cached ? "arrow.down.circle.fill" : "arrow.down.circle")
                         .font(.system(size: 15, weight: .semibold))
@@ -1101,7 +1111,7 @@ struct ListenSheet: View {
     private var speedPicker: some View {
         GlassSegmented(
             items: [1.0, 1.25, 1.5, 2.0],
-            title: { $0 == 1.0 ? "1×" : String(format: "%.2g×", $0) },
+            title: { SpeedLabel.text($0) },
             selection: Binding(
                 get: { speech.speed },
                 set: { speech.setSpeed($0) }

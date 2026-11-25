@@ -849,7 +849,7 @@ struct VoiceLabSheet: View {
                     .onChange(of: speed) { _, newValue in
                         store.speech.setSpeed(newValue)
                     }
-                Text(String(format: "%.2g×", speed))
+                Text(SpeedLabel.text(speed))
                     .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                     .foregroundStyle(Palette.tertiary)
                     .monospacedDigit()

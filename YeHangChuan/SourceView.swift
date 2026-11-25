@@ -585,7 +585,8 @@ struct SourceSearchSheet: View {
                                 if !isSearching && !enabledSources.isEmpty {
                                     HStack(spacing: 5) {
                                         Image(systemName: "antenna.radiowaves.left.and.right")
-                                        Text("\(enabledSources.count) 个书源并发")
+                                        // 检索是逐个书源依次请求的，别写成「并发」。
+                                        Text("依次检索 \(enabledSources.count) 个书源")
                                         if hitsBySource.values.reduce(0, +) > results.count {
                                             Text("· \(hitsBySource.values.reduce(0, +) - results.count) 条重复已合并")
                                         }

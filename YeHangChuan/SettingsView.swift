@@ -4,6 +4,20 @@ import UIKit
 struct SettingsView: View {
     @Environment(AppStore.self) private var store
 
+    /// 缓存与空间：章节 / 音频是演示估算值，图片缓存读磁盘真实占用。
+    static func storageLabel(store: AppStore) -> String {
+        let imageMB = Double(ImageCacheStore.totalBytes()) / 1_048_576
+        let total = store.backend.cacheChapterMB + imageMB + store.backend.cacheAudioMB
+        return String(format: "%.1f MB", total)
+    }
+
+    /// 版本号从 Info.plist 读，别在界面里手写一份会跟工程设置对不上的字符串。
+    static let versionLabel: String = {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let system = UIDevice.current.systemVersion
+        return "\(version) · iOS \(system)"
+    }()
+
     @State private var showReaderSettings = false
     @State private var showDistribution = false
     @State private var showGoal = false
@@ -113,7 +127,7 @@ struct SettingsView: View {
                             } label: {
                                 SettingsRow(
                                     title: "缓存与空间",
-                                    value: String(format: "%.1f MB", store.backend.cacheChapterMB + store.backend.cacheImageMB + store.backend.cacheAudioMB),
+                                    value: Self.storageLabel(store: store),
                                     systemImage: "internaldrive"
                                 )
                             }
@@ -150,7 +164,7 @@ struct SettingsView: View {
 
                             SettingsRow(
                                 title: "本机占用",
-                                value: String(format: "%.1f MB", 12.4 + store.backend.cacheChapterMB + store.backend.cacheImageMB + store.backend.cacheAudioMB),
+                                value: Self.storageLabel(store: store),
                                 systemImage: "internaldrive",
                                 showsChevron: false,
                                 isLast: true
@@ -244,7 +258,7 @@ struct SettingsView: View {
                         group("关于") {
                             SettingsRow(
                                 title: "版本",
-                                value: "0.3.0 · iOS 27",
+                                value: Self.versionLabel,
                                 systemImage: "info.circle",
                                 showsChevron: false,
                                 isLast: true
@@ -1152,9 +1166,14 @@ struct CacheSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var message = ""
+    /// 图片缓存是真实落盘的清单文件，单独按磁盘内容统计，
+    /// 不再用 MockBackend 里那个写死的 48.6 MB。
+    @State private var imageCacheBytes = ImageCacheStore.totalBytes()
+
+    private var imageCacheMB: Double { Double(imageCacheBytes) / 1_048_576 }
 
     private var total: Double {
-        store.backend.cacheChapterMB + store.backend.cacheImageMB + store.backend.cacheAudioMB
+        store.backend.cacheChapterMB + imageCacheMB + store.backend.cacheAudioMB
     }
 
     var body: some View {
@@ -1169,7 +1188,7 @@ struct CacheSheet: View {
                                 value: min(total / 160, 1),
                                 lineWidth: 7,
                                 tint: Palette.jade,
-                                label: String(format: "%.0f", total),
+                                label: String(format: "%.1f", total),
                                 caption: "MB"
                             )
                             .frame(width: 62, height: 62)
@@ -1188,17 +1207,23 @@ struct CacheSheet: View {
                         .glassSurface(cornerRadius: 22)
 
                         cacheRow("章节", size: store.backend.cacheChapterMB, symbol: "doc.text", kind: "章节")
-                        cacheRow("图片", size: store.backend.cacheImageMB, symbol: "photo", kind: "图片")
+                        cacheRow("图片", size: imageCacheMB, symbol: "photo", kind: "图片")
                         cacheRow("音频", size: store.backend.cacheAudioMB, symbol: "waveform", kind: "音频")
 
                         Button {
-                            let freed = store.backend.clearCache("全部")
-                            message = String(format: "已清理 %.1f MB", freed)
+                            let mockFreed = store.backend.clearCache("全部")
+                            let diskFreed = Double(ImageCacheStore.removeAll()) / 1_048_576
+                            imageCacheBytes = ImageCacheStore.totalBytes()
+                            message = String(format: "已清理 %.1f MB", mockFreed + diskFreed)
                         } label: {
                             Text("清理全部缓存")
                                 .readableButtonStyle(tint: Palette.accentSolid)
                         }
                         .buttonStyle(PressableStyle(scale: 0.97))
+
+                        Text("章节与音频为演示数据估算值；图片缓存是漫画页清单，真实写在 Application Support 下。")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Palette.tertiary)
 
                         if !message.isEmpty {
                             Text(message)
@@ -1241,8 +1266,14 @@ struct CacheSheet: View {
             Spacer()
 
             Button("清理") {
-                let freed = store.backend.clearCache(kind)
-                message = String(format: "已清理 %.1f MB %@", freed, title)
+                if kind == "图片" {
+                    let freed = Double(ImageCacheStore.removeAll()) / 1_048_576
+                    imageCacheBytes = ImageCacheStore.totalBytes()
+                    message = String(format: "已清理 %.1f MB %@", freed, title)
+                } else {
+                    let freed = store.backend.clearCache(kind)
+                    message = String(format: "已清理 %.1f MB %@", freed, title)
+                }
             }
             .font(.system(size: 11.5, weight: .medium))
             .foregroundStyle(Palette.accent)

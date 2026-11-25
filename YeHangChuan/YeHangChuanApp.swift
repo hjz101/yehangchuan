@@ -331,7 +331,7 @@ struct AudioPlayerView: View {
 
             GlassSegmented(
                 items: [1.0, 1.25, 1.5, 2.0],
-                title: { $0 == 1.0 ? "1×" : String(format: "%.2g×", $0) },
+                title: { SpeedLabel.text($0) },
                 selection: Binding(
                     get: { store.player.speed },
                     set: { store.player.speed = $0 }
