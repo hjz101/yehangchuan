@@ -27,7 +27,7 @@ enum BookKind: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-struct Book: Identifiable, Hashable, Codable {
+struct Book: Identifiable, Hashable, Codable, Sendable {
     let id: String
     var title: String
     var author: String
@@ -53,7 +53,7 @@ enum SourceKind: String, CaseIterable, Codable {
     case js = "JS"
 }
 
-struct BookSource: Identifiable, Hashable, Codable {
+struct BookSource: Identifiable, Hashable, Codable, Sendable {
     let id: String
     var name: String
     var host: String
@@ -76,13 +76,13 @@ enum SourceLoginState: String, Codable {
 
 // MARK: - Reading Content
 
-struct Paragraph: Identifiable, Hashable, Codable {
+struct Paragraph: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let text: String
     var comments: [SegmentComment] = []
 }
 
-struct SegmentComment: Identifiable, Hashable, Codable {
+struct SegmentComment: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let author: String
     let text: String
@@ -91,7 +91,7 @@ struct SegmentComment: Identifiable, Hashable, Codable {
     var minutesAgo: Int = 0
 }
 
-struct Chapter: Identifiable, Hashable, Codable {
+struct Chapter: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let title: String
     var paragraphs: [Paragraph]
@@ -325,7 +325,7 @@ final class ReaderSettings {
     }
 }
 
-struct ReaderSnapshot: Codable, Equatable {
+struct ReaderSnapshot: Codable, Equatable, Sendable {
     var fontSize: Double = 18
     var lineSpacing: Double = 0.75
     var theme: ReaderTheme = .voyage
@@ -344,7 +344,7 @@ struct ReaderSnapshot: Codable, Equatable {
 
 // MARK: - Excerpts
 
-struct Excerpt: Identifiable, Hashable, Codable {
+struct Excerpt: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let bookID: String
     let bookTitle: String
@@ -364,7 +364,7 @@ struct Excerpt: Identifiable, Hashable, Codable {
 
 // MARK: - Bookmarks & Search
 
-struct Bookmark: Identifiable, Hashable, Codable {
+struct Bookmark: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let bookID: String
     let bookTitle: String
@@ -391,7 +391,7 @@ struct ReaderTarget: Identifiable {
     var id: String { "\(book.id)-\(chapterTitle ?? "start")" }
 }
 
-struct ReadingPosition: Codable, Equatable {
+struct ReadingPosition: Codable, Equatable, Sendable {
     let bookID: String
     var chapterTitle: String
     var paragraphID: String
@@ -402,7 +402,7 @@ struct ReadingPosition: Codable, Equatable {
 
 // MARK: - Eye care
 
-struct EyeCareSettings: Codable, Equatable {
+struct EyeCareSettings: Codable, Equatable, Sendable {
     var enabled = false
     var warmth: Double = 0.35
     var dim: Double = 0.08
@@ -549,7 +549,11 @@ final class AppStore {
     var toast: String?
     var syncSheetRequested = false
 
-    private static let snapshotKey = "yehangchuan.snapshot.v5"
+    private static let legacySnapshotKey = "yehangchuan.snapshot.v5"
+
+    @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingSnapshot: Snapshot?
+    @ObservationIgnored private var pendingSequence: Int = 0
 
     init() {
         loadSnapshot()
@@ -915,7 +919,7 @@ final class AppStore {
 
     // MARK: Persistence
 
-    private struct Snapshot: Codable {
+    struct Snapshot: Codable, Sendable {
         var books: [Book]
         var sources: [BookSource]
         var excerpts: [Excerpt]
@@ -929,8 +933,8 @@ final class AppStore {
         var eyeCare: EyeCareSettings
     }
 
-    func saveSnapshot() {
-        let snapshot = Snapshot(
+    private func makeSnapshot() -> Snapshot {
+        Snapshot(
             books: books,
             sources: sources,
             excerpts: excerpts,
@@ -943,13 +947,67 @@ final class AppStore {
             customChapters: customChapters,
             eyeCare: eyeCare
         )
+    }
+
+    /// 合并写入：连续调用只会在最后一次之后 0.6 秒真正落盘，编码在后台线程完成。
+    /// 翻页这类高频写回不再每次都序列化整座书库。
+    func saveSnapshot() {
+        let snapshot = makeSnapshot()
+        let sequence = SnapshotStore.shared.nextSequence()
+        pendingSnapshot = snapshot
+        pendingSequence = sequence
+        saveTask?.cancel()
+        saveTask = Task {
+            do {
+                try await Task.sleep(for: .milliseconds(600))
+            } catch {
+                return
+            }
+            await Self.persist(snapshot, sequence: sequence)
+            if pendingSequence == sequence { pendingSnapshot = nil }
+        }
+    }
+
+    /// 立即落盘，用于进入后台这类「必须马上生效」的时机。
+    /// 会取消尚未触发的合并写入，并以更高序号写入，保证覆盖掉旧数据。
+    func flushSnapshot() {
+        saveTask?.cancel()
+        saveTask = nil
+        pendingSnapshot = nil
+        let snapshot = makeSnapshot()
+        let sequence = SnapshotStore.shared.nextSequence()
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
-        UserDefaults.standard.set(data, forKey: Self.snapshotKey)
+        SnapshotStore.shared.write(data, sequence: sequence)
+    }
+
+    private static func persist(_ snapshot: Snapshot, sequence: Int) async {
+        await Task.detached(priority: .utility) {
+            guard let data = try? JSONEncoder().encode(snapshot) else { return }
+            SnapshotStore.shared.write(data, sequence: sequence)
+        }.value
     }
 
     private func loadSnapshot() {
-        guard let data = UserDefaults.standard.data(forKey: Self.snapshotKey),
+        if let data = SnapshotStore.shared.read() {
+            if let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) {
+                apply(snapshot)
+                return
+            }
+            // 文件损坏：先留档再回落到默认数据，避免静默覆盖掉用户的书库。
+            SnapshotStore.shared.quarantineCorruptFile()
+        }
+
+        // 一次性迁移旧版 UserDefaults 快照
+        guard let data = UserDefaults.standard.data(forKey: Self.legacySnapshotKey),
               let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
+        apply(snapshot)
+        if let encoded = try? JSONEncoder().encode(snapshot) {
+            SnapshotStore.shared.write(encoded, sequence: SnapshotStore.shared.nextSequence())
+        }
+        UserDefaults.standard.removeObject(forKey: Self.legacySnapshotKey)
+    }
+
+    private func apply(_ snapshot: Snapshot) {
         books = snapshot.books
         sources = snapshot.sources
         excerpts = snapshot.excerpts
@@ -1021,5 +1079,60 @@ enum Paginator {
             }
         }
         return result
+    }
+}
+
+// MARK: - Snapshot storage
+
+/// 快照落盘。放在 Application Support 下的独立文件里，用原子写；
+/// 序号保证后发起的写入覆盖先发起的，避免后台编码完成后把新数据盖回旧数据。
+final class SnapshotStore: @unchecked Sendable {
+    static let shared = SnapshotStore()
+
+    private let queue = DispatchQueue(label: "yehangchuan.snapshot", qos: .utility)
+    private var lastWrittenSequence = 0
+    private var lastSequence = 0
+    private let fileURL: URL?
+
+    private init() {
+        let manager = FileManager.default
+        let base = manager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        var directory = base?.appendingPathComponent("YeHangChuan", isDirectory: true)
+        if let directory {
+            try? manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        } else {
+            directory = base
+        }
+        fileURL = directory?.appendingPathComponent("snapshot.json")
+    }
+
+    func nextSequence() -> Int {
+        queue.sync {
+            lastSequence += 1
+            return lastSequence
+        }
+    }
+
+    func read() -> Data? {
+        guard let fileURL else { return nil }
+        return try? Data(contentsOf: fileURL)
+    }
+
+    func write(_ data: Data, sequence: Int) {
+        queue.async { [fileURL, weak self] in
+            guard let self, let fileURL else { return }
+            guard sequence > lastWrittenSequence else { return }
+            lastWrittenSequence = sequence
+            try? data.write(to: fileURL, options: .atomic)
+        }
+    }
+
+    /// 把无法解码的快照文件改名留档，供之后排查，同时让下一次写入从干净状态开始。
+    func quarantineCorruptFile() {
+        guard let fileURL else { return }
+        let stamped = fileURL
+            .deletingPathExtension()
+            .appendingPathExtension("corrupt-\(Int(Date().timeIntervalSince1970)).json")
+        try? FileManager.default.moveItem(at: fileURL, to: stamped)
     }
 }

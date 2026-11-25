@@ -71,7 +71,7 @@ struct RootView: View {
         .onChange(of: store.appearance) { _, _ in store.saveSnapshot() }
         .onChange(of: store.goalMinutes) { _, _ in store.saveSnapshot() }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { store.saveSnapshot() }
+            if phase != .active { store.flushSnapshot() }
         }
     }
 
