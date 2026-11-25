@@ -78,9 +78,17 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
 
     var background: Color {
         switch self {
-        case .day: Theme.paper
+        case .day: Color(hex: 0xF6F1E7)
         case .paper: Color(hex: 0xEDE0C6)
         case .night: Color(hex: 0x14171C)
+        }
+    }
+
+    var backgroundDeep: Color {
+        switch self {
+        case .day: Color(hex: 0xEDE4D2)
+        case .paper: Color(hex: 0xE0CFAE)
+        case .night: Color(hex: 0x0C0F13)
         }
     }
 

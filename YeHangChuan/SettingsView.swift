@@ -11,7 +11,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.paper.ignoresSafeArea()
+                AppBackground()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
@@ -127,10 +127,7 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 content()
             }
-            .background(Color.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline)
-            }
+            .glassSurface(cornerRadius: 18)
             .padding(.horizontal, 20)
         }
     }
@@ -142,7 +139,7 @@ struct DistributionSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.paper.ignoresSafeArea()
+                AppBackground()
 
                 VStack(alignment: .leading, spacing: 18) {
                     HStack(alignment: .top, spacing: 14) {

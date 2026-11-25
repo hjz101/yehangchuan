@@ -9,7 +9,7 @@ struct YeHangChuanApp: App {
             RootView()
                 .environment(store)
                 .tint(Theme.accent)
-                .preferredColorScheme(.light)
+                .preferredColorScheme(.dark)
         }
     }
 }
@@ -32,7 +32,7 @@ struct RootView: View {
                 .tag(AppTab.settings)
                 .tabItem { Label("设置", systemImage: "slider.horizontal.3") }
         }
-        .toolbarBackground(Theme.paper, for: .tabBar)
+        .toolbarBackground(.ultraThinMaterial, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
         .overlay(alignment: .bottom) {
             if let toast = store.toast {

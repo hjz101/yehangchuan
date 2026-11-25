@@ -25,7 +25,12 @@ struct ReaderView: View {
 
     var body: some View {
         ZStack {
-            settings.theme.background.ignoresSafeArea()
+            LinearGradient(
+                colors: [settings.theme.background, settings.theme.backgroundDeep],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
             readingContent
 
@@ -37,7 +42,7 @@ struct ReaderView: View {
             if let flash {
                 Text(flash)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(settings.theme.text)
+                    .foregroundStyle(Theme.text)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(.regularMaterial, in: Capsule())
@@ -156,7 +161,7 @@ struct ReaderView: View {
                         .frame(width: 28, height: 28)
                 }
             }
-            .foregroundStyle(settings.theme.text)
+            .foregroundStyle(Theme.text)
             .padding(.horizontal, 18)
             .padding(.top, 6)
             .padding(.bottom, 10)
@@ -179,7 +184,7 @@ struct ReaderView: View {
                 Text(settings.pageMode == .scroll ? "滚动" : "\(pageIndex + 1) / \(pages.count)")
             }
             .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(settings.theme.secondary)
+            .foregroundStyle(Theme.secondary)
 
             HStack(spacing: 0) {
                 toolButton("目录", symbol: "list.bullet") {
@@ -221,7 +226,7 @@ struct ReaderView: View {
                 Text(title)
                     .font(.system(size: 10))
             }
-            .foregroundStyle(settings.theme.text)
+            .foregroundStyle(Theme.text)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
         }
@@ -435,7 +440,7 @@ struct TOCSheet: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(Theme.paper)
+            .background(AppBackground())
             .navigationTitle("目录")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -454,7 +459,7 @@ struct ReaderSettingsSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.paper.ignoresSafeArea()
+                AppBackground()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 26) {
@@ -573,7 +578,7 @@ struct SegmentCommentsSheet: View {
 
         NavigationStack {
             ZStack {
-                Theme.paper.ignoresSafeArea()
+                AppBackground()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
@@ -612,7 +617,7 @@ struct SegmentCommentsSheet: View {
                             }
                             .padding(14)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+                            .glassSurface(cornerRadius: 14)
                         }
 
                     }

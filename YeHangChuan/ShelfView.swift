@@ -35,7 +35,7 @@ struct ShelfView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.paper.ignoresSafeArea()
+                AppBackground()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
@@ -126,11 +126,8 @@ struct ShelfView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline)
-        }
+        .padding(.vertical, 11)
+        .glassSurface(cornerRadius: 16, interactive: true)
         .padding(.horizontal, 20)
     }
 
@@ -144,23 +141,27 @@ struct ShelfView: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 7) {
-                        Text("继续阅读")
+                Text("继续阅读")
                             .font(.system(size: 9, weight: .semibold))
                             .tracking(1.5)
-                            .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(Theme.secondary)
 
                         Text(book.title)
                             .font(.system(size: 17, weight: .semibold, design: .serif))
-                            .foregroundStyle(.white)
+                    .foregroundStyle(Theme.text)
                             .lineLimit(1)
                     }
 
                     Text("上次读到 \(book.lastPosition)")
                         .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(Theme.secondary)
                         .lineLimit(1)
 
-                    ProgressBar(value: book.progress)
+                ProgressBar(
+                    value: book.progress,
+                    tint: Theme.accent,
+                    track: Theme.secondary.opacity(0.22)
+                )
                         .frame(height: 2)
                         .padding(.top, 2)
                 }
@@ -170,25 +171,15 @@ struct ShelfView: View {
                 VStack(spacing: 4) {
                     Text("\(Int(book.progress * 100))%")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(Theme.secondary)
 
                     Image(systemName: "arrow.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .foregroundStyle(Theme.accent)
                 }
             }
             .padding(14)
-            .background(
-                LinearGradient(
-                    colors: [Theme.ink, Color(hex: 0x2C3138)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                in: RoundedRectangle(cornerRadius: 8)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.06))
-            }
+            .glassSurface(cornerRadius: 18, tint: Theme.ink.opacity(0.4), interactive: true)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 20)
@@ -225,10 +216,7 @@ struct ShelfView: View {
                 .foregroundStyle(Theme.text)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(Color.white.opacity(0.55), in: Capsule())
-                .overlay {
-                    Capsule().stroke(Theme.hairline)
-                }
+                .glassSurface(cornerRadius: 14, interactive: true)
             }
         }
         .padding(.horizontal, 20)
@@ -241,12 +229,11 @@ struct ShelfView: View {
                 .foregroundStyle(selected ? Theme.paper : Theme.text)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(selected ? Theme.ink : Color.white.opacity(0.5), in: Capsule())
-                .overlay {
-                    if !selected {
-                        Capsule().stroke(Theme.hairline)
-                    }
-                }
+                .glassSurface(
+                    cornerRadius: 16,
+                    tint: selected ? Theme.ink.opacity(0.55) : nil,
+                    interactive: true
+                )
         }
         .buttonStyle(.plain)
     }
@@ -319,27 +306,38 @@ struct BookTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             BookCover(book: book)
+                .overlay(alignment: .bottom) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(book.title)
+                            .font(.system(size: 13, weight: .semibold, design: .serif))
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(1)
 
-            Text(book.title)
-                .font(.system(size: 14, weight: .semibold, design: .serif))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
+                        HStack(spacing: 4) {
+                            Text(book.kind == .novel ? book.author : "\(book.kind.rawValue) · \(book.author)")
+                                .lineLimit(1)
 
-            HStack(spacing: 4) {
-                Text(book.kind == .novel ? book.author : "\(book.kind.rawValue) · \(book.author)")
-                    .lineLimit(1)
+                            Spacer(minLength: 0)
 
-                Spacer(minLength: 0)
+                            if book.progress > 0 && !book.isFinished {
+                                Text("\(Int(book.progress * 100))%")
+                            }
+                        }
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.secondary)
 
-                if book.progress > 0 && !book.isFinished {
-                    Text("\(Int(book.progress * 100))%")
+                        ProgressBar(
+                            value: book.progress,
+                            tint: Theme.accent,
+                            track: Theme.secondary.opacity(0.18)
+                        )
+                        .opacity(book.progress > 0 && !book.isFinished ? 1 : 0)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 7)
+                    .glassSurface(cornerRadius: 10, tint: Theme.ink.opacity(0.32))
+                    .padding(5)
                 }
-            }
-            .font(.system(size: 11))
-            .foregroundStyle(Theme.secondary)
-
-            ProgressBar(value: book.progress, tint: Theme.accent, track: Theme.hairline.opacity(0.8))
-                .opacity(book.progress > 0 && !book.isFinished ? 1 : 0)
         }
         .contentShape(Rectangle())
     }
@@ -351,7 +349,7 @@ struct MediaDetailView: View {
 
     var body: some View {
         ZStack {
-            Theme.paper.ignoresSafeArea()
+            AppBackground()
 
             VStack(spacing: 0) {
                 HStack(alignment: .top, spacing: 16) {
@@ -395,10 +393,10 @@ struct MediaDetailView: View {
                 } label: {
                     Text(book.kind == .comic ? "继续阅读（演示）" : "开始播放（演示）")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.paper)
+                        .foregroundStyle(Theme.text)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
-                        .background(Theme.ink, in: RoundedRectangle(cornerRadius: 8))
+                        .glassSurface(cornerRadius: 16, tint: Theme.ink.opacity(0.45), interactive: true)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 18)
@@ -419,11 +417,11 @@ struct MediaDetailView: View {
                 ForEach(0..<3, id: \.self) { index in
                     ZStack {
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(index == 0 ? Color(hex: 0x2C3A48) : Theme.paperDeep)
+                            .fill(index == 0 ? Color(hex: 0x2C3A48) : Color.white.opacity(0.07))
 
                         Image(systemName: index == 0 ? "cloud.moon" : "photo")
                             .font(.system(size: 18, weight: .light))
-                            .foregroundStyle(index == 0 ? .white.opacity(0.8) : Theme.secondary.opacity(0.5))
+                            .foregroundStyle(Theme.secondary.opacity(0.7))
                     }
                     .frame(height: 92)
                 }

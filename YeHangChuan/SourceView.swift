@@ -13,7 +13,7 @@ struct SourceView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.paper.ignoresSafeArea()
+                AppBackground()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
@@ -101,10 +101,7 @@ struct SourceView: View {
                     }
                 }
             }
-            .background(Color.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline)
-            }
+            .glassSurface(cornerRadius: 18)
             .padding(.horizontal, 20)
         }
     }
@@ -141,10 +138,7 @@ struct SourceView: View {
                     .foregroundStyle(Theme.secondary.opacity(0.5))
             }
             .padding(16)
-            .background(Color.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline)
-            }
+            .glassSurface(cornerRadius: 18, tint: Theme.ink.opacity(0.08), interactive: true)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 20)
@@ -159,7 +153,7 @@ struct SourceRow: View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 7)
-                    .fill(source.enabled ? Theme.ink.opacity(0.9) : Theme.paperDeep)
+                    .fill(source.enabled ? Theme.ink.opacity(0.9) : Color.white.opacity(0.07))
                     .frame(width: 38, height: 38)
 
                 Image(systemName: source.kind == .js ? "curlybraces" : "doc.text")
@@ -223,7 +217,7 @@ struct AddSourceSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.paper.ignoresSafeArea()
+                AppBackground()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
@@ -233,10 +227,7 @@ struct AddSourceSheet: View {
                             TextField("书源名称", text: $name)
                                 .font(.system(size: 15))
                                 .padding(12)
-                                .background(Color.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline)
-                                }
+                                .glassSurface(cornerRadius: 14)
                         }
 
                         VStack(alignment: .leading, spacing: 10) {
@@ -260,10 +251,7 @@ struct AddSourceSheet: View {
                                 .scrollContentBackground(.hidden)
                                 .padding(10)
                                 .frame(height: 190)
-                                .background(Color.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline)
-                                }
+                                .glassSurface(cornerRadius: 16)
                         }
                     }
                     .padding(20)
@@ -331,7 +319,7 @@ struct SourceSearchSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Theme.paper.ignoresSafeArea()
+                AppBackground()
 
                 VStack(spacing: 14) {
                     searchField
@@ -400,11 +388,8 @@ struct SourceSearchSheet: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color.white.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline)
-        }
+        .padding(.vertical, 11)
+        .glassSurface(cornerRadius: 16, interactive: true)
         .padding(.horizontal, 20)
     }
 
@@ -423,15 +408,11 @@ struct SourceSearchSheet: View {
                         .foregroundStyle(selectedSourceID == source.id ? Theme.paper : Theme.text)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 6)
-                        .background(
-                            selectedSourceID == source.id ? Theme.ink : Color.white.opacity(0.55),
-                            in: Capsule()
+                        .glassSurface(
+                            cornerRadius: 14,
+                            tint: selectedSourceID == source.id ? Theme.ink.opacity(0.5) : nil,
+                            interactive: true
                         )
-                        .overlay {
-                            if selectedSourceID != source.id {
-                                Capsule().stroke(Theme.hairline)
-                            }
-                        }
                     }
                     .buttonStyle(.plain)
                 }
@@ -476,15 +457,16 @@ struct SearchResultRow: View {
                 .foregroundStyle(added ? Theme.secondary : Theme.paper)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(added ? Theme.paperDeep : Theme.ink, in: Capsule())
+                .glassSurface(
+                    cornerRadius: 14,
+                    tint: added ? nil : Theme.ink.opacity(0.5),
+                    interactive: !added
+                )
             }
             .buttonStyle(.plain)
             .disabled(added)
         }
         .padding(12)
-        .background(Color.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8).stroke(Theme.hairline)
-        }
+        .glassSurface(cornerRadius: 16)
     }
 }

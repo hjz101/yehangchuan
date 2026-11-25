@@ -1,15 +1,14 @@
 import SwiftUI
 
 enum Theme {
-    static let paper = Color(hex: 0xF6F1E7)
-    static let paperDeep = Color(hex: 0xEFE7D8)
-    static let ink = Color(hex: 0x1E2228)
-    static let text = Color(hex: 0x211D18)
-    static let secondary = Color(hex: 0x746A5B)
-    static let hairline = Color(hex: 0xDDD3C0)
-    static let accent = Color(hex: 0xA6472F)
-    static let jade = Color(hex: 0x3F6B5E)
-    static let card = Color.white.opacity(0.55)
+    static let paper = Color(hex: 0xF3EEE4)
+    static let paperDeep = Color(hex: 0xE7DCC8)
+    static let ink = Color(hex: 0x121820)
+    static let text = Color(hex: 0xF1ECE2)
+    static let secondary = Color(hex: 0xA69E8F)
+    static let hairline = Color(hex: 0x3A424D)
+    static let accent = Color(hex: 0xD56A4B)
+    static let jade = Color(hex: 0x6FA795)
 
     private static let covers: [(Color, Color)] = [
         (Color(hex: 0x33404F), Color(hex: 0x1E2833)),
@@ -22,6 +21,65 @@ enum Theme {
 
     static func cover(_ style: Int) -> (Color, Color) {
         covers[abs(style) % covers.count]
+    }
+}
+
+struct AppBackground: View {
+    var body: some View {
+        LinearGradient(
+            stops: [
+                .init(color: Color(hex: 0x0D141C), location: 0),
+                .init(color: Color(hex: 0x121B25), location: 0.44),
+                .init(color: Color(hex: 0x1B2026), location: 0.76),
+                .init(color: Color(hex: 0x2A2119), location: 1)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+    }
+}
+
+private struct GlassSurfaceModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    let tint: Color?
+    let interactive: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            if let tint {
+                content.glassEffect(
+                    .regular.tint(tint).interactive(interactive),
+                    in: .rect(cornerRadius: cornerRadius)
+                )
+            } else {
+                content.glassEffect(
+                    .regular.interactive(interactive),
+                    in: .rect(cornerRadius: cornerRadius)
+                )
+            }
+        } else {
+            content
+                .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(.white.opacity(0.35), lineWidth: 1)
+                }
+        }
+    }
+}
+
+extension View {
+    func glassSurface(
+        cornerRadius: CGFloat = 20,
+        tint: Color? = nil,
+        interactive: Bool = false
+    ) -> some View {
+        modifier(GlassSurfaceModifier(cornerRadius: cornerRadius, tint: tint, interactive: interactive))
     }
 }
 
@@ -127,10 +185,7 @@ struct ToastView: View {
             .foregroundStyle(Theme.text)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(.regularMaterial, in: Capsule())
-            .overlay {
-                Capsule().stroke(Theme.hairline)
-            }
+            .glassSurface(cornerRadius: 22)
             .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
             .allowsHitTesting(false)
     }
