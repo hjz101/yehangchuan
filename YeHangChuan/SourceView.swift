@@ -272,14 +272,7 @@ struct SourceView: View {
     }
 
     static func isPrivateHost(_ host: String) -> Bool {
-        let value = host.lowercased()
-        return value.hasPrefix("127.")
-            || value.hasPrefix("10.")
-            || value.hasPrefix("192.168.")
-            || value == "localhost"
-            || value == "0.0.0.0"
-            || value.hasSuffix(".local")
-            || value.range(of: #"^172\.(1[6-9]|2[0-9]|3[0-1])\."#, options: .regularExpression) != nil
+        URLHost.isPrivate(host)
     }
 }
 
@@ -425,7 +418,12 @@ struct AddSourceSheet: View {
 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("添加") {
-                        store.addSource(name: name, kind: kind)
+                        store.addSource(
+                            name: name,
+                            kind: kind,
+                            host: hostFromConfig,
+                            rule: config
+                        )
                         dismiss()
                     }
                     .fontWeight(.semibold)
@@ -503,6 +501,17 @@ struct AddSourceSheet: View {
                 .frame(height: 200)
                 .glassSurface(cornerRadius: 20)
         }
+    }
+
+    /// 从配置 JSON 里读 host；读不到就交给 addSource 用默认值。
+    /// README 式配置常见 "host" 或 "bookSourceUrl"，两种都认。
+    private var hostFromConfig: String {
+        guard let data = config.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return ""
+        }
+        let raw = (object["host"] ?? object["bookSourceUrl"] ?? object["search"]) as? String ?? ""
+        return URLHost.normalize(raw)
     }
 
     private func template(for kind: SourceKind) -> String {
@@ -800,6 +809,9 @@ struct SourceDetailSheet: View {
     @State private var ruleMessage = ""
     @State private var loginMessage = ""
     @State private var enableWarning = ""
+    /// 取消过就不再回写，避免「点了取消却仍然被保存」。
+    /// 手势下滑关闭没有按钮可点，仍按「保存」处理。
+    @State private var cancelled = false
 
     init(source: BookSource) {
         _source = State(initialValue: source)
@@ -836,7 +848,10 @@ struct SourceDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") { dismiss() }
+                    Button("取消") {
+                        cancelled = true
+                        dismiss()
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("保存") {
@@ -846,7 +861,11 @@ struct SourceDetailSheet: View {
                     .fontWeight(.semibold)
                 }
             }
-            .onDisappear { store.updateSource(source) }
+            // 下滑关闭时没有「保存」按钮，按保存处理；点了取消则不回写。
+            .onDisappear {
+                guard !cancelled else { return }
+                store.updateSource(source)
+            }
         }
     }
 
@@ -1299,7 +1318,9 @@ struct SourceImportExportSheet: View {
             return
         }
 
-        let existing = Set(store.sources.map { $0.host.lowercased() })
+        // 已存在的地址 + 本次已加入的地址，一起参与去重。
+        // 原来只跟已有书源比，同一个文件里写两遍会重复导入两份。
+        var seenHosts = Set(store.sources.map { URLHost.normalize($0.host) })
         var added: [BookSource] = []
         var duplicates = 0
         var invalid = 0
@@ -1307,23 +1328,35 @@ struct SourceImportExportSheet: View {
 
         for row in rows {
             let name = (row["name"] ?? row["bookSourceName"]) as? String ?? ""
-            let host = (row["host"] ?? row["bookSourceUrl"]) as? String ?? ""
-            guard !name.isEmpty, !host.isEmpty else {
+            let rawHost = (row["host"] ?? row["bookSourceUrl"] ?? row["search"]) as? String ?? ""
+            guard !name.isEmpty, !rawHost.isEmpty else {
                 invalid += 1
                 continue
             }
-            let normalizedHost = host
-                .replacingOccurrences(of: "https://", with: "")
-                .replacingOccurrences(of: "http://", with: "")
-                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            guard !existing.contains(normalizedHost.lowercased()) else {
+            let normalizedHost = URLHost.normalize(rawHost)
+            guard !normalizedHost.isEmpty else {
+                invalid += 1
+                continue
+            }
+            guard !seenHosts.contains(normalizedHost) else {
                 duplicates += 1
                 continue
             }
-            guard !SourceView.isPrivateHost(normalizedHost) else {
+            guard !URLHost.isPrivate(normalizedHost) else {
                 blockedPrivate += 1
                 continue
             }
+            seenHosts.insert(normalizedHost)
+
+            // 每个书源只保存自己那一条规则，而不是把整份导入文件的文本塞进去。
+            let ownRule: String = {
+                guard let ruleData = try? JSONSerialization.data(
+                    withJSONObject: row,
+                    options: [.prettyPrinted, .sortedKeys]
+                ) else { return "" }
+                return String(data: ruleData, encoding: .utf8) ?? ""
+            }()
+
             let kindText = (row["kind"] as? String ?? "json").lowercased()
             added.append(
                 BookSource(
@@ -1333,7 +1366,7 @@ struct SourceImportExportSheet: View {
                     kind: kindText == "js" ? .js : .json,
                     enabled: false,
                     bookCount: 0,
-                    rule: text
+                    rule: ownRule
                 )
             )
         }

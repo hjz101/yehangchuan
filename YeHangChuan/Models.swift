@@ -640,14 +640,17 @@ final class AppStore {
 
     // MARK: Sources
 
-    func addSource(name: String, kind: SourceKind) {
+    func addSource(name: String, kind: SourceKind, host: String = "", rule: String = "") {
+        let resolvedName = name.isEmpty ? "未命名书源" : name
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
         let source = BookSource(
             id: UUID().uuidString,
-            name: name.isEmpty ? "未命名书源" : name,
-            host: kind == .js ? "script.local" : "custom.example.com",
+            name: resolvedName,
+            host: trimmedHost.isEmpty ? (kind == .js ? "script.local" : "custom.example.com") : trimmedHost,
             kind: kind,
             enabled: false,
-            bookCount: 0
+            bookCount: 0,
+            rule: rule
         )
         sources.insert(source, at: 0)
         showToast("已添加书源：\(source.name) · 默认关闭")
