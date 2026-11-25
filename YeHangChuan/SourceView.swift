@@ -5,7 +5,6 @@ struct SourceView: View {
 
     @State private var showAddSource = false
     @State private var showSearch = false
-    @State private var pulse = ScrollPulse.initial
 
     private var enabledCount: Int {
         store.sources.filter(\.enabled).count
@@ -26,12 +25,9 @@ struct SourceView: View {
                     .padding(.horizontal, 18)
                     .padding(.top, 6)
                     .padding(.bottom, 40)
-                    .trackScrollPulse($pulse)
-                    .refraction(pulse)
                 }
                 .scrollIndicators(.hidden)
             }
-            .environment(\.scrollPulse, pulse)
             .navigationTitle("书源")
             .navigationSubtitle("\(store.sources.count) 个书源 · \(enabledCount) 个已启用")
             .toolbarTitleDisplayMode(.inlineLarge)

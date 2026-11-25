@@ -4,7 +4,6 @@ struct StatsView: View {
     @Environment(AppStore.self) private var store
 
     @State private var hoveredDay: DayStat?
-    @State private var pulse = ScrollPulse.initial
 
     var body: some View {
         NavigationStack {
@@ -21,12 +20,9 @@ struct StatsView: View {
                     .padding(.horizontal, 18)
                     .padding(.top, 6)
                     .padding(.bottom, 40)
-                    .trackScrollPulse($pulse)
-                    .refraction(pulse)
                 }
                 .scrollIndicators(.hidden)
             }
-            .environment(\.scrollPulse, pulse)
             .navigationTitle("阅读统计")
             .navigationSubtitle("连续 \(store.streak) 天 · 累计 \(formattedHours(store.totalMinutes))")
             .toolbarTitleDisplayMode(.inlineLarge)

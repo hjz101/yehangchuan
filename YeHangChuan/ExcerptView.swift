@@ -6,7 +6,6 @@ struct ExcerptView: View {
     @State private var selectedBook: String?
     @State private var editing: Excerpt?
     @State private var showOnlyLiked = false
-    @State private var pulse = ScrollPulse.initial
 
     private var filtered: [Excerpt] {
         store.excerpts.filter { excerpt in
@@ -60,12 +59,9 @@ struct ExcerptView: View {
                     .padding(.horizontal, 18)
                     .padding(.top, 6)
                     .padding(.bottom, 40)
-                    .trackScrollPulse($pulse)
-                    .refraction(pulse)
                 }
                 .scrollIndicators(.hidden)
             }
-            .environment(\.scrollPulse, pulse)
             .navigationTitle("摘录")
             .navigationSubtitle("\(store.excerpts.count) 条 · 来自 \(store.excerptBooks.count) 本书")
             .toolbarTitleDisplayMode(.inlineLarge)
