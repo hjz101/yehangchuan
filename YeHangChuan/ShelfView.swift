@@ -226,7 +226,7 @@ struct ShelfView: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                .foregroundStyle(selected ? Theme.paper : Theme.text)
+                .foregroundStyle(Theme.text)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
                 .glassSurface(

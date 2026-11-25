@@ -158,7 +158,7 @@ struct SourceRow: View {
 
                 Image(systemName: source.kind == .js ? "curlybraces" : "doc.text")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(source.enabled ? Theme.paper : Theme.secondary)
+                    .foregroundStyle(source.enabled ? Theme.text : Theme.secondary)
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -405,7 +405,7 @@ struct SourceSearchSheet: View {
                             Text(source.name)
                         }
                         .font(.system(size: 11, weight: selectedSourceID == source.id ? .semibold : .regular))
-                        .foregroundStyle(selectedSourceID == source.id ? Theme.paper : Theme.text)
+                        .foregroundStyle(Theme.text)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 6)
                         .glassSurface(
@@ -454,7 +454,7 @@ struct SearchResultRow: View {
                     Text(added ? "已加入" : "加入书架")
                 }
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(added ? Theme.secondary : Theme.paper)
+                .foregroundStyle(added ? Theme.secondary : Theme.text)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .glassSurface(
