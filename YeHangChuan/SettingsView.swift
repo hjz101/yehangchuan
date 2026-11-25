@@ -32,7 +32,7 @@ struct SettingsView: View {
     @State private var showDiscover = false
     @State private var showVoice = false
     @State private var showCompliance = false
-    @State private var eyeCarePreview = false
+    @State private var showEyeCare = false
     @State private var showAlert: SettingsAlert?
 
     var body: some View {
@@ -40,246 +40,234 @@ struct SettingsView: View {
             ZStack {
                 AppBackdrop()
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        profileCard
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            profileCard
 
-                        syncGroup
-                        eyeCareGroup
-
-                        group("阅读") {
-                            Button {
-                                showReaderSettings = true
-                            } label: {
-                                SettingsRow(
-                                    title: "阅读偏好",
-                                    value: "\(Int(store.settings.fontSize)) pt · \(store.settings.theme.rawValue)",
-                                    systemImage: "textformat.size"
-                                )
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                showGoal = true
-                            } label: {
-                                SettingsRow(
-                                    title: "每日目标",
-                                    value: "\(store.goalMinutes) 分钟",
-                                    systemImage: "target"
-                                )
-                            }
-                            .buttonStyle(.plain)
-
-                            SettingsRow(
-                                title: "段评",
-                                value: store.settings.hideSourceComments ? "已屏蔽" : "显示",
-                                systemImage: "text.bubble",
-                                showsChevron: false,
-                                isLast: true
-                            )
-                        }
-
-                        group("外观") {
-                            VStack(alignment: .leading, spacing: 11) {
-                                SectionHeading(text: "界面明暗", trailing: store.appearance.rawValue)
-
-                                GlassSegmented(
-                                    items: AppAppearance.allCases,
-                                    title: { $0.rawValue },
-                                    selection: Binding(
-                                        get: { store.appearance },
-                                        set: { newValue in
-                                            withAnimation(.easeInOut(duration: 0.35)) {
-                                                store.appearance = newValue
-                                            }
-                                        }
+                            group("阅读") {
+                                Button {
+                                    showReaderSettings = true
+                                } label: {
+                                    SettingsRow(
+                                        title: "阅读偏好",
+                                        value: "\(Int(store.settings.fontSize)) pt · \(store.settings.theme.rawValue)",
+                                        systemImage: "textformat.size"
                                     )
-                                )
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    showGoal = true
+                                } label: {
+                                    SettingsRow(
+                                        title: "每日目标",
+                                        value: "\(store.goalMinutes) 分钟",
+                                        systemImage: "target"
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    showEyeCare = true
+                                } label: {
+                                    SettingsRow(
+                                        title: "护眼",
+                                        value: store.eyeCare.enabled
+                                            ? "已开启 · 暖度 \(Int(store.eyeCare.warmth * 100))%"
+                                            : "关闭",
+                                        systemImage: "leaf",
+                                        iconTint: Palette.jade,
+                                        isLast: true
+                                    )
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .padding(15)
-                        }
 
-                        group("数据") {
-                            Button {
-                                showImport = true
-                            } label: {
-                                SettingsRow(
-                                    title: "导入本地书",
-                                    value: "TXT / EPUB / PDF / ZIP",
-                                    systemImage: "square.and.arrow.down"
-                                )
+                            group("外观") {
+                                VStack(alignment: .leading, spacing: 11) {
+                                    SectionHeading(text: "界面明暗", trailing: store.appearance.rawValue)
+
+                                    GlassSegmented(
+                                        items: AppAppearance.allCases,
+                                        title: { $0.rawValue },
+                                        selection: Binding(
+                                            get: { store.appearance },
+                                            set: { newValue in
+                                                withAnimation(.easeInOut(duration: 0.35)) {
+                                                    store.appearance = newValue
+                                                }
+                                            }
+                                        )
+                                    )
+                                }
+                                .padding(15)
                             }
-                            .buttonStyle(.plain)
 
-                            Button {
-                                showBackup = true
-                            } label: {
-                                SettingsRow(
-                                    title: "本地备份",
-                                    value: "\(store.backup.backups.count) 份",
-                                    systemImage: "externaldrive.badge.timemachine"
-                                )
+                            group("数据") {
+                                Button {
+                                    showImport = true
+                                } label: {
+                                    SettingsRow(
+                                        title: "导入本地书",
+                                        value: "TXT / EPUB / PDF / ZIP",
+                                        systemImage: "square.and.arrow.down"
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    showBackup = true
+                                } label: {
+                                    SettingsRow(
+                                        title: "本地备份",
+                                        value: "\(store.backup.backups.count) 份",
+                                        systemImage: "externaldrive.badge.timemachine"
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    showCache = true
+                                } label: {
+                                    SettingsRow(
+                                        title: "缓存与空间",
+                                        value: Self.storageLabel(store: store),
+                                        systemImage: "internaldrive"
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    showExport = true
+                                } label: {
+                                    SettingsRow(
+                                        title: "导出书架数据",
+                                        value: "JSON / Markdown",
+                                        systemImage: "square.and.arrow.up"
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    showNetworkLogs = true
+                                } label: {
+                                    SettingsRow(
+                                        title: "网络诊断",
+                                        value: store.backend.isOnline ? "在线" : "离线",
+                                        systemImage: "network",
+                                        isLast: true
+                                    )
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
 
-                            Button {
-                                showCache = true
-                            } label: {
-                                SettingsRow(
-                                    title: "缓存与空间",
-                                    value: Self.storageLabel(store: store),
-                                    systemImage: "internaldrive"
-                                )
+                            group("实验室") {
+                                LazyVGrid(
+                                    columns: [GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9)],
+                                    spacing: 9
+                                ) {
+                                    labTile("AI 阅读助手", "摘要 · 封面 · 语音", "sparkles", Palette.accent) {
+                                        showAI = true
+                                    }
+                                    labTile("JS 书源沙箱", "权限隔离 · 私网拒绝", "curlybraces.square", Palette.jade) {
+                                        showSandbox = true
+                                    }
+                                    labTile("在线发现", "多源聚合 · 订阅", "safari", Palette.gold) {
+                                        showDiscover = true
+                                    }
+                                    labTile("声音实验室", "多角色 · 后台", "waveform", Palette.jade) {
+                                        showVoice = true
+                                    }
+                                }
+                                .padding(9)
                             }
-                            .buttonStyle(.plain)
 
-                            Button {
-                                showNetworkLogs = true
-                            } label: {
+                            group("关于") {
+                                Button {
+                                    showSync = true
+                                } label: {
+                                    SettingsRow(
+                                        title: "账户与同步",
+                                        value: "\(store.backend.account.title) · \(store.backend.syncState.title)",
+                                        systemImage: "person.crop.circle"
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    showCompliance = true
+                                } label: {
+                                    SettingsRow(
+                                        title: "隐私与内容来源",
+                                        value: "无内置内容 · 无预装书源",
+                                        systemImage: "hand.raised"
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    showDistribution = true
+                                } label: {
+                                    SettingsRow(
+                                        title: "安装与更新",
+                                        value: "TestFlight · 免费",
+                                        systemImage: "shippingbox"
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
                                 SettingsRow(
-                                    title: "网络诊断",
-                                    value: store.backend.isOnline ? "在线" : "离线",
-                                    systemImage: "network"
-                                )
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                showExport = true
-                            } label: {
-                                SettingsRow(
-                                    title: "导出书架数据",
-                                    value: "JSON / Markdown 预览",
-                                    systemImage: "square.and.arrow.up"
-                                )
-                            }
-                            .buttonStyle(.plain)
-
-                            SettingsRow(
-                                title: "摘录",
-                                value: "\(store.excerpts.count) 条",
-                                systemImage: "quote.opening",
-                                showsChevron: false
-                            )
-
-                            SettingsRow(
-                                title: "本机占用",
-                                value: Self.storageLabel(store: store),
-                                systemImage: "internaldrive",
-                                showsChevron: false,
-                                isLast: true
-                            )
-                        }
-
-                        group("分发") {
-                            Button {
-                                showCompliance = true
-                            } label: {
-                                SettingsRow(
-                                    title: "隐私与内容来源",
-                                    value: "无内置内容 · 无预装书源",
-                                    systemImage: "hand.raised"
-                                )
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                showDistribution = true
-                            } label: {
-                                SettingsRow(
-                                    title: "安装与更新",
-                                    value: "TestFlight · 免费",
-                                    systemImage: "shippingbox"
-                                )
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                showAlert = .support
-                            } label: {
-                                SettingsRow(
-                                    title: "支持开发者",
-                                    value: "站外链接",
-                                    systemImage: "heart",
-                                    iconTint: Palette.accent,
+                                    title: "版本",
+                                    value: Self.versionLabel,
+                                    systemImage: "info.circle",
+                                    showsChevron: false,
                                     isLast: true
                                 )
                             }
-                            .buttonStyle(.plain)
-                        }
 
-                        group("实验室") {
-                            Button {
-                                showAI = true
-                            } label: {
-                                SettingsRow(
-                                    title: "AI 阅读助手",
-                                    value: "摘要 · 封面 · TTS",
-                                    systemImage: "sparkles"
-                                )
+                            VStack(spacing: 6) {
+                                Button {
+                                    showAlert = .support
+                                } label: {
+                                    Text("支持开发者")
+                                        .font(.system(size: 11.5, weight: .medium))
+                                        .foregroundStyle(Palette.accent)
+                                }
+                                .buttonStyle(PressableStyle())
+
+                                Text("夜航船 · 本地优先的阅读器")
+                                    .font(.system(size: 10.5, design: .serif))
+                                    .foregroundStyle(Palette.tertiary)
                             }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                showSandbox = true
-                            } label: {
-                                SettingsRow(
-                                    title: "JS 书源沙箱",
-                                    value: "权限隔离 · 私网拒绝",
-                                    systemImage: "curlybraces.square"
-                                )
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                showDiscover = true
-                            } label: {
-                                SettingsRow(
-                                    title: "在线发现",
-                                    value: "多源聚合 · 订阅",
-                                    systemImage: "safari"
-                                )
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                showVoice = true
-                            } label: {
-                                SettingsRow(
-                                    title: "声音实验室",
-                                    value: "多角色 · 后台 · CarPlay",
-                                    systemImage: "waveform",
-                                    isLast: true
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        group("关于") {
-                            SettingsRow(
-                                title: "版本",
-                                value: Self.versionLabel,
-                                systemImage: "info.circle",
-                                showsChevron: false,
-                                isLast: true
-                            )
-                        }
-
-                        Text("夜航船 · 本地优先的阅读器")
-                            .font(.system(size: 10.5, design: .serif))
-                            .foregroundStyle(Palette.tertiary)
                             .frame(maxWidth: .infinity)
                             .padding(.top, 2)
+                            .id("settingsFooter")
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.top, 6)
+                        .padding(.bottom, 40)
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 6)
-                    .padding(.bottom, 40)
+                    .scrollIndicators(.hidden)
+                    .onAppear {
+                        #if DEBUG
+                        // 用来截图核对页面底部，正常使用不会触发。
+                        if ProcessInfo.processInfo.arguments.contains("-settingsBottom") {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                withAnimation(nil) { proxy.scrollTo("settingsFooter", anchor: .bottom) }
+                            }
+                        }
+                        #endif
+                    }
                 }
-                .scrollIndicators(.hidden)
             }
             .navigationTitle("设置")
-            .navigationSubtitle(store.backend.account == .guest ? "游客 · 数据留在本机" : "已登录 · iCloud 模拟同步")
             .toolbarTitleDisplayMode(.inlineLarge)
+        }
+        .sheet(isPresented: $showEyeCare) {
+            EyeCareSheet()
+                .presentationDetents([.large])
+                .presentationCornerRadius(38)
         }
         .sheet(isPresented: $showReaderSettings) {
             ReaderSettingsSheet(settings: store.settings)
@@ -375,132 +363,8 @@ struct SettingsView: View {
             if arguments.contains("-openDiscover") { showDiscover = true }
             if arguments.contains("-openVoice") { showVoice = true }
             if arguments.contains("-openCompliance") { showCompliance = true }
+            if arguments.contains("-openEyeCare") { showEyeCare = true }
             #endif
-        }
-    }
-
-    private var syncGroup: some View {
-        group("账户与同步") {
-            Button {
-                showSync = true
-            } label: {
-                SettingsRow(
-                    title: "账号",
-                    value: store.backend.account.title,
-                    systemImage: "person.crop.circle"
-                )
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                showSync = true
-            } label: {
-                SettingsRow(
-                    title: "iCloud 同步",
-                    value: store.backend.syncState.title,
-                    systemImage: "icloud",
-                    iconTint: Palette.jade,
-                    isLast: true
-                )
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private var eyeCareGroup: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            SectionHeading(text: "护眼", trailing: store.eyeCare.enabled ? "已开启" : "关闭")
-
-            VStack(spacing: 12) {
-                Toggle(isOn: Binding(
-                    get: { store.eyeCare.enabled },
-                    set: { store.eyeCare.enabled = $0; store.saveSnapshot() }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("暖色滤光与亮度")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Palette.text)
-                        Text("全 App 生效，阅读页与书架色调一致")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(Palette.tertiary)
-                    }
-                }
-                .tint(Palette.jade)
-
-                HStack {
-                    Text("暖度")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.secondary)
-                        .frame(width: 42, alignment: .leading)
-                    Slider(
-                        value: Binding(
-                            get: { store.eyeCare.warmth },
-                            set: { store.eyeCare.warmth = $0; store.saveSnapshot() }
-                        ),
-                        in: 0.05...0.75
-                    )
-                    .tint(Palette.jade)
-                    Text("\(Int(store.eyeCare.warmth * 100))%")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Palette.tertiary)
-                        .monospacedDigit()
-                        .frame(width: 32)
-                }
-
-                HStack {
-                    Text("亮度")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.secondary)
-                        .frame(width: 42, alignment: .leading)
-                    Slider(
-                        value: Binding(
-                            get: { store.eyeCare.dim },
-                            set: { store.eyeCare.dim = $0; store.saveSnapshot() }
-                        ),
-                        in: 0...0.35
-                    )
-                    .tint(Palette.jade)
-                    Text("\(Int((1 - store.eyeCare.dim) * 100))%")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Palette.tertiary)
-                        .monospacedDigit()
-                        .frame(width: 32)
-                }
-
-                HStack(spacing: 10) {
-                    Toggle("每 \(store.eyeCare.restMinutes) 分钟休息", isOn: Binding(
-                        get: { store.eyeCare.restReminder },
-                        set: { store.eyeCare.restReminder = $0; store.saveSnapshot() }
-                    ))
-                    .font(.system(size: 12.5))
-                    .tint(Palette.jade)
-
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            eyeCarePreview.toggle()
-                        }
-                    } label: {
-                        Image(systemName: "eye")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Palette.jade)
-                            .frame(width: 34, height: 34)
-                            .glassCircle(diameter: 34, tint: Palette.jade.opacity(0.1))
-                    }
-                    .buttonStyle(PressableStyle())
-                }
-
-                if eyeCarePreview {
-                    Text("已读 20 分钟。看看 6 米外，让眼睛休息 20 秒。")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Palette.secondary)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .glassSurface(cornerRadius: 14, tint: Palette.jade.opacity(0.08))
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-            }
-            .padding(14)
-            .glassSurface(cornerRadius: 22)
         }
     }
 
@@ -547,6 +411,48 @@ struct SettingsView: View {
         .glassSurface(cornerRadius: 26)
     }
 
+    private func labTile(
+        _ title: String,
+        _ detail: String,
+        _ symbol: String,
+        _ tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 9) {
+                Image(systemName: symbol)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 30, height: 30)
+                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 13.5, weight: .medium))
+                        .foregroundStyle(Palette.text)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Text(detail)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.tertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+            .background(Palette.glassTint.opacity(0.55), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .strokeBorder(Palette.hairline, lineWidth: 0.6)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        }
+        .buttonStyle(PressableStyle(scale: 0.97))
+    }
+
     private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             SectionHeading(text: title)
@@ -554,7 +460,173 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 content()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .glassSurface(cornerRadius: 22)
+        }
+    }
+}
+
+// MARK: - Eye care
+
+struct EyeCareSheet: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var showPreview = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AppBackdrop()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        statusCard
+
+                        Toggle(isOn: Binding(
+                            get: { store.eyeCare.enabled },
+                            set: { store.eyeCare.enabled = $0; store.saveSnapshot() }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("暖色滤光")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(Palette.text)
+                                Text("降低蓝光刺激，阅读页与书架同步生效")
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(Palette.tertiary)
+                            }
+                        }
+                        .tint(Palette.jade)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 13)
+                        .glassSurface(cornerRadius: 20)
+
+                        VStack(spacing: 14) {
+                            sliderRow(
+                                title: "暖度",
+                                value: Binding(
+                                    get: { store.eyeCare.warmth },
+                                    set: { store.eyeCare.warmth = $0; store.saveSnapshot() }
+                                ),
+                                range: 0.05...0.75,
+                                label: "\(Int(store.eyeCare.warmth * 100))%"
+                            )
+
+                            sliderRow(
+                                title: "亮度",
+                                value: Binding(
+                                    get: { store.eyeCare.dim },
+                                    set: { store.eyeCare.dim = $0; store.saveSnapshot() }
+                                ),
+                                range: 0...0.35,
+                                label: "\(Int((1 - store.eyeCare.dim) * 100))%"
+                            )
+                        }
+                        .padding(14)
+                        .glassSurface(cornerRadius: 20)
+                        .opacity(store.eyeCare.enabled ? 1 : 0.45)
+                        .disabled(!store.eyeCare.enabled)
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            Toggle("每 \(store.eyeCare.restMinutes) 分钟提醒休息", isOn: Binding(
+                                get: { store.eyeCare.restReminder },
+                                set: { store.eyeCare.restReminder = $0; store.saveSnapshot() }
+                            ))
+                            .font(.system(size: 13))
+                            .tint(Palette.jade)
+
+                            Button {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    showPreview.toggle()
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "eye")
+                                    Text("预览休息提醒")
+                                }
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Palette.jade)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .glassCapsule(tint: Palette.jade.opacity(0.1), interactive: true)
+                            }
+                            .buttonStyle(PressableStyle())
+
+                            if showPreview {
+                                Text("已读 20 分钟。看看 6 米外，让眼睛休息 20 秒。")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(Palette.secondary)
+                                    .padding(10)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .glassSurface(cornerRadius: 14, tint: Palette.jade.opacity(0.08))
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+                        }
+                        .padding(14)
+                        .glassSurface(cornerRadius: 20)
+
+                        Text("护眼设置全 App 生效，只保存在本机。")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Palette.tertiary)
+                    }
+                    .padding(18)
+                }
+                .scrollIndicators(.hidden)
+            }
+            .navigationTitle("护眼")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { dismiss() }
+                        .fontWeight(.semibold)
+                }
+            }
+            .onDisappear { store.saveSnapshot() }
+        }
+    }
+
+    private var statusCard: some View {
+        HStack(spacing: 13) {
+            Image(systemName: "leaf.fill")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(Palette.jade)
+                .frame(width: 42, height: 42)
+                .background(Palette.jade.opacity(0.12), in: Circle())
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(store.eyeCare.enabled ? "已开启" : "已关闭")
+                    .font(.system(size: 15, weight: .semibold, design: .serif))
+                    .foregroundStyle(Palette.text)
+                Text("暖度 \(Int(store.eyeCare.warmth * 100))% · 亮度 \(Int((1 - store.eyeCare.dim) * 100))%")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Palette.tertiary)
+                    .monospacedDigit()
+            }
+
+            Spacer()
+        }
+        .padding(14)
+        .glassSurface(cornerRadius: 20)
+    }
+
+    private func sliderRow(
+        title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        label: String
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.secondary)
+                .frame(width: 32, alignment: .leading)
+            Slider(value: value, in: range)
+                .tint(Palette.jade)
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(Palette.tertiary)
+                .monospacedDigit()
+                .frame(width: 34, alignment: .trailing)
         }
     }
 }

@@ -534,6 +534,8 @@ struct SettingsRow: View {
                     Text(value)
                         .font(.system(size: 13))
                         .foregroundStyle(Palette.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                         .multilineTextAlignment(.trailing)
                 }
 

@@ -97,6 +97,7 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 -openImport             打开智能导入
 -openComic              打开漫画阅读器
 -openSync / -openBackup / -openCache
+-openEyeCare / -settingsBottom
 -openSourceDetail / -openSourceImport
 -openExport / -openAI / -openSandbox / -openDiscover / -openVoice / -openCompliance
 -showTOC / -showBookmarks / -showListen / -showSourceSwitch
