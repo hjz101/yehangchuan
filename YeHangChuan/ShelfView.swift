@@ -18,6 +18,7 @@ struct ShelfView: View {
     @State private var detailBook: Book?
     @State private var showSearch = false
     @State private var columns = 3
+    @State private var pulse = ScrollPulse.initial
 
     private var filteredBooks: [Book] {
         store.books.filter { book in
@@ -56,10 +57,13 @@ struct ShelfView: View {
                     .padding(.horizontal, 18)
                     .padding(.top, 6)
                     .padding(.bottom, 28)
+                    .trackScrollPulse($pulse)
+                    .refraction(pulse)
                 }
                 .scrollIndicators(.hidden)
                 .contentMargins(.bottom, 96, for: .scrollContent)
             }
+            .environment(\.scrollPulse, pulse)
             .navigationTitle("夜航船")
             .navigationSubtitle(subtitle)
             .toolbarTitleDisplayMode(.inlineLarge)

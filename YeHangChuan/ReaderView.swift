@@ -15,6 +15,7 @@ struct ReaderView: View {
     @State private var isBookmarked = false
     @State private var flash: String?
     @State private var viewport: CGSize = CGSize(width: 390, height: 844)
+    @State private var pulse = ScrollPulse()
 
     private var settings: ReaderSettings { store.settings }
     private var chapters: [Chapter] { MockData.chapters(for: book) }
@@ -61,15 +62,8 @@ struct ReaderView: View {
                     .glassCapsule(tint: settings.theme.isDark ? .white.opacity(0.08) : .white.opacity(0.5))
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
-
-            // 边缘翻页热区
-            if settings.pageMode == .slide && showChrome == false {
-                HStack(spacing: 0) {
-                    tapZone(.backward)
-                    tapZone(.forward)
-                }
-            }
         }
+        .environment(\.scrollPulse, pulse)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { newSize in
             guard newSize.width > 1, newSize.height > 1 else { return }
             guard abs(newSize.width - viewport.width) > 1 || abs(newSize.height - viewport.height) > 1 else { return }
@@ -154,47 +148,27 @@ struct ReaderView: View {
         if pages.isEmpty {
             ProgressView()
         } else if settings.pageMode == .slide {
-            TabView(selection: $pageIndex) {
-                ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
-                    ReaderPageView(
-                        page: page,
-                        pageIndex: index,
-                        total: pages.count,
-                        bookTitle: book.title,
-                        settings: settings,
-                        onComment: { commentParagraph = $0 },
-                        onExcerpt: { paragraph in excerpt(paragraph) },
-                        onTap: toggleChrome
-                    )
-                    .tag(index)
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
+            PageTurnReader(
+                pages: pages,
+                index: $pageIndex,
+                bookTitle: book.title,
+                settings: settings,
+                showsTapZones: !showChrome,
+                onComment: { commentParagraph = $0 },
+                onExcerpt: { paragraph in excerpt(paragraph) },
+                onTap: toggleChrome,
+                onEdge: { forward in showFlash(forward ? "已经是最后一页" : "已经是第一页") }
+            )
         } else {
             ScrollReaderView(
                 chapters: chapters,
                 settings: settings,
+                pulse: $pulse,
                 onComment: { commentParagraph = $0 },
                 onExcerpt: { paragraph in excerpt(paragraph) },
                 onTap: toggleChrome
             )
         }
-    }
-
-    private enum TapZone { case backward, forward }
-
-    private func tapZone(_ zone: TapZone) -> some View {
-        Color.clear
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
-                    if zone == .backward {
-                        pageIndex = max(pageIndex - 1, 0)
-                    } else {
-                        pageIndex = min(pageIndex + 1, pages.count - 1)
-                    }
-                }
-            }
     }
 
     // MARK: Chrome
@@ -228,6 +202,7 @@ struct ReaderView: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 8)
                 .glassCapsule()
+                .glassSheen(cornerRadius: 999)
 
                 Spacer(minLength: 0)
 
@@ -271,6 +246,7 @@ struct ReaderView: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 13)
                 .glassCapsule(tint: settings.theme.isDark ? .white.opacity(0.06) : .white.opacity(0.45))
+                .glassSheen(cornerRadius: 999)
 
                 HStack(spacing: 0) {
                     toolButton("目录", symbol: "list.bullet") { showTOC = true }
@@ -357,6 +333,7 @@ struct ReaderView: View {
 
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-scrollMode") { settings.pageMode = .scroll }
         if arguments.contains("-showReaderSettings") {
             showSettings = true
         } else if arguments.contains("-showComments") {
@@ -525,6 +502,7 @@ struct ParagraphView: View {
 struct ScrollReaderView: View {
     let chapters: [Chapter]
     let settings: ReaderSettings
+    @Binding var pulse: ScrollPulse
     let onComment: (Paragraph) -> Void
     let onExcerpt: (Paragraph) -> Void
     let onTap: () -> Void
@@ -560,6 +538,8 @@ struct ScrollReaderView: View {
             .padding(.horizontal, 28)
             .padding(.top, 90)
             .padding(.bottom, 130)
+            .trackScrollPulse($pulse)
+            .refraction(pulse)
         }
         .scrollIndicators(.hidden)
         .contentShape(Rectangle())

@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var showDistribution = false
     @State private var showGoal = false
     @State private var showAlert: SettingsAlert?
+    @State private var pulse = ScrollPulse.initial
 
     var body: some View {
         NavigationStack {
@@ -142,9 +143,12 @@ struct SettingsView: View {
                     .padding(.horizontal, 18)
                     .padding(.top, 6)
                     .padding(.bottom, 40)
+                    .trackScrollPulse($pulse)
+                    .refraction(pulse)
                 }
                 .scrollIndicators(.hidden)
             }
+            .environment(\.scrollPulse, pulse)
             .navigationTitle("设置")
             .navigationSubtitle("无账号 · 数据留在本机")
             .toolbarTitleDisplayMode(.inlineLarge)
