@@ -81,6 +81,7 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
         isPaused = false
         ticker?.cancel()
         startedAt = nil
+        deactivateSession()
     }
 
     func restart() {
@@ -93,24 +94,37 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
 
     func skip(_ characters: Int) {
         guard hasChapter else { return }
+        // 先记下状态：stop() 会把 isPlaying / isPaused 一起清掉，
+        // 否则「暂停中跳过」会被当成「停住」，剩余进度也就不再继续念。
         let wasPlaying = isPlaying
+        let wasPaused = isPaused
         stop()
         offset = min(max(offset + characters, 0), totalCharacters - 1)
         progress = Double(offset) / Double(totalCharacters)
+        accumulated = 0
         updateLabels()
-        if wasPlaying || isPaused {
+        if wasPlaying {
             speak(from: offset)
+        } else if wasPaused {
+            // 保持暂停：把发音位置挪过去后再停住，用户按播放会从这里继续。
+            isPaused = true
         }
     }
 
     func seek(to fraction: Double) {
         guard hasChapter else { return }
         let wasPlaying = isPlaying
+        let wasPaused = isPaused
         stop()
         offset = Int(Double(totalCharacters - 1) * min(max(fraction, 0), 1))
         progress = Double(offset) / Double(totalCharacters)
+        accumulated = 0
         updateLabels()
-        if wasPlaying { speak(from: offset) }
+        if wasPlaying {
+            speak(from: offset)
+        } else if wasPaused {
+            isPaused = true
+        }
     }
 
     func setSpeed(_ value: Double) {
@@ -143,8 +157,16 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
 
     private func activateSession() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+        // 听书是主内容，不该被自己压低；用 .duckOthers 会让音乐之类在朗读时
+        // 依旧以低音量播放，反而更吵。改为独占播放。
+        try? session.setCategory(.playback, mode: .spokenAudio, options: [.interruptSpokenAudioAndMixWithOthers])
         try? session.setActive(true)
+    }
+
+    /// 念完 / 停止后交还音频会话，避免一直占着系统音频焦点。
+    private func deactivateSession() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setActive(false, options: [.notifyOthersOnDeactivation])
     }
 
     private func startTicker() {
@@ -187,13 +209,21 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor [weak self] in
             guard let self else { return }
+            // 念完后把计时与位置一起归零：否则 accumulated 会把上一轮时长
+            // 带进下一轮，进度条和时间标签一开播就顶到结尾。
+            // 界面停在「已念完」，用户再按播放即从头重听。
+            let duration = Double(self.totalCharacters) * 0.22 / self.speed
             self.isPlaying = false
             self.isPaused = false
             self.progress = 1
             self.offset = 0
-            self.ticker?.cancel()
+            self.accumulated = 0
             self.startedAt = nil
-            self.updateLabels()
+            self.ticker?.cancel()
+            self.ticker = nil
+            self.elapsedLabel = Self.label(duration)
+            self.remainingLabel = "-" + Self.label(0)
+            self.deactivateSession()
         }
     }
 
