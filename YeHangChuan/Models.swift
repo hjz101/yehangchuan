@@ -545,6 +545,7 @@ final class AppStore {
     var player = AudioPlayer()
     var speech = SpeechPlayer()
     var backend = MockBackend()
+    var backup = BackupCenter()
     var bookmarks: [Bookmark] = []
     var positions: [String: ReadingPosition] = [:]
     var groups: [String] = ["夜读", "待读"]
@@ -1059,6 +1060,42 @@ final class AppStore {
         groups = snapshot.groups
         customChapters = snapshot.customChapters
         eyeCare = snapshot.eyeCare
+    }
+
+    // MARK: Backup
+
+    /// 按勾选范围拼出备份载荷。没勾的部分留 nil，恢复时就不会动现有数据。
+    func makeBackupPayload(scopes: Set<BackupScope>) -> BackupPayload {
+        BackupPayload(
+            sources: scopes.contains(.sources) ? sources : nil,
+            books: scopes.contains(.library) ? books : nil,
+            positions: scopes.contains(.library) ? positions : nil,
+            bookmarks: scopes.contains(.library) ? bookmarks : nil,
+            customChapters: scopes.contains(.library) ? customChapters : nil,
+            excerpts: scopes.contains(.library) ? excerpts : nil,
+            readerSettings: scopes.contains(.preferences) ? settings.snapshot : nil,
+            eyeCare: scopes.contains(.preferences) ? eyeCare : nil,
+            appearance: scopes.contains(.preferences) ? appearance : nil,
+            goalMinutes: scopes.contains(.preferences) ? goalMinutes : nil,
+            groups: scopes.contains(.library) ? groups : nil
+        )
+    }
+
+    /// 真实恢复：把备份里的每一块合并回当前状态，并立即落盘。
+    /// 只覆盖备份里确实带了的字段，避免用半份备份清空用户的书库。
+    func restore(from payload: BackupPayload) {
+        if let sources = payload.sources { self.sources = sources }
+        if let books = payload.books { self.books = books }
+        if let positions = payload.positions { self.positions = positions }
+        if let bookmarks = payload.bookmarks { self.bookmarks = bookmarks }
+        if let customChapters = payload.customChapters { self.customChapters = customChapters }
+        if let excerpts = payload.excerpts { self.excerpts = excerpts }
+        if let readerSettings = payload.readerSettings { settings.apply(readerSettings) }
+        if let eyeCare = payload.eyeCare { self.eyeCare = eyeCare }
+        if let appearance = payload.appearance { self.appearance = appearance }
+        if let goalMinutes = payload.goalMinutes { self.goalMinutes = goalMinutes }
+        if let groups = payload.groups { self.groups = groups }
+        flushSnapshot()
     }
 }
 

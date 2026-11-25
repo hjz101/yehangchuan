@@ -102,7 +102,7 @@ struct SettingsView: View {
                             } label: {
                                 SettingsRow(
                                     title: "本地备份",
-                                    value: "\(store.backend.backups.count) 份",
+                                    value: "\(store.backup.backups.count) 份",
                                     systemImage: "externaldrive.badge.timemachine"
                                 )
                             }
@@ -993,12 +993,11 @@ struct BackupSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    @State private var includeSources = true
-    @State private var includeProgress = true
-    @State private var includeSettings = true
-    @State private var isBusy = false
+    @State private var scopes: Set<BackupScope> = [.sources, .library, .preferences]
     @State private var message = ""
     @State private var restoreTarget: BackupRecord?
+
+    private var backups: [BackupRecord] { store.backup.backups }
 
     var body: some View {
         NavigationStack {
@@ -1011,22 +1010,33 @@ struct BackupSheet: View {
                             SectionHeading(text: "创建备份")
 
                             VStack(alignment: .leading, spacing: 10) {
-                                Toggle("包含书源", isOn: $includeSources)
-                                Toggle("包含阅读进度", isOn: $includeProgress)
-                                Toggle("包含阅读偏好", isOn: $includeSettings)
+                                ForEach(BackupScope.allCases) { scope in
+                                    Toggle(scope.toggleLabel, isOn: binding(for: scope))
+                                }
 
                                 Button {
-                                    isBusy = true
                                     Task { @MainActor in
-                                        let record = await store.backend.createBackup(name: "夜航船")
-                                        message = record.map { "已创建 \($0.name)" } ?? "备份失败，请检查网络"
-                                        isBusy = false
+                                        let payload = store.makeBackupPayload(scopes: scopes)
+                                        guard let record = await store.backup.create(
+                                            name: "夜航船",
+                                            scopes: scopes,
+                                            payload: payload
+                                        ) else {
+                                            message = "备份写入失败，请检查存储空间"
+                                            return
+                                        }
+                                        message = "已写入 \(record.name)（\(record.sizeLabel)）"
                                     }
                                 } label: {
                                     Label("创建备份", systemImage: "externaldrive.badge.plus")
                                         .readableButtonStyle(tint: Palette.accentSolid)
                                 }
                                 .buttonStyle(PressableStyle(scale: 0.97))
+                                .disabled(store.backup.isBusy || scopes.isEmpty)
+
+                                Text("备份写在 Application Support/Backups 下，卸载 App 会一并删除。")
+                                    .font(.system(size: 9.5))
+                                    .foregroundStyle(Palette.tertiary)
 
                                 if !message.isEmpty {
                                     Text(message)
@@ -1041,41 +1051,55 @@ struct BackupSheet: View {
                         }
 
                         VStack(alignment: .leading, spacing: 9) {
-                            SectionHeading(text: "本机备份", trailing: "\(store.backend.backups.count) 份")
+                            SectionHeading(text: "本机备份", trailing: "\(backups.count) 份")
 
-                            VStack(spacing: 0) {
-                                ForEach(store.backend.backups) { record in
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "archivebox")
-                                            .font(.system(size: 15))
-                                            .foregroundStyle(Palette.gold)
-                                            .frame(width: 32, height: 32)
-                                            .background(Palette.gold.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
+                            if backups.isEmpty {
+                                Text("还没有备份。勾选要包含的内容后点「创建备份」。")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(Palette.tertiary)
+                                    .padding(14)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .glassSurface(cornerRadius: 20)
+                            } else {
+                                VStack(spacing: 0) {
+                                    ForEach(backups) { record in
+                                        HStack(spacing: 12) {
+                                            Image(systemName: "archivebox")
+                                                .font(.system(size: 15))
+                                                .foregroundStyle(Palette.gold)
+                                                .frame(width: 32, height: 32)
+                                                .background(Palette.gold.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
 
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(record.name)
-                                                .font(.system(size: 12.5, weight: .medium))
-                                                .foregroundStyle(Palette.text)
-                                                .lineLimit(1)
-                                            Text("\(record.date.formatted(date: .abbreviated, time: .shortened)) · \(record.size) · \(record.includes)")
-                                                .font(.system(size: 9.5))
-                                                .foregroundStyle(Palette.tertiary)
-                                                .lineLimit(1)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(record.displayName)
+                                                    .font(.system(size: 12.5, weight: .medium))
+                                                    .foregroundStyle(Palette.text)
+                                                    .lineLimit(1)
+                                                Text("\(record.createdAt.formatted(date: .abbreviated, time: .shortened)) · \(record.sizeLabel) · \(record.includesLabel)")
+                                                    .font(.system(size: 9.5))
+                                                    .foregroundStyle(Palette.tertiary)
+                                                    .lineLimit(1)
+                                            }
+
+                                            Spacer()
+
+                                            Button("恢复") {
+                                                restoreTarget = record
+                                            }
+                                            .font(.system(size: 11.5, weight: .semibold))
+                                            .foregroundStyle(Palette.accent)
                                         }
-
-                                        Spacer()
-
-                                        Button("恢复") {
-                                            restoreTarget = record
+                                        .padding(.horizontal, 13)
+                                        .padding(.vertical, 10)
+                                        .contextMenu {
+                                            Button("删除备份", role: .destructive) {
+                                                Task { await store.backup.delete(record) }
+                                            }
                                         }
-                                        .font(.system(size: 11.5, weight: .semibold))
-                                        .foregroundStyle(Palette.accent)
                                     }
-                                    .padding(.horizontal, 13)
-                                    .padding(.vertical, 10)
                                 }
+                                .glassSurface(cornerRadius: 20)
                             }
-                            .glassSurface(cornerRadius: 20)
                         }
                     }
                     .padding(18)
@@ -1090,19 +1114,34 @@ struct BackupSheet: View {
                         .fontWeight(.semibold)
                 }
             }
+            .task { await store.backup.refresh() }
             .alert(item: $restoreTarget) { record in
                 Alert(
                     title: Text("恢复备份？"),
-                    message: Text("将用 \(record.name) 覆盖当前演示数据。"),
+                    message: Text("\(record.displayName) 会覆盖当前的书源、书籍进度与偏好设置。"),
                     primaryButton: .destructive(Text("恢复")) {
-                        store.saveSnapshot()
-                        message = "已恢复 \(record.name)"
-                        dismiss()
+                        Task { @MainActor in
+                            guard let package = await store.backup.load(record) else {
+                                message = "\(record.displayName) 无法读取，可能已损坏"
+                                return
+                            }
+                            store.restore(from: package.payload)
+                            message = "已恢复 \(record.displayName)"
+                        }
                     },
                     secondaryButton: .cancel()
                 )
             }
         }
+    }
+
+    private func binding(for scope: BackupScope) -> Binding<Bool> {
+        Binding(
+            get: { scopes.contains(scope) },
+            set: { isOn in
+                if isOn { scopes.insert(scope) } else { scopes.remove(scope) }
+            }
+        )
     }
 }
 

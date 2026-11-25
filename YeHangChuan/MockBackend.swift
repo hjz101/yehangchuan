@@ -81,14 +81,6 @@ struct DebugLine: Identifiable {
     let milliseconds: Int
 }
 
-struct BackupRecord: Identifiable {
-    let id = UUID()
-    let name: String
-    let date: Date
-    let size: String
-    let includes: String
-}
-
 struct MockFileItem: Identifiable {
     let id = UUID()
     let name: String
@@ -122,11 +114,6 @@ final class MockBackend {
     var downloadProgress: Double = 0
     var isDownloading = false
     var lastDownloadLabel = "未开始"
-
-    var backups: [BackupRecord] = [
-        BackupRecord(name: "夜航船_2026-11-23.qibackup", date: Date().addingTimeInterval(-86400 * 2), size: "8.6 MB", includes: "书籍 · 进度 · 摘录"),
-        BackupRecord(name: "夜航船_2026-11-19.qibackup", date: Date().addingTimeInterval(-86400 * 6), size: "7.9 MB", includes: "书籍 · 进度")
-    ]
 
     var files: [MockFileItem] = [
         MockFileItem(name: "夜航船.txt", detail: "UTF-8 · 1.8 MB", symbol: "doc.plaintext"),
@@ -273,19 +260,6 @@ final class MockBackend {
         return count
     }
 
-    func createBackup(name: String) async -> BackupRecord? {
-        let response = await call("POST", "/v1/backup")
-        guard response.ok else { return nil }
-        let record = BackupRecord(
-            name: "\(name.isEmpty ? "夜航船" : name)_\(Self.dayLabel(Date())).qibackup",
-            date: Date(),
-            size: "9.1 MB",
-            includes: "书籍 · 进度 · 摘录 · 设置"
-        )
-        backups.insert(record, at: 0)
-        return record
-    }
-
     func clearCache(_ kind: String) -> Double {
         var freed: Double = 0
         switch kind {
@@ -323,12 +297,5 @@ final class MockBackend {
         let response = await call("GET", "/v1/covers?q=\(query)")
         guard response.ok else { return [] }
         return ["暮色船坞", "旧纸纹理", "山海蓝", "灯火航线"].map { "\(query) · \($0)" }
-    }
-
-    static func dayLabel(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_Hans_CN")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
     }
 }
