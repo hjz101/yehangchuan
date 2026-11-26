@@ -711,7 +711,8 @@ struct DiscoverSheet: View {
                 .glassCircle(diameter: 40, tint: Palette.jade.opacity(0.1))
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("发现与订阅")
+                // 这里没有订阅功能，标题就别写「发现与订阅」。
+                Text("在线发现")
                     .font(.system(size: 16, weight: .semibold, design: .serif))
                     .foregroundStyle(Palette.text)
                 Text(subtitle)
