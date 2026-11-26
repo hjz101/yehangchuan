@@ -139,13 +139,13 @@ struct SettingsView: View {
                                     labTile("AI 阅读助手", "摘要 · 封面 · 语音", "sparkles", Palette.accent) {
                                         showAI = true
                                     }
-                                    labTile("JS 书源沙箱", "权限隔离 · 私网拒绝", "curlybraces.square", Palette.jade) {
+                                    labTile("JS 书源沙箱", "不预装脚本 · 私网拦截", "curlybraces.square", Palette.jade) {
                                         showSandbox = true
                                     }
-                                    labTile("在线发现", "多源聚合 · 订阅", "safari", Palette.gold) {
+                                    labTile("在线发现", "只用已启用书源", "safari", Palette.blue) {
                                         showDiscover = true
                                     }
-                                    labTile("声音实验室", "多角色 · 后台", "waveform", Palette.jade) {
+                                    labTile("声音实验室", "多角色 · 后台播放", "waveform", Palette.sand) {
                                         showVoice = true
                                     }
                                 }
@@ -206,22 +206,26 @@ struct SettingsView: View {
                                 )
                             }
 
-                            VStack(spacing: 6) {
+                            HStack(spacing: 10) {
+                                Text("夜航船 · 本地优先的阅读器")
+                                    .font(.system(size: 10.5, design: .serif))
+                                    .foregroundStyle(Palette.tertiary)
+
+                                Text("·")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Palette.tertiary.opacity(0.6))
+
                                 Button {
                                     showAlert = .support
                                 } label: {
                                     Text("支持开发者")
-                                        .font(.system(size: 11.5, weight: .medium))
+                                        .font(.system(size: 10.5, weight: .medium))
                                         .foregroundStyle(Palette.accent)
                                 }
                                 .buttonStyle(PressableStyle())
-
-                                Text("夜航船 · 本地优先的阅读器")
-                                    .font(.system(size: 10.5, design: .serif))
-                                    .foregroundStyle(Palette.tertiary)
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.top, 2)
+                            .padding(.top, 4)
                             .id("settingsFooter")
                         }
                         .padding(.horizontal, 18)
@@ -482,25 +486,22 @@ struct EyeCareSheet: View {
                         .padding(14)
                         .glassSurface(cornerRadius: 20)
 
-                        Toggle(isOn: Binding(
-                            get: { store.eyeCare.enabled },
-                            set: { store.eyeCare.enabled = $0; store.saveSnapshot() }
-                        )) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("暖色滤光")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundStyle(Palette.text)
-                                Text("降低蓝光刺激，阅读页与书架同步生效")
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(Palette.tertiary)
+                        VStack(alignment: .leading, spacing: 14) {
+                            Toggle(isOn: Binding(
+                                get: { store.eyeCare.enabled },
+                                set: { store.eyeCare.enabled = $0; store.saveSnapshot() }
+                            )) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("暖色滤光")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundStyle(Palette.text)
+                                    Text("降低蓝光刺激，阅读页与书架同步生效")
+                                        .font(.system(size: 10.5))
+                                        .foregroundStyle(Palette.tertiary)
+                                }
                             }
-                        }
-                        .tint(Palette.jade)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 13)
-                        .glassSurface(cornerRadius: 20)
+                            .tint(Palette.jade)
 
-                        VStack(spacing: 14) {
                             sliderRow(
                                 title: "暖度",
                                 value: Binding(
@@ -523,13 +524,27 @@ struct EyeCareSheet: View {
                         }
                         .padding(14)
                         .glassSurface(cornerRadius: 20)
+
                         VStack(alignment: .leading, spacing: 12) {
-                            Toggle("每 \(store.eyeCare.restMinutes) 分钟提醒休息", isOn: Binding(
-                                get: { store.eyeCare.restReminder },
-                                set: { store.eyeCare.restReminder = $0; store.saveSnapshot() }
-                            ))
-                            .font(.system(size: 13))
-                            .tint(Palette.jade)
+                            SectionHeading(
+                                text: "休息提醒",
+                                trailing: store.eyeCare.restReminder ? "开启" : "关闭"
+                            )
+
+                            HStack {
+                                Text("每 \(store.eyeCare.restMinutes) 分钟")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Palette.text)
+
+                                Spacer()
+
+                                Toggle("", isOn: Binding(
+                                    get: { store.eyeCare.restReminder },
+                                    set: { store.eyeCare.restReminder = $0; store.saveSnapshot() }
+                                ))
+                                .labelsHidden()
+                                .tint(Palette.jade)
+                            }
 
                             Button {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -564,6 +579,7 @@ struct EyeCareSheet: View {
                         Text("护眼设置全 App 生效，只保存在本机。")
                             .font(.system(size: 10))
                             .foregroundStyle(Palette.tertiary)
+                            .padding(.horizontal, 2)
                     }
                     .padding(18)
                 }

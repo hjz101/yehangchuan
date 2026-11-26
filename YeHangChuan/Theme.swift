@@ -52,6 +52,9 @@ enum Palette {
     static let jade = Color.adaptive(light: 0x1D6A66, dark: 0x7ED9C9)
     // 旧金
     static let gold = Color.adaptive(light: 0x8A6A1F, dark: 0xE9C179)
+    // 船木与暮蓝，用于实验室等需要第三、第四色的入口
+    static let sand = Color.adaptive(light: 0x8A5A32, dark: 0xD8A472)
+    static let blue = Color.adaptive(light: 0x2F5A8A, dark: 0x86B6E6)
 
     // 墨色层次
     static let text = Color.adaptive(light: 0x111A24, dark: 0xF4F0E8)
