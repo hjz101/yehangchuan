@@ -128,6 +128,26 @@ final class SourceEngine {
 
 // MARK: - 私网拦截
 
+/// 用户显式放行的私网地址。
+///
+/// 传输层跑在任意线程上，不能用 `@MainActor` 的状态，所以单独做一个
+/// 加锁的小容器；界面改一处，所有在途请求立刻按新值判定。
+final class PrivateHostAllowList: @unchecked Sendable {
+    static let shared = PrivateHostAllowList()
+
+    private let lock = NSLock()
+    private var hosts: Set<String> = []
+
+    func update(_ values: Set<String>) {
+        lock.withLock { hosts = values }
+    }
+
+    func contains(_ host: String) -> Bool {
+        let normalized = URLHost.normalize(host)
+        return lock.withLock { hosts.contains(normalized) }
+    }
+}
+
 /// 把 App 的私网判定加在传输层，任何经过引擎的请求都会被检查一次。
 ///
 /// 放在这里而不是放在书源启用时，是因为书源的规则里可能写着别的域名，
@@ -136,7 +156,9 @@ private struct HostGuardedTransport: HTTPTransport {
     let base: any HTTPTransport
 
     func data(for request: URLRequest) async throws -> HTTPResponse {
-        if let host = request.url?.host, URLHost.isPrivate(host) {
+        if let host = request.url?.host,
+           URLHost.isPrivate(host),
+           !PrivateHostAllowList.shared.contains(host) {
             throw SourceEngineError.privateHost(host)
         }
         return try await base.data(for: request)

@@ -739,11 +739,25 @@ final class AppStore {
     func setSourceEnabled(_ sourceID: String, enabled: Bool) {
         guard let index = sources.firstIndex(where: { $0.id == sourceID }) else { return }
         sources[index].enabled = enabled
+        syncPrivateAllowList()
         saveSnapshot()
+    }
+
+    /// 把「已启用且确实是私网地址」的书源同步给传输层。
+    ///
+    /// 私网地址默认拒绝，但用户可以在弹窗里显式放行——放行的意思就是
+    /// 「这条书源允许访问私网」。传输层在别的线程上跑，不能用这里的状态，
+    /// 所以每次书源启用状态变化时同步一份快照过去。
+    func syncPrivateAllowList() {
+        let allowed = sources
+            .filter { $0.enabled }
+            .compactMap { URLHost.isPrivate($0.host) ? URLHost.normalize($0.host) : nil }
+        PrivateHostAllowList.shared.update(Set(allowed))
     }
 
     func removeSource(_ sourceID: String) {
         sources.removeAll { $0.id == sourceID }
+        syncPrivateAllowList()
         showToast("已删除书源")
         saveSnapshot()
     }
@@ -751,6 +765,7 @@ final class AppStore {
     func updateSource(_ source: BookSource) {
         guard let index = sources.firstIndex(where: { $0.id == source.id }) else { return }
         sources[index] = source
+        syncPrivateAllowList()
         saveSnapshot()
     }
 
@@ -1212,6 +1227,7 @@ final class AppStore {
         groups = snapshot.groups
         customChapters = snapshot.customChapters
         eyeCare = snapshot.eyeCare
+        syncPrivateAllowList()
     }
 
     // MARK: Backup
