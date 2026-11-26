@@ -72,36 +72,16 @@ struct SettingsView: View {
                                     showEyeCare = true
                                 } label: {
                                     SettingsRow(
-                                        title: "护眼",
+                                        title: "护眼与外观",
                                         value: store.eyeCare.enabled
-                                            ? "已开启 · 暖度 \(Int(store.eyeCare.warmth * 100))%"
-                                            : "关闭",
+                                            ? "\(store.appearance.rawValue) · 暖度 \(Int(store.eyeCare.warmth * 100))%"
+                                            : "\(store.appearance.rawValue) · 护眼关闭",
                                         systemImage: "leaf",
                                         iconTint: Palette.jade,
                                         isLast: true
                                     )
                                 }
                                 .buttonStyle(.plain)
-                            }
-
-                            group("外观") {
-                                VStack(alignment: .leading, spacing: 11) {
-                                    SectionHeading(text: "界面明暗", trailing: store.appearance.rawValue)
-
-                                    GlassSegmented(
-                                        items: AppAppearance.allCases,
-                                        title: { $0.rawValue },
-                                        selection: Binding(
-                                            get: { store.appearance },
-                                            set: { newValue in
-                                                withAnimation(.easeInOut(duration: 0.35)) {
-                                                    store.appearance = newValue
-                                                }
-                                            }
-                                        )
-                                    )
-                                }
-                                .padding(15)
                             }
 
                             group("数据") {
@@ -483,6 +463,25 @@ struct EyeCareSheet: View {
                     VStack(alignment: .leading, spacing: 16) {
                         statusCard
 
+                        VStack(alignment: .leading, spacing: 10) {
+                            SectionHeading(text: "界面明暗", trailing: store.appearance.rawValue)
+
+                            GlassSegmented(
+                                items: AppAppearance.allCases,
+                                title: { $0.rawValue },
+                                selection: Binding(
+                                    get: { store.appearance },
+                                    set: { newValue in
+                                        withAnimation(.easeInOut(duration: 0.35)) {
+                                            store.appearance = newValue
+                                        }
+                                    }
+                                )
+                            )
+                        }
+                        .padding(14)
+                        .glassSurface(cornerRadius: 20)
+
                         Toggle(isOn: Binding(
                             get: { store.eyeCare.enabled },
                             set: { store.eyeCare.enabled = $0; store.saveSnapshot() }
@@ -524,9 +523,6 @@ struct EyeCareSheet: View {
                         }
                         .padding(14)
                         .glassSurface(cornerRadius: 20)
-                        .opacity(store.eyeCare.enabled ? 1 : 0.45)
-                        .disabled(!store.eyeCare.enabled)
-
                         VStack(alignment: .leading, spacing: 12) {
                             Toggle("每 \(store.eyeCare.restMinutes) 分钟提醒休息", isOn: Binding(
                                 get: { store.eyeCare.restReminder },
@@ -573,7 +569,7 @@ struct EyeCareSheet: View {
                 }
                 .scrollIndicators(.hidden)
             }
-            .navigationTitle("护眼")
+            .navigationTitle("护眼与外观")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
