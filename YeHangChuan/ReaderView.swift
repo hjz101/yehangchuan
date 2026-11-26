@@ -198,6 +198,13 @@ struct ReaderView: View {
         .onChange(of: settings.fontDesign) { _, _ in rebuild(restore: false) }
         .onChange(of: settings.fontWeight) { _, _ in rebuild(restore: false) }
         .onChange(of: settings.indent) { _, _ in rebuild(restore: false) }
+        .onChange(of: settings.hideSourceComments) { _, _ in
+            // 段评一关，右侧那条挂胶囊的留白就没有存在的理由了（`ReaderMetrics`
+            // 按 `hideSourceComments` 决定要不要留 gutter），正文宽度跟着变，
+            // 页表必须重排。漏了这一步，界面已经弹出「已显示段评」，
+            // 而正文仍是按旧宽度切的 —— 胶囊要么压住字，要么悬在留白里。
+            rebuild(restore: false)
+        }
         .onChange(of: chapters.count) { _, _ in
             // 在线书拉到目录、补到正文后章数会变：页表要跟着重建，
             // 否则新下来的章节在书里根本不存在。
