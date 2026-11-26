@@ -1,6 +1,7 @@
 import SwiftUI
 import Observation
 import LegadoCore
+import YeHangCore
 
 // MARK: - Book
 
@@ -635,8 +636,13 @@ final class AppStore {
     @ObservationIgnored private var pendingSnapshot: Snapshot?
     @ObservationIgnored private var pendingSequence: Int = 0
 
+    /// 书架迁移结果。启动时跑一次，界面据此如实告诉用户搬了什么。
+    /// 读写仍然走旧快照路径 —— 这一步只验证迁移能力，不改变存储方式。
+    var migrationReport: LibraryMigrationReport?
+
     init() {
         loadSnapshot()
+        runLibraryMigration()
     }
 
     // MARK: Shelf
@@ -1354,12 +1360,20 @@ final class AppStore {
 
     private func loadSnapshot() {
         if let data = SnapshotStore.shared.read() {
-            if let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) {
+            do {
+                let snapshot = try JSONDecoder().decode(Snapshot.self, from: data)
                 apply(snapshot)
                 return
+            } catch {
+                // 解码失败是最难查的一类问题：文件在、内容也有，但就是读不出来。
+                // 把具体是哪个字段坏了一并写到同目录的文本里，
+                // 否则用户和开发者都只剩「书架空了」这一个症状。
+                let detail = String(describing: error)
+                print("[YeHangChuan] 快照解码失败：\(detail)")
+                SnapshotStore.shared.recordDecodeFailure(detail)
+                // 文件损坏：先留档再回落到默认数据，避免静默覆盖掉用户的书库。
+                SnapshotStore.shared.quarantineCorruptFile()
             }
-            // 文件损坏：先留档再回落到默认数据，避免静默覆盖掉用户的书库。
-            SnapshotStore.shared.quarantineCorruptFile()
         }
 
         // 一次性迁移旧版 UserDefaults 快照
@@ -1372,8 +1386,56 @@ final class AppStore {
         UserDefaults.standard.removeObject(forKey: Self.legacySnapshotKey)
     }
 
-    private func apply(_ snapshot: Snapshot) {
-        books = snapshot.books
+    // MARK: 书架迁移（第一步：只搬不改读路径）
+
+    /// 把旧的 `snapshot.json` 搬成「索引 + 章节文件」并留档旧文件。
+    ///
+    /// 这一步刻意**不改读写路径**：`saveSnapshot` / `loadSnapshot` 仍然走旧快照，
+    /// `SnapshotStore.read` 在本体缺失时还会回落到最近一次留档。所以迁移即便
+    /// 完全失败，用户的架子与正文也照旧可用；成功时只是额外多出一份新结构，
+    /// 供下一步切换时验证与使用。
+    private func runLibraryMigration() {
+        guard let directory = SnapshotStore.shared.directoryURL else { return }
+        let legacyURL = directory.appendingPathComponent("snapshot.json")
+        let storage = LibraryStorage(root: directory)
+        do {
+            let report = try LibraryMigrator.migrate(legacyURL: legacyURL, storage: storage)
+            migrationReport = report
+        } catch {
+            // 迁移失败不影响阅读：旧快照仍在原处，读写照旧。
+            migrationReport = LibraryMigrationReport(
+                didRun: false,
+                message: (error as? LocalizedError)?.errorDescription ?? "书架迁移未完成，旧数据已保留。"
+            )
+        }
+    }
+
+    /// 迁移是否已经跑过（用于界面判断要不要显示入口）。
+    var hasMigratedLibrary: Bool {
+        SnapshotStore.shared.directoryURL
+            .flatMap { LibraryMigrator.loadState(root: $0) } != nil
+    }
+
+    /// 已迁移到新结构的书有多少本 / 多少章，用于「存储」页如实展示。
+    var migratedLibrarySummary: (books: Int, chapters: Int)? {
+        guard let directory = SnapshotStore.shared.directoryURL,
+              let state = LibraryMigrator.loadState(root: directory) else { return nil }
+        return (state.bookCount, state.chapterCount)
+    }
+
+    /// 新结构（索引 + 章节文件）在磁盘上的真实占用。没有迁移过就是 0。
+    var migratedLibraryBytes: Int {
+        guard let directory = SnapshotStore.shared.directoryURL else { return 0 }
+        let storage = LibraryStorage(root: directory)
+        guard let index = try? storage.loadIndex() else { return 0 }
+        var total = (try? Data(contentsOf: storage.indexURL).count) ?? 0
+        for bookID in index.booksWithChapters {
+            total += (try? storage.byteCount(bookID: bookID)) ?? 0
+        }
+        return total
+    }
+
+    private func apply(_ snapshot: Snapshot) {        books = snapshot.books
         sources = snapshot.sources
         excerpts = snapshot.excerpts
         settings.apply(snapshot.settings)
@@ -1496,6 +1558,8 @@ final class SnapshotStore: @unchecked Sendable {
     private var lastWrittenSequence = 0
     private var lastSequence = 0
     private let fileURL: URL?
+    /// 快照所在目录，供书架迁移定位旧文件与留档。
+    let directoryURL: URL?
 
     private init() {
         let manager = FileManager.default
@@ -1506,6 +1570,7 @@ final class SnapshotStore: @unchecked Sendable {
         } else {
             directory = base
         }
+        directoryURL = directory
         fileURL = directory?.appendingPathComponent("snapshot.json")
     }
 
@@ -1516,9 +1581,15 @@ final class SnapshotStore: @unchecked Sendable {
         }
     }
 
+    /// 读快照。`snapshot.json` 不存在时回落到最近一次书架迁移留下的留档：
+    /// 迁移把旧文件改名而不是删除，就是为了这一刻 —— 新结构出了任何问题，
+    /// 用户的书架和正文仍然读得回来。
     func read() -> Data? {
         guard let fileURL else { return nil }
-        return try? Data(contentsOf: fileURL)
+        if let data = try? Data(contentsOf: fileURL) { return data }
+        guard let directory = directoryURL,
+              let archived = LibraryMigrator.newestArchivedSnapshot(in: directory) else { return nil }
+        return try? Data(contentsOf: archived)
     }
 
     func write(_ data: Data, sequence: Int) {
@@ -1537,5 +1608,14 @@ final class SnapshotStore: @unchecked Sendable {
             .deletingPathExtension()
             .appendingPathExtension("corrupt-\(Int(Date().timeIntervalSince1970)).json")
         try? FileManager.default.moveItem(at: fileURL, to: stamped)
+    }
+
+    /// 把解码失败的具体原因写到同目录，方便事后直接从磁盘看到，
+    /// 不必连调试器或翻设备日志。
+    func recordDecodeFailure(_ detail: String) {
+        guard let directoryURL else { return }
+        let url = directoryURL.appendingPathComponent("snapshot-decode-error.txt")
+        let text = "\(Date())\n\(detail)\n"
+        try? text.write(to: url, atomically: true, encoding: .utf8)
     }
 }

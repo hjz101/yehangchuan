@@ -1312,6 +1312,8 @@ struct CacheSheet: View {
                             .font(.system(size: 10))
                             .foregroundStyle(Palette.tertiary)
 
+                        storageMigrationCard
+
                         if !message.isEmpty {
                             Text(message)
                                 .font(.system(size: 10.5))
@@ -1333,8 +1335,65 @@ struct CacheSheet: View {
         }
     }
 
-    private func cacheRow(_ title: String, size: Double, symbol: String, kind: String) -> some View {
-        HStack(spacing: 12) {
+    /// 书架新结构的实况：搬了多少、占多少盘、有没有出过问题。
+    /// 不显示「模拟」字样 —— 这些数字是真的从磁盘读出来的。
+    @ViewBuilder
+    private var storageMigrationCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "externaldrive.badge.checkmark")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.jade)
+                Text("书架存储")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Palette.text)
+                Spacer()
+                if let report = store.migrationReport, report.warnings.isEmpty == false {
+                    Text("\(report.warnings.count) 条提示")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Palette.accent)
+                }
+            }
+
+            if let summary = store.migratedLibrarySummary {
+                Text("\(summary.books) 本 · \(summary.chapters) 章 · 正文单独存放")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Palette.secondary)
+                Text(String(format: "新结构占用 %.1f MB", Double(store.migratedLibraryBytes) / 1_048_576))
+                    .font(.system(size: 10))
+                    .foregroundStyle(Palette.tertiary)
+            } else {
+                Text("书架仍保存在单个快照文件里。")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Palette.secondary)
+            }
+
+            if let report = store.migrationReport {
+                Text(report.message)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Palette.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let archived = report.archivedFile {
+                    Text("旧文件已留档：\(archived.lastPathComponent)")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Palette.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                ForEach(report.warnings, id: \.self) { warning in
+                    Text("· \(warning)")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Palette.accent)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassSurface(cornerRadius: 18)
+    }
+
+    private func cacheRow(_ title: String, size: Double, symbol: String, kind: String) -> some View {        HStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Palette.jade)
