@@ -15,6 +15,8 @@ final class SourceEngine {
     @ObservationIgnored private let search: BookSearchService
     @ObservationIgnored private let books: NetworkBookService
     @ObservationIgnored private let debugger: BookSourceDebugger
+    @ObservationIgnored private let explorer: BookExploreService
+    @ObservationIgnored private let switcher: BookSourceSwitchService
 
     init() {
         // LegadoCore 本身不拦私网地址，而 App 在启用书源时承诺过「私网默认拒绝」。
@@ -25,6 +27,15 @@ final class SourceEngine {
         search = BookSearchService(transport: guarded)
         books = NetworkBookService(transport: guarded)
         debugger = BookSourceDebugger(transport: guarded)
+        explorer = BookExploreService(transport: guarded)
+        // 换源服务自己会去别的书源搜同名书、拉详情、取目录、验正文，
+        // 每一步都必须走同一个带私网拦截的 transport，否则换源能绕开拦截。
+        switcher = BookSourceSwitchService(
+            searcher: BookSearchService(transport: guarded),
+            detailLoader: NetworkBookService(transport: guarded),
+            chapterLoader: NetworkBookService(transport: guarded),
+            contentLoader: NetworkBookService(transport: guarded)
+        )
     }
 
     // MARK: - 搜索
@@ -82,6 +93,107 @@ final class SourceEngine {
         }
         let chapterID = "net-\(chapter.bookUrl.hashValue)-\(chapter.index)"
         return (TextSegmenter.paragraphs(from: body, chapterID: chapterID), nil)
+    }
+
+    // MARK: - 发现
+
+    /// 书源声明的发现分类。没有 `exploreUrl` 的书源返回空列表 —— 那是书源本身
+    /// 不支持发现，不是失败，界面上要区分这两种情况。
+    func exploreKinds(source: LegadoCore.BookSource) async -> (kinds: [ExploreKind], error: String?) {
+        let report = await explorer.kinds(for: source)
+        if report.kinds.isEmpty {
+            let message = report.diagnostics.first?.message
+            lastError = message
+            return ([], message)
+        }
+        return (report.kinds, nil)
+    }
+
+    /// 按分类抓一页发现书目。
+    func explore(
+        source: LegadoCore.BookSource,
+        kind: ExploreKind,
+        page: Int = 1
+    ) async -> SourceSearchOutcome {
+        await explorer.explore(source: source, kind: kind, page: page)
+    }
+
+    // MARK: - 段评
+
+    /// 拉本章评论。书源没有评论规则时返回空数组 + 明确原因，
+    /// 不抛错也不假装「没有评论」。
+    func chapterComments(
+        engineBook: LegadoCore.Book,
+        chapter: BookChapter,
+        source: LegadoCore.BookSource
+    ) async -> (comments: [ChapterComment], error: String?) {
+        guard let rules = source.ruleReview, rules.supportsChapterComments else {
+            return ([], "此书源没有配置段评规则")
+        }
+        do {
+            let comments = try await books.loadChapterComments(
+                book: engineBook, chapter: chapter, source: source
+            )
+            return (comments, nil)
+        } catch {
+            lastError = error.localizedDescription
+            return ([], error.localizedDescription)
+        }
+    }
+
+    // MARK: - 换源
+
+    /// 在其它已启用书源里找同一本书。只返回书名规范化后一致、
+    /// 并且已经过正文验证的候选，而不是「名字有点像」就列出来。
+    func switchCandidates(
+        book: TitleAuthor,
+        sources: [LegadoCore.BookSource],
+        onUpdate: @escaping @MainActor ([SwitchCandidate]) -> Void
+    ) async -> [SwitchCandidate] {
+        let engineBook = book.engineBook()
+        // candidateUpdates 是 actor 方法，虽然它同步返回一个 AsyncStream，
+        // 取这个流本身仍然要 await。
+        let updates = await switcher.candidateUpdates(for: engineBook, sources: sources)
+        var result: [SwitchCandidate] = []
+        for await update in updates {
+            result = update.map { candidate in
+                SwitchCandidate(
+                    searchBook: candidate.book,
+                    score: candidate.score,
+                    sourceURL: candidate.book.origin,
+                    sourceName: candidate.book.originName
+                )
+            }
+            await onUpdate(result)
+        }
+        return result
+    }
+
+    /// 验证候选源真的能读：拉详情、取目录、按旧位置匹配章节、再读一章正文。
+    /// 任何一步失败都返回 nil，界面上就不会出现「切过去打不开」的选项。
+    func prepareSwitch(
+        book: TitleAuthor,
+        candidate: SwitchCandidate,
+        source: LegadoCore.BookSource
+    ) async -> (report: SwitchReport, error: String?) {
+        let engineBook = book.engineBook()
+
+        guard let report = await switcher.prepareSwitch(
+            current: engineBook, candidate: candidate.searchBook, source: source
+        ) else {
+            // 上游只给 nil，不给原因。这里补一句人话，别让界面显示空白。
+            return (.empty, "候选书源无法读取：详情、目录或正文任一环节失败")
+        }
+        return (
+            SwitchReport(
+                chapters: report.chapters,
+                matchedTitle: report.book.durChapterTitle,
+                matchedIndex: report.book.durChapterIndex,
+                exactChapterMatch: report.exactChapterMatch,
+                content: report.verifiedContent?.content
+            ),
+            nil
+        )
     }
 
     // MARK: - 调试与连通性
@@ -174,4 +286,69 @@ enum SourceEngineError: LocalizedError {
             "已拦截私网地址：\(host)"
         }
     }
+}
+
+// MARK: - 跨书源识别的入参
+
+/// 换源需要知道「当前这本书是谁、读到哪儿」。
+///
+/// 为什么不直接用 App 的 `Book`：`BookSourceSwitchService` 只认引擎的
+/// `LegadoCore.Book`，而且它的字段名（`durChapterIndex` / `durChapterTitle`）
+/// 与 App 的（`progress` / `lastPosition`）对不上。这一层做一次翻译，
+/// 让换源逻辑待在引擎里，不把引擎类型泄漏到界面和快照里。
+struct TitleAuthor {
+    var title: String
+    var author: String
+    /// 当前书的引擎地址；本地书与演示书为 nil。
+    var bookURL: String?
+    var tocURL: String?
+    var origin: String?
+    var chapterIndex: Int = 0
+    var chapterTitle: String?
+    var offset: Int = 0
+    var chapterCount: Int = 0
+
+    /// 翻译成引擎的 `Book`。
+    /// `Book` 是 struct，所有字段都得在构造时就给值，
+    /// 所以这里用一次性构造而不是逐个赋值。
+    func engineBook() -> LegadoCore.Book {
+        var book = LegadoCore.Book(
+            bookUrl: bookURL ?? "",
+            name: title,
+            author: author,
+            origin: origin ?? ""
+        )
+        book.tocUrl = tocURL ?? ""
+        book.durChapterIndex = chapterIndex
+        book.durChapterTitle = chapterTitle
+        book.durChapterPos = offset
+        book.totalChapterNum = chapterCount
+        return book
+    }
+}
+
+/// 换源候选：一个能读的备选书源。
+struct SwitchCandidate: Identifiable, Equatable {
+    var searchBook: SearchBook
+    var score: Int
+    var sourceURL: String
+    var sourceName: String
+
+    /// 用书籍地址做身份：同一个源里搜到两次的一定是同一本。
+    var id: String { searchBook.bookURL }
+}
+
+/// 换源验证结果。
+struct SwitchReport {
+    var chapters: [BookChapter]
+    var matchedTitle: String?
+    var matchedIndex: Int
+    var exactChapterMatch: Bool
+    /// 从候选源实际读到的正文，用来证明「切过去真的能看」。
+    var content: String?
+
+    static let empty = SwitchReport(
+        chapters: [], matchedTitle: nil, matchedIndex: 0,
+        exactChapterMatch: false, content: nil
+    )
 }
