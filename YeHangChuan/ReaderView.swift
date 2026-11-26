@@ -1296,11 +1296,11 @@ struct ReaderPageView: View {
                     .glassCapsule(tint: settings.theme.accent.opacity(0.14))
                 }
                 .buttonStyle(.plain)
-                // 贴在段首那一行的右侧留白里（正文宽度已经扣掉 gutter），
-                // 不能压在正文上 —— 之前减 30 正好盖住行尾几个字。
+                // 贴在段尾那一行的文字末尾。末行通常不满宽，气泡跟在字后；
+                // 末行排满时右侧预留的 gutter 正好接住它，不会压到正文。
                 .offset(
-                    x: textSize.width + 2,
-                    y: item.box.firstLine.minY + 2
+                    x: item.box.lastLine.maxX + 4,
+                    y: item.box.lastLine.minY + 2
                 )
             }
 
@@ -1344,7 +1344,7 @@ struct ParagraphView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack(alignment: .bottomTrailing) {
             Text(displayText)
                 .font(.system(
                     size: settings.fontSize,
@@ -1373,7 +1373,7 @@ struct ParagraphView: View {
                     .glassCapsule(tint: settings.theme.accent.opacity(0.14))
                 }
                 .buttonStyle(.plain)
-                .offset(y: 2)
+                .offset(y: -2)
             }
         }
         .contextMenu {

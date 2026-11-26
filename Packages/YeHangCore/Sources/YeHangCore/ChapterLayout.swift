@@ -182,12 +182,13 @@ public struct ChapterLayout {
 
     /// 这一页里每个段落占据的区域（左上角原点、y 向下）。
     ///
-    /// 段评标记挂在这里：一个段落在一页里可能跨好几行，
-    /// 标记只该出现在它开头那一行；续排到下一页的段落首行在下一页，
+    /// 段评标记挂在段落最后一行：一个段落在一页里可能跨好几行，
+    /// 标记只该出现在它末尾那一行；续排到下一页的段落末行在下一页，
     /// 所以标记会跟着走，不会消失也不会重复。
     ///
     /// `frame` 是整块（所有行合并），用来判断「长按点在哪一段上」；
-    /// `firstLine` 是段落在本页的第一行，用来摆放标记与缩进对齐。
+    /// `firstLine` / `lastLine` 是段落在本页的首行与末行，
+    /// 前者用于缩进对齐，后者用来摆段评标记。
     public func paragraphBoxes(in page: PageRange, size: CGSize) -> [PageParagraphBox] {
         guard let (frame, _) = makeFrame(for: page, in: size) else { return [] }
         guard let lines = CTFrameGetLines(frame) as? [CTLine], !lines.isEmpty else { return [] }
@@ -197,6 +198,7 @@ public struct ChapterLayout {
 
         var order: [Int] = []
         var firstLines: [Int: CGRect] = [:]
+        var lastLines: [Int: CGRect] = [:]
         var merged: [Int: CGRect] = [:]
         for (index, line) in lines.enumerated() {
             let stringRange = CTLineGetStringRange(line)
@@ -219,10 +221,14 @@ public struct ChapterLayout {
             } else {
                 merged[paragraphIndex] = merged[paragraphIndex]!.union(rect)
             }
+            // 行按竖序处理，最后遇到的就是这一段在本页的末行。
+            lastLines[paragraphIndex] = rect
         }
         return order.compactMap { index in
-            guard let frame = merged[index], let first = firstLines[index] else { return nil }
-            return PageParagraphBox(paragraphIndex: index, frame: frame, firstLine: first)
+            guard let frame = merged[index],
+                  let first = firstLines[index],
+                  let last = lastLines[index] else { return nil }
+            return PageParagraphBox(paragraphIndex: index, frame: frame, firstLine: first, lastLine: last)
         }
     }
 
@@ -259,13 +265,16 @@ public struct PageParagraphBox: Equatable, Sendable {
     public let paragraphIndex: Int
     /// 本页里这一段所有行的合并矩形。
     public let frame: CGRect
-    /// 这一段在本页的第一行（标注挂在这里）。
+    /// 这一段在本页的第一行。
     public let firstLine: CGRect
+    /// 这一段在本页的最后一行（段评标记挂在这里）。
+    public let lastLine: CGRect
 
-    public init(paragraphIndex: Int, frame: CGRect, firstLine: CGRect) {
+    public init(paragraphIndex: Int, frame: CGRect, firstLine: CGRect, lastLine: CGRect) {
         self.paragraphIndex = paragraphIndex
         self.frame = frame
         self.firstLine = firstLine
+        self.lastLine = lastLine
     }
 }
 
