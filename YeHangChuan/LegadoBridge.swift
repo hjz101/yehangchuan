@@ -1,5 +1,6 @@
 import Foundation
 import LegadoCore
+import YeHangCore
 
 /// App 的 `BookSource` 与 LegadoCore 的 `BookSource` 之间的转换。
 ///
@@ -153,8 +154,12 @@ extension BookChapter {
     }
 }
 
-/// 把正文纯文本按空行切成段落，段落 ID 用「章节 ID + 序号」，
-/// 与分页锚点、书签定位用的是同一套 ID，改字号后不会漂。
+/// 把正文纯文本按空行切成段落。
+///
+/// 段落 ID 用内容寻址（章节 ID + 段落文本摘要），不是「章ID + 序号」：
+/// 书源偶尔会在正文开头重复一遍章节标题，净化时删掉它，
+/// 按序号编号会让后面每一段都错位，用户的书签就会跳到不相干的段落。
+/// 内容寻址下，删掉、插入、重排任何一段，其余段落的 ID 都不变。
 enum TextSegmenter {
     static func paragraphs(from text: String, chapterID: String) -> [Paragraph] {
         let normalized = text
@@ -188,8 +193,7 @@ enum TextSegmenter {
                 .filter { !$0.isEmpty }
         }
 
-        return blocks.enumerated().map { index, text in
-            Paragraph(id: "\(chapterID)-p\(index)", text: text)
-        }
+        let ids = ContentID.paragraphIDs(chapterID: chapterID, paragraphs: blocks)
+        return zip(ids, blocks).map { Paragraph(id: $0, text: $1) }
     }
 }

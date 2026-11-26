@@ -132,6 +132,24 @@ struct Paragraph: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let text: String
     var comments: [SegmentComment] = []
+
+    private enum CodingKeys: String, CodingKey { case id, text, comments }
+
+    /// 手写解码：`comments` 有默认值，但 Swift 自动合成的解码器**不会**用默认值
+    /// 兜住缺失的键 —— 少一个 `comments` 整个书库都解不出来，
+    /// 用户看到的就是「书架空了」。所以这里显式 `decodeIfPresent`。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        text = try container.decode(String.self, forKey: .text)
+        comments = try container.decodeIfPresent([SegmentComment].self, forKey: .comments) ?? []
+    }
+
+    init(id: String, text: String, comments: [SegmentComment] = []) {
+        self.id = id
+        self.text = text
+        self.comments = comments
+    }
 }
 
 struct SegmentComment: Identifiable, Hashable, Codable, Sendable {
@@ -141,6 +159,36 @@ struct SegmentComment: Identifiable, Hashable, Codable, Sendable {
     var likes: Int = 0
     var liked: Bool = false
     var minutesAgo: Int = 0
+
+    private enum CodingKeys: String, CodingKey { case id, author, text, likes, liked, minutesAgo }
+
+    /// 同上：段评的计数与时间戳都是「有默认值、可缺省」的字段，
+    /// 缺一个不该让整本书读不出来。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        author = try container.decode(String.self, forKey: .author)
+        text = try container.decode(String.self, forKey: .text)
+        likes = try container.decodeIfPresent(Int.self, forKey: .likes) ?? 0
+        liked = try container.decodeIfPresent(Bool.self, forKey: .liked) ?? false
+        minutesAgo = try container.decodeIfPresent(Int.self, forKey: .minutesAgo) ?? 0
+    }
+
+    init(
+        id: String,
+        author: String,
+        text: String,
+        likes: Int = 0,
+        liked: Bool = false,
+        minutesAgo: Int = 0
+    ) {
+        self.id = id
+        self.author = author
+        self.text = text
+        self.likes = likes
+        self.liked = liked
+        self.minutesAgo = minutesAgo
+    }
 }
 
 struct Chapter: Identifiable, Hashable, Codable, Sendable {
@@ -394,6 +442,68 @@ struct ReaderSnapshot: Codable, Equatable, Sendable {
     var volumeKeyTurn: Bool = false
     var hideSourceComments: Bool = false
     var purifyText: Bool = false
+
+    private enum CodingKeys: String, CodingKey {
+        case fontSize, lineSpacing, theme, pageMode, pageTurnEffect, direction
+        case fontDesign, fontWeight, sideMargin, indent, showHeaderFooter
+        case volumeKeyTurn, hideSourceComments, purifyText
+    }
+
+    /// 逐个字段兜底。阅读设置全是「可以再调」的偏好：
+    /// 少一个键、或某个枚举值是这个版本不认识的，只该让那一项回到默认，
+    /// 不该让整份设置读不出来，更不该连累书库。
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? fontSize
+        lineSpacing = try c.decodeIfPresent(Double.self, forKey: .lineSpacing) ?? lineSpacing
+        theme = (try? c.decodeIfPresent(ReaderTheme.self, forKey: .theme)) .flatMap { $0 } ?? theme
+        pageMode = (try? c.decodeIfPresent(PageMode.self, forKey: .pageMode)).flatMap { $0 } ?? pageMode
+        pageTurnEffect = (try? c.decodeIfPresent(PageTurnEffect.self, forKey: .pageTurnEffect)).flatMap { $0 }
+            ?? pageTurnEffect
+        direction = (try? c.decodeIfPresent(ReadingDirection.self, forKey: .direction)).flatMap { $0 } ?? direction
+        fontDesign = (try? c.decodeIfPresent(ReaderFontDesign.self, forKey: .fontDesign)).flatMap { $0 } ?? fontDesign
+        fontWeight = (try? c.decodeIfPresent(ReaderWeight.self, forKey: .fontWeight)).flatMap { $0 } ?? fontWeight
+        sideMargin = try c.decodeIfPresent(Double.self, forKey: .sideMargin) ?? sideMargin
+        indent = try c.decodeIfPresent(Bool.self, forKey: .indent) ?? indent
+        showHeaderFooter = try c.decodeIfPresent(Bool.self, forKey: .showHeaderFooter) ?? showHeaderFooter
+        volumeKeyTurn = try c.decodeIfPresent(Bool.self, forKey: .volumeKeyTurn) ?? volumeKeyTurn
+        hideSourceComments = try c.decodeIfPresent(Bool.self, forKey: .hideSourceComments) ?? hideSourceComments
+        purifyText = try c.decodeIfPresent(Bool.self, forKey: .purifyText) ?? purifyText
+    }
+
+    init() {}
+
+    init(
+        fontSize: Double,
+        lineSpacing: Double,
+        theme: ReaderTheme,
+        pageMode: PageMode,
+        pageTurnEffect: PageTurnEffect,
+        direction: ReadingDirection,
+        fontDesign: ReaderFontDesign,
+        fontWeight: ReaderWeight,
+        sideMargin: Double,
+        indent: Bool,
+        showHeaderFooter: Bool,
+        volumeKeyTurn: Bool,
+        hideSourceComments: Bool,
+        purifyText: Bool
+    ) {
+        self.fontSize = fontSize
+        self.lineSpacing = lineSpacing
+        self.theme = theme
+        self.pageMode = pageMode
+        self.pageTurnEffect = pageTurnEffect
+        self.direction = direction
+        self.fontDesign = fontDesign
+        self.fontWeight = fontWeight
+        self.sideMargin = sideMargin
+        self.indent = indent
+        self.showHeaderFooter = showHeaderFooter
+        self.volumeKeyTurn = volumeKeyTurn
+        self.hideSourceComments = hideSourceComments
+        self.purifyText = purifyText
+    }
 }
 
 // MARK: - Excerpts
@@ -466,6 +576,22 @@ struct EyeCareSettings: Codable, Equatable, Sendable {
     var dim: Double = 0.08
     var restReminder = true
     var restMinutes = 20
+
+    private enum CodingKeys: String, CodingKey { case enabled, warmth, dim, restReminder, restMinutes }
+
+    /// 老快照里这一区经常只是个 `{}`（护眼功能后来才加）。
+    /// 自动合成的解码器遇到缺键会直接抛错，整个书库跟着读不出来 ——
+    /// 这里逐项兜底，缺什么就用默认值。
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? enabled
+        warmth = try c.decodeIfPresent(Double.self, forKey: .warmth) ?? warmth
+        dim = try c.decodeIfPresent(Double.self, forKey: .dim) ?? dim
+        restReminder = try c.decodeIfPresent(Bool.self, forKey: .restReminder) ?? restReminder
+        restMinutes = try c.decodeIfPresent(Int.self, forKey: .restMinutes) ?? restMinutes
+    }
+
+    init() {}
 }
 
 struct ImportDraft: Identifiable {
@@ -633,16 +759,21 @@ final class AppStore {
     private static let legacySnapshotKey = "yehangchuan.snapshot.v5"
 
     @ObservationIgnored private var saveTask: Task<Void, Never>?
-    @ObservationIgnored private var pendingSnapshot: Snapshot?
-    @ObservationIgnored private var pendingSequence: Int = 0
 
     /// 书架迁移结果。启动时跑一次，界面据此如实告诉用户搬了什么。
-    /// 读写仍然走旧快照路径 —— 这一步只验证迁移能力，不改变存储方式。
     var migrationReport: LibraryMigrationReport?
 
+    /// 新存储在读写时遇到的问题（索引坏了、某本书正文读不出来）。
+    /// 有值就说明这次读到 / 写下的数据并不完整，界面必须显示出来。
+    var libraryStoreWarning: String?
+
+    /// 顺序不能反：先迁移，再读。
+    ///
+    /// 读在前的话，首次启动会把旧快照（段落 ID 还是「章ID-p序号」）读进内存，
+    /// 迁移随后写出的新结构立刻被内存里的旧数据覆盖回去，书签就白改了。
     init() {
-        loadSnapshot()
         runLibraryMigration()
+        loadSnapshot()
     }
 
     // MARK: Shelf
@@ -1302,6 +1433,55 @@ final class AppStore {
         var groups: [String]
         var customChapters: [String: [Chapter]]
         var eyeCare: EyeCareSettings
+
+        private enum CodingKeys: String, CodingKey {
+            case books, sources, excerpts, settings, goalMinutes, appearance
+            case bookmarks, positions, groups, customChapters, eyeCare
+        }
+
+        /// 逐分区兜底解码。整份快照是「用户书库的唯一副本」：
+        /// 少一个分区键（旧版本没有、新版本才加）不该让整座书架读不出来。
+        /// 只有 `books` 是必须的 —— 没有书架的「书架」没有意义。
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            books = try c.decodeIfPresent([Book].self, forKey: .books) ?? []
+            sources = try c.decodeIfPresent([BookSource].self, forKey: .sources) ?? []
+            excerpts = try c.decodeIfPresent([Excerpt].self, forKey: .excerpts) ?? []
+            settings = try c.decodeIfPresent(ReaderSnapshot.self, forKey: .settings) ?? ReaderSnapshot()
+            goalMinutes = try c.decodeIfPresent(Int.self, forKey: .goalMinutes) ?? 60
+            appearance = try c.decodeIfPresent(AppAppearance.self, forKey: .appearance) ?? .dark
+            bookmarks = try c.decodeIfPresent([Bookmark].self, forKey: .bookmarks) ?? []
+            positions = try c.decodeIfPresent([String: ReadingPosition].self, forKey: .positions) ?? [:]
+            groups = try c.decodeIfPresent([String].self, forKey: .groups) ?? []
+            customChapters = try c.decodeIfPresent([String: [Chapter]].self, forKey: .customChapters) ?? [:]
+            eyeCare = try c.decodeIfPresent(EyeCareSettings.self, forKey: .eyeCare) ?? EyeCareSettings()
+        }
+
+        init(
+            books: [Book],
+            sources: [BookSource],
+            excerpts: [Excerpt],
+            settings: ReaderSnapshot,
+            goalMinutes: Int,
+            appearance: AppAppearance,
+            bookmarks: [Bookmark],
+            positions: [String: ReadingPosition],
+            groups: [String],
+            customChapters: [String: [Chapter]],
+            eyeCare: EyeCareSettings
+        ) {
+            self.books = books
+            self.sources = sources
+            self.excerpts = excerpts
+            self.settings = settings
+            self.goalMinutes = goalMinutes
+            self.appearance = appearance
+            self.bookmarks = bookmarks
+            self.positions = positions
+            self.groups = groups
+            self.customChapters = customChapters
+            self.eyeCare = eyeCare
+        }
     }
 
     private func makeSnapshot() -> Snapshot {
@@ -1321,12 +1501,11 @@ final class AppStore {
     }
 
     /// 合并写入：连续调用只会在最后一次之后 0.6 秒真正落盘，编码在后台线程完成。
-    /// 翻页这类高频写回不再每次都序列化整座书库。
+    /// 落盘走的是新存储（`LibraryStore`）：索引只写元数据，正文按书分文件，
+    /// 而且只重写这次真的改过的那一本。
     func saveSnapshot() {
         let snapshot = makeSnapshot()
-        let sequence = SnapshotStore.shared.nextSequence()
-        pendingSnapshot = snapshot
-        pendingSequence = sequence
+        let sequence = LibraryStore.shared.nextSequence()
         saveTask?.cancel()
         saveTask = Task {
             do {
@@ -1335,7 +1514,6 @@ final class AppStore {
                 return
             }
             await Self.persist(snapshot, sequence: sequence)
-            if pendingSequence == sequence { pendingSnapshot = nil }
         }
     }
 
@@ -1344,25 +1522,81 @@ final class AppStore {
     func flushSnapshot() {
         saveTask?.cancel()
         saveTask = nil
-        pendingSnapshot = nil
         let snapshot = makeSnapshot()
-        let sequence = SnapshotStore.shared.nextSequence()
-        guard let data = try? JSONEncoder().encode(snapshot) else { return }
-        SnapshotStore.shared.write(data, sequence: sequence)
+        let sequence = LibraryStore.shared.nextSequence()
+        LibraryStore.shared.write(snapshot, sequence: sequence, synchronously: true)
     }
 
     private static func persist(_ snapshot: Snapshot, sequence: Int) async {
         await Task.detached(priority: .utility) {
-            guard let data = try? JSONEncoder().encode(snapshot) else { return }
-            SnapshotStore.shared.write(data, sequence: sequence)
+            LibraryStore.shared.write(snapshot, sequence: sequence)
         }.value
     }
 
+    /// 降级读到的旧快照里，段落 ID 还是旧式（`章ID-p序号`）。
+    /// 写回新结构前统一换成内容寻址 ID，并同步重映射书签与阅读位置。
+    ///
+    /// 不做这一步的后果：下次启动读到的是**新结构**，里面却是一批旧式 ID。
+    /// 一旦某章正文有变化（净化、换源、书源重排），按序号编的 ID 就会整体错位，
+    /// 用户的书签会跳到不相干的段落，而且毫无提示。
+    private func normalizeParagraphIDs() {
+        var map: [String: [String: String]] = [:]
+        for (bookID, chapters) in customChapters {
+            var updated: [Chapter] = []
+            for chapter in chapters {
+                let texts = chapter.paragraphs.map(\.text)
+                let newIDs = ContentID.paragraphIDs(chapterID: chapter.id, paragraphs: texts)
+                var paragraphs: [Paragraph] = []
+                for (index, paragraph) in chapter.paragraphs.enumerated() {
+                    let newID = newIDs[index]
+                    map[bookID, default: [:]][paragraph.id] = newID
+                    paragraphs.append(
+                        Paragraph(id: newID, text: paragraph.text, comments: paragraph.comments)
+                    )
+                }
+                updated.append(
+                    Chapter(
+                        id: chapter.id,
+                        title: chapter.title,
+                        paragraphs: paragraphs,
+                        networkURL: chapter.networkURL
+                    )
+                )
+            }
+            customChapters[bookID] = updated
+        }
+
+        for (bookID, position) in positions {
+            guard let mapped = map[bookID]?[position.paragraphID] else { continue }
+            var updated = position
+            updated.paragraphID = mapped
+            positions[bookID] = updated
+        }
+        for index in bookmarks.indices {
+            guard let anchor = bookmarks[index].paragraphID,
+                  let mapped = map[bookmarks[index].bookID]?[anchor] else { continue }
+            bookmarks[index].paragraphID = mapped
+        }
+    }
+
+    /// 读顺序：新结构 → 旧的一体化快照 → 迁移留档 → 早期 UserDefaults。
+    ///
+    /// 一级读不出来才降级到下一级，绝不合并两份数据：
+    /// 旧快照里的段落 ID 还是「章ID-p序号」，与新结构的内容寻址 ID 混用
+    /// 会让书签跳到不相干的段落。
     private func loadSnapshot() {
+        if let contents = LibraryStore.shared.read(), apply(contents) {
+            return
+        }
+
         if let data = SnapshotStore.shared.read() {
             do {
                 let snapshot = try JSONDecoder().decode(Snapshot.self, from: data)
                 apply(snapshot)
+                // 旧快照是唯一一份数据，立刻按新结构写下来，
+                // 否则下次启动还得再降级一遍。
+                normalizeParagraphIDs()
+                flushSnapshot()
                 return
             } catch {
                 // 解码失败是最难查的一类问题：文件在、内容也有，但就是读不出来。
@@ -1380,20 +1614,79 @@ final class AppStore {
         guard let data = UserDefaults.standard.data(forKey: Self.legacySnapshotKey),
               let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) else { return }
         apply(snapshot)
-        if let encoded = try? JSONEncoder().encode(snapshot) {
-            SnapshotStore.shared.write(encoded, sequence: SnapshotStore.shared.nextSequence())
-        }
+        normalizeParagraphIDs()
+        flushSnapshot()
         UserDefaults.standard.removeObject(forKey: Self.legacySnapshotKey)
     }
 
-    // MARK: 书架迁移（第一步：只搬不改读路径）
+    /// 应用新结构读到的东西。索引分区解码失败时返回 false，
+    /// 让调用方降级到旧快照 —— 半个空书架比读不出来更糟。
+    ///
+    /// 每个分区**单独**解码：某个分区少了字段（旧版本写的、将来版本加的），
+    /// 只有那一块退回默认值，不能连累整个书架。
+    /// 这正是旧方案的病根 —— 一个字段读不出来，整座书库就没了。
+    @discardableResult
+    private func apply(_ contents: LibraryStore.Contents) -> Bool {
+        let sections = JSONValue.object(contents.sections)
+
+        func decode<T: Decodable>(_ key: String, as type: T.Type) -> T? {
+            guard let value = sections[key],
+                  let data = try? JSONEncoder().encode(value) else { return nil }
+            return try? JSONDecoder().decode(type, from: data)
+        }
+
+        var warnings: [String] = []
+        // 书架本身读不出来就没法继续：这是唯一「整份失效」的分区。
+        guard let storedBooks = decode("books", as: [Book].self) else {
+            let reason = "书架索引里的书架数据读不出来，已回退到旧快照。"
+            SnapshotStore.shared.recordDecodeFailure(reason)
+            libraryStoreWarning = reason
+            return false
+        }
+
+        books = storedBooks
+        sources = decode("sources", as: [BookSource].self) ?? []
+        excerpts = decode("excerpts", as: [Excerpt].self) ?? []
+        bookmarks = decode("bookmarks", as: [Bookmark].self) ?? []
+        positions = decode("positions", as: [String: ReadingPosition].self) ?? [:]
+        groups = decode("groups", as: [String].self) ?? []
+        goalMinutes = decode("goalMinutes", as: Int.self) ?? goalMinutes
+        appearance = decode("appearance", as: AppAppearance.self) ?? appearance
+        eyeCare = decode("eyeCare", as: EyeCareSettings.self) ?? eyeCare
+
+        if let readerSettings = decode("settings", as: ReaderSnapshot.self) {
+            settings.apply(readerSettings)
+        } else if contents.sections["settings"] != nil {
+            // 阅读设置是「可再调」的偏好，读不出来就用默认值，
+            // 但要说一声 —— 用户会发现字号变了。
+            warnings.append("阅读设置读不出来，已使用默认设置。")
+        }
+
+        customChapters = contents.chapters
+        syncPrivateAllowList()
+
+        // 单本书正文读不出来时，那本书退回演示数据，但必须说出来。
+        if contents.recoveredFromPreviousIndex {
+            warnings.append("上次保存的书架读不出来，已使用上一版索引。")
+        }
+        for (bookID, reason) in contents.failures.sorted(by: { $0.key < $1.key }) {
+            let title = books.first { $0.id == bookID }?.title ?? bookID
+            warnings.append("《\(title)》的正文读取失败：\(reason)")
+        }
+        if warnings.isEmpty, let error = LibraryStore.shared.lastError {
+            warnings.append(error)
+        }
+        libraryStoreWarning = warnings.isEmpty ? nil : warnings.joined(separator: "\n")
+        return true
+    }
+
+    // MARK: 书架迁移
 
     /// 把旧的 `snapshot.json` 搬成「索引 + 章节文件」并留档旧文件。
     ///
-    /// 这一步刻意**不改读写路径**：`saveSnapshot` / `loadSnapshot` 仍然走旧快照，
-    /// `SnapshotStore.read` 在本体缺失时还会回落到最近一次留档。所以迁移即便
-    /// 完全失败，用户的架子与正文也照旧可用；成功时只是额外多出一份新结构，
-    /// 供下一步切换时验证与使用。
+    /// 必须在 `loadSnapshot` **之前**跑：读在前的话，首次启动会把旧快照
+    /// （段落 ID 还是「章ID-p序号」）读进内存，迁移随后写出的新结构
+    /// 立刻被内存里的旧数据覆盖回去，书签就白改了。
     private func runLibraryMigration() {
         guard let directory = SnapshotStore.shared.directoryURL else { return }
         let legacyURL = directory.appendingPathComponent("snapshot.json")
@@ -1402,7 +1695,7 @@ final class AppStore {
             let report = try LibraryMigrator.migrate(legacyURL: legacyURL, storage: storage)
             migrationReport = report
         } catch {
-            // 迁移失败不影响阅读：旧快照仍在原处，读写照旧。
+            // 迁移失败不影响阅读：旧快照仍在原处，读路径会降级到它。
             migrationReport = LibraryMigrationReport(
                 didRun: false,
                 message: (error as? LocalizedError)?.errorDescription ?? "书架迁移未完成，旧数据已保留。"
@@ -1410,17 +1703,23 @@ final class AppStore {
         }
     }
 
-    /// 迁移是否已经跑过（用于界面判断要不要显示入口）。
+    /// 书架是否已经用上了新结构（索引 + 章节文件）。
     var hasMigratedLibrary: Bool {
-        SnapshotStore.shared.directoryURL
-            .flatMap { LibraryMigrator.loadState(root: $0) } != nil
+        guard let directory = SnapshotStore.shared.directoryURL else { return false }
+        return FileManager.default.fileExists(atPath: LibraryStorage(root: directory).indexURL.path)
     }
 
-    /// 已迁移到新结构的书有多少本 / 多少章，用于「存储」页如实展示。
+    /// 书架里有多少本 / 多少章。直接从索引与清单数出来，不依赖迁移状态：
+    /// 全新安装（从没跑过迁移）也应该如实显示，而不是「没有数据」。
     var migratedLibrarySummary: (books: Int, chapters: Int)? {
-        guard let directory = SnapshotStore.shared.directoryURL,
-              let state = LibraryMigrator.loadState(root: directory) else { return nil }
-        return (state.bookCount, state.chapterCount)
+        guard let directory = SnapshotStore.shared.directoryURL else { return nil }
+        let storage = LibraryStorage(root: directory)
+        guard let index = try? storage.loadIndex() else { return nil }
+        var chapters = 0
+        for bookID in index.booksWithChapters {
+            chapters += (try? storage.chapterIDs(bookID: bookID).count) ?? 0
+        }
+        return (index.booksWithChapters.count, chapters)
     }
 
     /// 新结构（索引 + 章节文件）在磁盘上的真实占用。没有迁移过就是 0。
@@ -1435,7 +1734,8 @@ final class AppStore {
         return total
     }
 
-    private func apply(_ snapshot: Snapshot) {        books = snapshot.books
+    private func apply(_ snapshot: Snapshot) {
+        books = snapshot.books
         sources = snapshot.sources
         excerpts = snapshot.excerpts
         settings.apply(snapshot.settings)
@@ -1547,16 +1847,18 @@ enum Paginator {
     }
 }
 
-// MARK: - Snapshot storage
+// MARK: - 旧快照（只读）
 
-/// 快照落盘。放在 Application Support 下的独立文件里，用原子写；
-/// 序号保证后发起的写入覆盖先发起的，避免后台编码完成后把新数据盖回旧数据。
+/// 旧的一体化 `snapshot.json`。
+///
+/// **写路径已经全部迁到 `LibraryStore`**，这里只保留三件事：
+/// 读旧文件（首次启动的降级来源）、把坏文件改名留档、记录解码失败原因。
+/// 留着它是因为：用户从旧版本升上来时，第一份数据只存在于这个文件里，
+/// 删掉这套代码等于删掉唯一的入口。
 final class SnapshotStore: @unchecked Sendable {
     static let shared = SnapshotStore()
 
     private let queue = DispatchQueue(label: "yehangchuan.snapshot", qos: .utility)
-    private var lastWrittenSequence = 0
-    private var lastSequence = 0
     private let fileURL: URL?
     /// 快照所在目录，供书架迁移定位旧文件与留档。
     let directoryURL: URL?
@@ -1574,14 +1876,7 @@ final class SnapshotStore: @unchecked Sendable {
         fileURL = directory?.appendingPathComponent("snapshot.json")
     }
 
-    func nextSequence() -> Int {
-        queue.sync {
-            lastSequence += 1
-            return lastSequence
-        }
-    }
-
-    /// 读快照。`snapshot.json` 不存在时回落到最近一次书架迁移留下的留档：
+    /// 读旧快照。`snapshot.json` 不存在时回落到最近一次书架迁移留下的留档：
     /// 迁移把旧文件改名而不是删除，就是为了这一刻 —— 新结构出了任何问题，
     /// 用户的书架和正文仍然读得回来。
     func read() -> Data? {
@@ -1592,16 +1887,7 @@ final class SnapshotStore: @unchecked Sendable {
         return try? Data(contentsOf: archived)
     }
 
-    func write(_ data: Data, sequence: Int) {
-        queue.async { [fileURL, weak self] in
-            guard let self, let fileURL else { return }
-            guard sequence > lastWrittenSequence else { return }
-            lastWrittenSequence = sequence
-            try? data.write(to: fileURL, options: .atomic)
-        }
-    }
-
-    /// 把无法解码的快照文件改名留档，供之后排查，同时让下一次写入从干净状态开始。
+    /// 把无法解码的快照文件改名留档，供之后排查。
     func quarantineCorruptFile() {
         guard let fileURL else { return }
         let stamped = fileURL

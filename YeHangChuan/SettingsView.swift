@@ -1335,7 +1335,7 @@ struct CacheSheet: View {
         }
     }
 
-    /// 书架新结构的实况：搬了多少、占多少盘、有没有出过问题。
+    /// 书架存储的实况：书架与正文怎么存的、占多少盘、有没有出过问题。
     /// 不显示「模拟」字样 —— 这些数字是真的从磁盘读出来的。
     @ViewBuilder
     private var storageMigrationCard: some View {
@@ -1348,7 +1348,13 @@ struct CacheSheet: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Palette.text)
                 Spacer()
-                if let report = store.migrationReport, report.warnings.isEmpty == false {
+                if store.libraryStoreWarning != nil {
+                    Label("有问题", systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Palette.accent)
+                        .labelStyle(.titleAndIcon)
+                        .lineLimit(1)
+                } else if let report = store.migrationReport, !report.warnings.isEmpty {
                     Text("\(report.warnings.count) 条提示")
                         .font(.system(size: 9.5))
                         .foregroundStyle(Palette.accent)
@@ -1356,16 +1362,27 @@ struct CacheSheet: View {
             }
 
             if let summary = store.migratedLibrarySummary {
-                Text("\(summary.books) 本 · \(summary.chapters) 章 · 正文单独存放")
+                Text("\(summary.books) 本 · \(summary.chapters) 章 · 索引与正文分开存放")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Palette.secondary)
-                Text(String(format: "新结构占用 %.1f MB", Double(store.migratedLibraryBytes) / 1_048_576))
+                Text(String(format: "占用 %.1f MB", Double(store.migratedLibraryBytes) / 1_048_576))
                     .font(.system(size: 10))
                     .foregroundStyle(Palette.tertiary)
             } else {
                 Text("书架仍保存在单个快照文件里。")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Palette.secondary)
+            }
+
+            // 读写出过问题时如实说出来。宁可让用户知道「这次读到的是上一版」，
+            // 也不要让他以为一切正常、直到某天发现书签全没了。
+            if let warning = store.libraryStoreWarning {
+                ForEach(warning.components(separatedBy: "\n"), id: \.self) { line in
+                    Text("· \(line)")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Palette.accent)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             if let report = store.migrationReport {
