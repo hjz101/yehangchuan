@@ -127,7 +127,7 @@ public struct AtomicFileWriter: FileWriting {
 /// ```
 ///
 /// 方法都是同步的，调用方负责串行（App 侧已有 600ms 合并写入）。
-public struct LibraryStorage {
+public struct LibraryStorage: Sendable {
     public let root: URL
     private let writer: any FileWriting
 
@@ -145,6 +145,10 @@ public struct LibraryStorage {
 
     public var indexURL: URL { root.appendingPathComponent("library.json") }
 
+    /// 上一版索引。每次保存前留一份，用来兜住「索引写得出来、读不回来」这种
+    /// 最尴尬的情况：原子写能防掉电，防不住逻辑上讲不通的数据。
+    public var previousIndexURL: URL { root.appendingPathComponent("library.prev.json") }
+
     public func loadIndex() throws -> LibraryIndex? {
         guard FileManager.default.fileExists(atPath: indexURL.path) else { return nil }
         let data = try Data(contentsOf: indexURL)
@@ -152,12 +156,28 @@ public struct LibraryStorage {
         return try decoder.decode(LibraryIndex.self, from: data)
     }
 
+    /// 读上一版索引。没有就返回 nil。
+    public func loadPreviousIndex() throws -> LibraryIndex? {
+        guard FileManager.default.fileExists(atPath: previousIndexURL.path) else { return nil }
+        return try JSONDecoder().decode(LibraryIndex.self, from: Data(contentsOf: previousIndexURL))
+    }
+
     public func saveIndex(_ index: LibraryIndex) throws {
         var sorted = index
         sorted.sections = index.sections
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        try writer.write(encoder.encode(sorted), to: indexURL)
+        let data = try encoder.encode(sorted)
+        // 先把当前这份留成上一版，再覆盖。顺序不能反：反过来的话，
+        // 崩溃在两者之间就只剩一份坏索引，没有回退点。
+        //
+        // 只在当前这份**确实读得懂**时才轮换：否则一次坏索引会把
+        // 上一版的好索引顶掉，回退点就没了。
+        if let current = try? Data(contentsOf: indexURL),
+           (try? JSONDecoder().decode(LibraryIndex.self, from: current)) != nil {
+            try writer.write(current, to: previousIndexURL)
+        }
+        try writer.write(data, to: indexURL)
     }
 
     /// 把读不懂的索引改名留档，绝不覆盖。返回留档后的路径。
@@ -218,6 +238,36 @@ public struct LibraryStorage {
             next.entries[chapter.id] = filename
         }
         try writer.write(encoder.encode(next), to: directory.appendingPathComponent("manifest.json"))
+    }
+
+    /// 整本替换：清单只保留这一批章节，旧章一并清掉。
+    ///
+    /// 换源与重新导入都属于这种情况 —— 章节全换了一批，若走 `saveChapters`
+    /// 的增量合并，旧源的章节会一直留在清单里，目录看着多出一倍。
+    public func replaceChapters(_ chapters: [StoredChapter], bookID: String) throws {
+        guard Set(chapters.map(\.id)).count == chapters.count else {
+            throw LibraryStorageError.duplicateChapterID
+        }
+        let directory = bookDirectory(bookID)
+        let objects = directory.appendingPathComponent(objectsDirectoryName, isDirectory: true)
+        try FileManager.default.createDirectory(at: objects, withIntermediateDirectories: true)
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+
+        var entries: [String: String] = [:]
+        for chapter in chapters {
+            let data = try encoder.encode(chapter)
+            let filename = ContentID.hex(SHA256.hash(data: data)) + ".json"
+            let target = objects.appendingPathComponent(filename)
+            if !FileManager.default.fileExists(atPath: target.path) {
+                try writer.write(data, to: target)
+            }
+            entries[chapter.id] = filename
+        }
+        // 清单是提交点：正文全部就位后一次性替换。
+        let manifest = ChapterManifest(entries: entries)
+        try writer.write(encoder.encode(manifest), to: directory.appendingPathComponent("manifest.json"))
     }
 
     public func chapter(id: String, bookID: String) throws -> StoredChapter? {
