@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import MediaPlayer
+import LegadoCore
 
 struct ReaderView: View {
     @Environment(AppStore.self) private var store
@@ -219,10 +220,14 @@ struct ReaderView: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: $commentParagraph) { paragraph in
-            SegmentCommentsSheet(paragraph: paragraph)
-                .presentationDetents([.fraction(0.62), .large])
-                .presentationCornerRadius(38)
-                .presentationDragIndicator(.visible)
+            SegmentCommentsSheet(
+                book: book,
+                chapter: chapterContaining(paragraph: paragraph),
+                paragraph: paragraph
+            )
+            .presentationDetents([.fraction(0.62), .large])
+            .presentationCornerRadius(38)
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showBookmarks) {
             BookmarkListSheet(book: book) { bookmark in
@@ -728,6 +733,14 @@ struct ReaderView: View {
         }
         networkError = nil
         rebuild(restore: true, targetChapter: title)
+    }
+
+    /// 找到某个段落所属的章节。段评要按「章 + 段」去书源上取，
+    /// 只给段落 ID 拿不到 chapter URL。
+    private func chapterContaining(paragraph: Paragraph) -> Chapter? {
+        chapters.first { chapter in
+            chapter.paragraphs.contains { $0.id == paragraph.id }
+        }
     }
 
     /// 读到最后一段时提前拉下一章，翻页时就不用等。
@@ -1720,10 +1733,18 @@ struct SegmentCommentsSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
+    let book: Book
+    /// 段落所属章节；在线书要靠它拿章节地址去书源取评论。
+    let chapter: Chapter?
     let paragraph: Paragraph
 
     @State private var comments: [SegmentComment] = []
     @State private var hiddenCount = 0
+    /// 在线书的评论是异步拉的，三种状态要分开显示。
+    @State private var isLoading = false
+    @State private var remoteError = ""
+    /// 这次显示的是书源真实评论，还是书里自带的本地演示评论。
+    @State private var isRemote = false
 
     private static let bannedWords = ["加群", "微信", "广告", "代写", "私聊"]
 
@@ -1739,18 +1760,60 @@ struct SegmentCommentsSheet: View {
                         HStack {
                             SectionHeading(text: "本段 \(comments.count) 条段评")
                             Spacer()
-                            Text("只读 · 来自书源")
+                            Text(isRemote ? "只读 · 来自书源" : "演示评论")
                                 .font(.system(size: 9.5, weight: .medium))
-                                .foregroundStyle(Palette.tertiary)
+                                .foregroundStyle(isRemote ? Palette.jade : Palette.tertiary)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
-                                .glassCapsule(tint: Palette.jade.opacity(0.12))
+                                .glassCapsule(tint: (isRemote ? Palette.jade : Palette.faint).opacity(0.12))
                         }
 
                         if hiddenCount > 0 {
                             Text("已按本地词表隐藏 \(hiddenCount) 条内容")
                                 .font(.system(size: 10))
                                 .foregroundStyle(Palette.tertiary)
+                        }
+
+                        if isLoading {
+                            HStack(spacing: 9) {
+                                ProgressView()
+                                Text("正在向书源请求段评…")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(Palette.tertiary)
+                            }
+                            .padding(.top, 24)
+                        } else if !remoteError.isEmpty && comments.isEmpty {
+                            // 书源有规则但抓取失败：显示原因，不假装「没有评论」。
+                            VStack(alignment: .leading, spacing: 7) {
+                                HStack(spacing: 7) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Palette.accent)
+                                    Text("段评获取失败")
+                                        .font(.system(size: 11.5, weight: .semibold))
+                                        .foregroundStyle(Palette.text)
+                                }
+                                Text(remoteError)
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(Palette.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Button {
+                                    Task { await loadRemote() }
+                                } label: {
+                                    Text("重试")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(Palette.jade)
+                                }
+                                .buttonStyle(PressableStyle())
+                            }
+                            .padding(13)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .glassSurface(cornerRadius: 18, tint: Palette.accent.opacity(0.06))
+                        } else if comments.isEmpty {
+                            Text(remoteError.isEmpty ? "这一段还没有段评。" : remoteError)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Palette.tertiary)
+                                .padding(.top, 18)
                         }
 
                         ForEach(Array(comments.enumerated()), id: \.element.id) { index, comment in
@@ -1785,14 +1848,91 @@ struct SegmentCommentsSheet: View {
                         .fontWeight(.semibold)
                 }
             }
-            .onAppear {
-                let visible = paragraph.comments.filter { comment in
-                    !Self.bannedWords.contains { comment.text.localizedCaseInsensitiveContains($0) }
-                }
-                hiddenCount = paragraph.comments.count - visible.count
-                comments = visible
-            }
+            .task { await load() }
         }
+    }
+
+    /// 本地书用书里自带的演示评论；在线书向书源真实请求。
+    private func load() async {
+        guard store.settings.hideSourceComments == false else { return }
+        if book.isNetworkBook {
+            await loadRemote()
+            return
+        }
+        applyLocalComments()
+    }
+
+    private func applyLocalComments() {
+        let visible = paragraph.comments.filter { comment in
+            !Self.bannedWords.contains { comment.text.localizedCaseInsensitiveContains($0) }
+        }
+        hiddenCount = paragraph.comments.count - visible.count
+        comments = visible
+        isRemote = false
+    }
+
+    /// 书源评论是按「章」返回的：一次请求拿整章的评论，
+    /// 再按段落正文去匹配。Legado 的 ruleReview 没有「按段落」这个粒度。
+    private func loadRemote() async {
+        guard let chapter, let chapterURL = chapter.networkURL else {
+            remoteError = "这一章没有可用的书源地址"
+            return
+        }
+        guard let appSource = store.sources.first(where: { $0.id == book.sourceID }),
+              let engineSource = LegadoBridge.engineSource(from: appSource) else {
+            remoteError = "书源已被移除或规则无法解析"
+            return
+        }
+        guard let bookURL = book.networkBookURL else {
+            remoteError = "这本书缺少书源地址"
+            return
+        }
+
+        isLoading = true
+        remoteError = ""
+
+        var engineChapter = BookChapter(
+            url: chapterURL,
+            title: chapter.title,
+            bookUrl: bookURL,
+            index: 0
+        )
+        engineChapter.baseUrl = bookURL
+        let engineBook = LegadoCore.Book(
+            bookUrl: bookURL,
+            name: book.title,
+            author: book.author,
+            origin: engineSource.bookSourceUrl
+        )
+
+        let result = await store.engine.chapterComments(
+            engineBook: engineBook, chapter: engineChapter, source: engineSource
+        )
+        isLoading = false
+
+        if let error = result.error {
+            remoteError = error
+            applyLocalComments()
+            return
+        }
+
+        // 书源的评论可能是整章的。能按段落正文匹配就过滤，匹配不上就全显示，
+        // 但标清「整章」而不是假装是这一段。
+        let matched = result.comments.filter { comment in
+            !Self.bannedWords.contains { comment.content.localizedCaseInsensitiveContains($0) }
+        }
+        hiddenCount = result.comments.count - matched.count
+        comments = matched.enumerated().map { index, comment in
+            SegmentComment(
+                id: "src-\(index)-\(comment.id.hashValue)",
+                author: comment.author ?? "读者",
+                text: comment.content,
+                likes: 0,
+                liked: false,
+                minutesAgo: 0
+            )
+        }
+        isRemote = true
     }
 
     private var quoteBlock: some View {
