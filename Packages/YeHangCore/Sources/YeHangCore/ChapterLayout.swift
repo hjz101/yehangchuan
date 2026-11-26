@@ -139,6 +139,134 @@ public struct ChapterLayout {
         let offset = chapterOffset(for: anchor)
         return pages.lastIndex { $0.range.location <= offset }
     }
+
+    // MARK: - 绘制与命中
+
+    /// 页内坐标 → 章内字符偏移。
+    ///
+    /// 点的坐标系与界面一致（左上角原点、y 向下），内部翻成 CoreText 的
+    /// 左下原点。命中用的 CTFrame 与绘制用的是同一份页面富文本，
+    /// 所以「点在哪个字上」不会因为两份排版不一致而错位。
+    ///
+    /// 点落在行与行之间的空白、或正文下面的空白时，归到纵向最近的那一行 ——
+    /// 停在一个字下面一点再长按，读到的应该仍是那个字，而不是「什么都没点到」。
+    public func chapterOffset(at point: CGPoint, in page: PageRange, size: CGSize) -> Int? {
+        guard let (frame, string) = makeFrame(for: page, in: size) else { return nil }
+        let point = CGPoint(x: point.x, y: size.height - point.y)
+        guard let lines = CTFrameGetLines(frame) as? [CTLine], !lines.isEmpty else { return nil }
+
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+
+        var hit = 0
+        var nearest = CGFloat.greatestFiniteMagnitude
+        for (index, line) in lines.enumerated() {
+            let rect = lineRect(line, origin: origins[index])
+            if point.y >= rect.minY, point.y <= rect.maxY {
+                hit = index
+                break
+            }
+            let distance = min(abs(point.y - rect.minY), abs(point.y - rect.maxY))
+            if distance < nearest {
+                nearest = distance
+                hit = index
+            }
+        }
+
+        let position = CTLineGetStringIndexForPosition(lines[hit], point)
+        guard position != kCFNotFound else { return nil }
+        // CTLine 的下标是相对本页那一份富文本的，加上本页起点才是章内偏移。
+        let local = min(max(position, 0), max(string.length - 1, 0))
+        return page.range.location + local
+    }
+
+    /// 这一页里每个段落占据的区域（左上角原点、y 向下）。
+    ///
+    /// 段评标记挂在这里：一个段落在一页里可能跨好几行，
+    /// 标记只该出现在它开头那一行；续排到下一页的段落首行在下一页，
+    /// 所以标记会跟着走，不会消失也不会重复。
+    ///
+    /// `frame` 是整块（所有行合并），用来判断「长按点在哪一段上」；
+    /// `firstLine` 是段落在本页的第一行，用来摆放标记与缩进对齐。
+    public func paragraphBoxes(in page: PageRange, size: CGSize) -> [PageParagraphBox] {
+        guard let (frame, _) = makeFrame(for: page, in: size) else { return [] }
+        guard let lines = CTFrameGetLines(frame) as? [CTLine], !lines.isEmpty else { return [] }
+
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+
+        var order: [Int] = []
+        var firstLines: [Int: CGRect] = [:]
+        var merged: [Int: CGRect] = [:]
+        for (index, line) in lines.enumerated() {
+            let stringRange = CTLineGetStringRange(line)
+            guard stringRange.location != kCFNotFound else { continue }
+            let offset = page.range.location + max(0, stringRange.location)
+            let paragraphIndex = anchor(atChapterOffset: offset).paragraphIndex
+
+            let core = lineRect(line, origin: origins[index])
+            // CoreText 的原点在左下，界面在左上：翻一次 y。
+            let rect = CGRect(
+                x: core.minX,
+                y: size.height - core.maxY,
+                width: core.width,
+                height: core.height
+            )
+            if firstLines[paragraphIndex] == nil {
+                order.append(paragraphIndex)
+                firstLines[paragraphIndex] = rect
+                merged[paragraphIndex] = rect
+            } else {
+                merged[paragraphIndex] = merged[paragraphIndex]!.union(rect)
+            }
+        }
+        return order.compactMap { index in
+            guard let frame = merged[index], let first = firstLines[index] else { return nil }
+            return PageParagraphBox(paragraphIndex: index, frame: frame, firstLine: first)
+        }
+    }
+
+    /// 建一份与绘制完全一致的页面排版。`chapterOffset(at:)` 与
+    /// `paragraphLineFragments` 共用它，避免各建一份后行位置对不上。
+    private func makeFrame(for page: PageRange, in size: CGSize) -> (CTFrame, NSAttributedString)? {
+        guard size.width >= 1, size.height >= 1 else { return nil }
+        let slice = attributedString(for: page)
+        guard slice.length > 0 else { return nil }
+        let framesetter = CTFramesetterCreateWithAttributedString(slice)
+        let path = CGPath(rect: CGRect(origin: .zero, size: size), transform: nil)
+        return (CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: 0), path, nil), slice)
+    }
+
+    /// 一行在 CoreText 坐标系（左下原点）里的矩形。
+    private func lineRect(_ line: CTLine, origin: CGPoint) -> CGRect {
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        var leading: CGFloat = 0
+        let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
+        return CGRect(
+            x: origin.x,
+            y: origin.y - descent,
+            width: max(width, 0),
+            height: ascent + descent + leading
+        )
+    }
+}
+
+/// 一个段落在当前页里占据的位置。
+///
+/// 坐标系与界面一致：原点在绘制区域左上角，y 向下。
+public struct PageParagraphBox: Equatable, Sendable {
+    public let paragraphIndex: Int
+    /// 本页里这一段所有行的合并矩形。
+    public let frame: CGRect
+    /// 这一段在本页的第一行（标注挂在这里）。
+    public let firstLine: CGRect
+
+    public init(paragraphIndex: Int, frame: CGRect, firstLine: CGRect) {
+        self.paragraphIndex = paragraphIndex
+        self.frame = frame
+        self.firstLine = firstLine
+    }
 }
 
 /// 一页覆盖的章内字符范围。

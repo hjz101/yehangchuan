@@ -115,4 +115,64 @@ final class ChapterLayoutTests: XCTestCase {
         // 偏移 1/2/3 都落在同一个组合字符内部，必须收敛到它的起点 1。
         XCTAssertEqual(anchor.utf16Offset, 1)
     }
+
+    // MARK: - 命中与行片段
+
+    /// 长按选字：点在某一行上，命中的字符必须落在这一行里。
+    /// 这是段评、摘录、查词共用的入口，错一个字就会引错整段。
+    func testHitTestReturnsCharacterInsideTappedLine() throws {
+        let layout = ChapterLayout(chapterID: "c1", paragraphs: chapter, style: style())
+        let size = CGSize(width: 320, height: 500)
+        let pages = layout.pages(in: size)
+        let page = try XCTUnwrap(pages.first)
+        let fragments = layout.paragraphBoxes(in: page, size: size)
+        let line = try XCTUnwrap(fragments.first)
+
+        let point = CGPoint(x: line.frame.minX + 2, y: line.firstLine.midY)
+        let offset = try XCTUnwrap(layout.chapterOffset(at: point, in: page, size: size))
+        XCTAssertTrue(page.range.contains(offset), "命中的字符必须在本页范围内")
+
+        // 命中的字要落回这一行：用返回的偏移重新算锚点，段落应当一致。
+        XCTAssertEqual(layout.anchor(atChapterOffset: offset).paragraphIndex, line.paragraphIndex)
+    }
+
+    /// 点在正文下方的空白处，应当归到最近的最后一行，而不是返回「没点到」。
+    func testHitTestBelowTextSnapsToNearestLine() throws {
+        let layout = ChapterLayout(chapterID: "c1", paragraphs: chapter, style: style())
+        let size = CGSize(width: 320, height: 700)
+        let page = try XCTUnwrap(layout.pages(in: size).first)
+
+        let offset = try XCTUnwrap(layout.chapterOffset(at: CGPoint(x: 40, y: 690), in: page, size: size))
+        XCTAssertTrue(page.range.contains(offset))
+    }
+
+    /// 每个段落的标注只挂一次，且挂在它在**本页**的第一行上。
+    /// 同一段跨页续排时，下一页也要有自己的首行片段。
+    func testParagraphFragmentsAppearOncePerPage() throws {
+        let long = String(repeating: "江水很静，船走得很慢。", count: 40)
+        let layout = ChapterLayout(chapterID: "c1", paragraphs: [long], style: style())
+        let size = CGSize(width: 320, height: 300)
+        let pages = layout.pages(in: size)
+        XCTAssertGreaterThan(pages.count, 2)
+
+        for (index, page) in pages.enumerated() {
+            let fragments = layout.paragraphBoxes(in: page, size: size)
+            XCTAssertEqual(fragments.count, 1, "第 \(index) 页只有一个段落的片段")
+            XCTAssertEqual(fragments[0].paragraphIndex, 0)
+            XCTAssertGreaterThan(fragments[0].firstLine.height, 0)
+        }
+    }
+
+    /// 多个段落时，片段的纵向位置必须递增 —— 界面按它摆放标注，
+    /// 顺序反了标注就会上下乱跳。
+    func testParagraphFragmentsAreOrderedTopToBottom() throws {
+        let layout = ChapterLayout(chapterID: "c1", paragraphs: chapter, style: style())
+        let size = CGSize(width: 320, height: 700)
+        let page = try XCTUnwrap(layout.pages(in: size).first)
+        let fragments = layout.paragraphBoxes(in: page, size: size)
+
+        XCTAssertEqual(fragments.map(\.paragraphIndex), fragments.map(\.paragraphIndex).sorted())
+        let tops = fragments.map(\.firstLine.minY)
+        XCTAssertEqual(tops, tops.sorted(), "片段必须从上到下排列")
+    }
 }
