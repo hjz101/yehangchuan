@@ -50,6 +50,13 @@ struct Book: Identifiable, Hashable, Codable, Sendable {
 
     var unitLabel: String { kind == .comic ? "话" : "章" }
 
+    /// 章节数文案。在线书在目录拉回来之前是 0 —— 这时候如实写「待加载」，
+    /// 而不是显示一个像模像样的「0 章」骗自己。
+    var chapterCountLabel: String {
+        if chapterCount > 0 { return "\(chapterCount) \(unitLabel)" }
+        return isNetworkBook ? "目录待加载" : "0 \(unitLabel)"
+    }
+
     /// 是不是一本书源上的在线书。
     var isNetworkBook: Bool { networkBookURL?.isEmpty == false && sourceID != nil }
 }
@@ -610,6 +617,9 @@ final class AppStore {
     var backend = MockBackend()
     /// 真实书源引擎。搜索、目录、正文走它；AI / TTS / 同步仍由 backend 模拟。
     var engine = SourceEngine()
+    /// 真实请求日志。引擎的请求记在 LegadoCore 的 DiagnosticLog 里，
+    /// 这里只做一层界面可观察的包装。
+    var diagnostics = NetworkDiagnostics()
     var backup = BackupCenter()
     var bookmarks: [Bookmark] = []
     var positions: [String: ReadingPosition] = [:]
@@ -886,7 +896,7 @@ final class AppStore {
             showToast("《\(searchBook.name)》已在书架")
             return
         }
-        let book = searchBook.appBook(sourceID: sourceID, coverStyle: abs(searchBook.name.hashValue) % 6)
+        let book = searchBook.appBook(sourceID: sourceID, coverStyle: StableID.coverStyle(for: searchBook.name))
         books.insert(book, at: 0)
         showToast("已加入书架：《\(book.title)》")
         saveSnapshot()
@@ -960,7 +970,7 @@ final class AppStore {
             title: draft.title,
             author: draft.author,
             kind: draft.kind,
-            coverStyle: abs(draft.title.hashValue) % 6,
+            coverStyle: StableID.coverStyle(for: draft.title),
             chapterCount: draft.chapters.count,
             progress: 0,
             lastPosition: "未开始",

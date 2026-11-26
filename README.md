@@ -1,6 +1,8 @@
 # 夜航船
 
-iOS 小说阅读器 Demo，按 **iOS 27 原生 Liquid Glass（液态玻璃）** 重做界面，并把《iOS 小说阅读器产品规划 v5》的功能纳入可操作演示。核心链路使用真实本机能力，网络、AI、同步与部分格式用 `MockBackend` 模拟。
+iOS 小说阅读器 Demo，按 **iOS 27 原生 Liquid Glass（液态玻璃）** 重做界面，并把《iOS 小说阅读器产品规划 v5》的功能纳入可操作演示。
+
+书源相关链路（搜索、目录、正文、发现、段评、换源、调试）已经接上真实的 Legado 规则引擎，会真的联网；导入、阅读、听书、统计、备份走真实本机能力。**AI、TTS、iCloud 同步、漫画与音频格式解析仍是 `MockBackend` 模拟**，界面上都标了「模拟」。
 
 ## 运行
 
@@ -42,7 +44,7 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 |------|------|
 | **书架** | 继续阅读卡、类型/状态/分组筛选、网格密度切换（2/3 列）、搜索、长按管理、导入入口 |
 | **阅读** | 分页 / 滚动、平移 / 覆盖 / 无动画、左右阅读方向、5 套主题（含护眼）、字号字重行距、独立留白、页眉页脚、目录正倒序、书签与备注、听书、换源、正文净化、音量键翻页 |
-| **书源** | 书源池概览、默认关闭、启用权限警告、私网地址拦截、JSON 导入导出、登录、分步调试、批量测试、网络日志、多源检索并加入书架 |
+| **书源** | 书源池概览、默认关闭、启用权限警告、私网地址拦截、JSON 导入导出（Legado 3.0 字段）、分步调试、批量测试、网络日志（真实请求记录，默认关闭）、多源真实检索并加入书架 |
 | **摘录** | 摘录流、按书筛选、只看收藏、写笔记、复制 |
 | **统计** | 今日目标环、7 日柱状图、13 周 91 天热力图、连续天数与偏好星期洞察 |
 | **设置** | 阅读偏好、每日目标、护眼与外观（界面明暗 + 暖色滤光）、备份、缓存、导出、账户与同步、分发与合规、功能实验室 |
@@ -69,10 +71,10 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 | 数据迁移 | books.json / notes.md / annotations.md 预览、复制与分享 |
 | 多类型书架 | 小说 / 漫画 / 有声同架与筛选 |
 | 音量键翻页 | 阅读设置开关 + `AVAudioSession` 音量变化监听 |
-| 书源 JSON / 换源 / 权限 | 导入默认关闭、启用警告、私网拒绝、连通验证后启用 |
-| JS 书源沙箱（v1.1） | 权限警告、严格模式、私网拦截、运行日志模拟（不执行脚本） |
-| AI 封面 / 摘要 / TTS（v1.2） | 用户自配 Key 占位、摘要 / 封面方案 / 系统语音试听 |
-| 在线发现与缓存（v1.3） | 多源聚合发现、订阅、章节缓存模拟 |
+| 书源 JSON / 换源 / 权限 | 导入默认关闭、启用警告、私网拒绝；换源会检索同名书并做四步验证后才提交 |
+| JS 书源沙箱（v1.1） | 权限警告、严格模式、私网拦截；规则里的 JS 在 JavaScriptCore 中真实执行；实验室的「沙箱演示」仍是模拟日志 |
+| AI 封面 / 摘要 / TTS（v1.2） | 用户自配 Key 占位、摘要 / 封面方案 / 系统语音试听（模拟请求） |
+| 在线发现与缓存（v1.3） | 分类从已启用书源的 `exploreUrl` 解析，书目真实抓取；订阅与章节缓存为模拟 |
 | 听书与多角色（v2.0–v2.1） | 系统语音真实播放；后台、锁屏、CarPlay、多角色映射模拟 |
 | 隐私 / 内容来源 / 分发 | 首次与设置常驻说明，TestFlight / 自签，无内购 |
 
@@ -96,19 +98,20 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 -openSearch / -showAddSource / -showSearch
 -openImport             打开智能导入
 -openComic              打开漫画阅读器
--openSync / -openBackup / -openCache
+-openSync / -openBackup / -openCache / -openNetworkLogs
 -openEyeCare / -settingsBottom
--openSourceDetail / -openSourceImport
+-openSourceDetail / -openSourceImport / -showSourceDetail / -showSourceImport
 -openExport / -openAI / -openSandbox / -openDiscover / -openVoice / -openCompliance
 -showTOC / -showBookmarks / -showListen / -showSourceSwitch
 -coverTurn / -noTurn    强制覆盖翻页 / 无动画
+-scrollMode             滚动阅读
 -eyeCare                开启暖色滤光
 ```
 
 ## 未实现
 
 - 真实 EPUB / CBZ / RAR / 7z 解包，真实 mp3/m4a/m4b 文件播放。
-- 真实网络请求、CloudKit、WKWebView 执行 JS、真实 AI 请求与本机 ZIP 打包。
+- CloudKit、WKWebView 执行 JS（规则 JS 走的是 JavaScriptCore）、真实 AI 请求与本机 ZIP 打包。
 - App Store 分发与内购；当前为 TestFlight / 自签定位。
 
-以上入口均已在 Demo 中提供可操作占位与模拟后端，不会在后台发起请求。
+标着「模拟」的入口（AI、TTS、iCloud 同步、漫画与音频解析）不会发出真实网络请求。**书源链路例外：启用书源后，搜索、目录、正文、发现、段评与换源都会真的联网**，请求地址可在「设置 → 网络日志」里查看（需要先打开记录开关）。

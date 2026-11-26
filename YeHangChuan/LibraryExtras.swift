@@ -184,7 +184,7 @@ struct SmartImportSheet: View {
                         title: draft.title,
                         author: draft.author,
                         kind: draft.kind,
-                        coverStyle: abs(draft.title.hashValue) % 6,
+                        coverStyle: StableID.coverStyle(for: draft.title),
                         chapterCount: draft.chapters.count,
                         progress: 0,
                         lastPosition: "未开始",

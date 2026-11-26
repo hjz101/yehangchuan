@@ -588,7 +588,7 @@ struct MediaDetailView: View {
                     .foregroundStyle(Palette.text)
                     .lineLimit(2)
 
-                Text("\(book.author) · \(book.chapterCount) \(book.unitLabel)")
+                Text("\(book.author) · \(book.chapterCountLabel)")
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.secondary)
 
@@ -604,7 +604,7 @@ struct MediaDetailView: View {
         HStack(spacing: 0) {
             metaItem("进度", "\(Int(book.progress * 100))%")
             metaDivider
-            metaItem("章节", "\(book.chapterCount)")
+            metaItem("章节", book.chapterCount > 0 ? "\(book.chapterCount)" : (book.isNetworkBook ? "待加载" : "0"))
             metaDivider
             metaItem(book.kind == .audio ? "时长" : "摘录", book.kind == .audio ? (book.duration ?? "—") : "\(store.excerpts(for: book.id).count)")
         }

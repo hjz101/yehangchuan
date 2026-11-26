@@ -91,7 +91,9 @@ final class SourceEngine {
             lastError = message
             return ([], message)
         }
-        let chapterID = "net-\(chapter.bookUrl.hashValue)-\(chapter.index)"
+        // 段落 ID 会被写进阅读位置与书签并持久化，所以章节 ID 必须跨启动稳定。
+        // 这里用书源地址 + 章节地址的 FNV-1a，而不是每次启动都换种子的 hashValue。
+        let chapterID = "net-\(StableID.hash(chapter.bookUrl + "\u{0}" + chapter.url))"
         return (TextSegmenter.paragraphs(from: body, chapterID: chapterID), nil)
     }
 

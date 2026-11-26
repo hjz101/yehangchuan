@@ -85,6 +85,11 @@ extension SearchBook {
     var appBookID: String { "net-\(Self.stableHash(origin + "\u{0}" + bookURL))" }
 
     /// 搜索结果转成书架用的 `Book`。
+    ///
+    /// `chapterCount` 留 0：Legado 的搜索规则根本不返回章节数
+    /// （`SearchBook.chapterWordCount` 是字数，而且上游从不填，恒为 -1）。
+    /// 原来是拿字数当章节数填进去的，搜索页因此永远显示「0 章」。
+    /// 真实章节数在拉完目录后由 `loadNetworkChapters` 写回。
     func appBook(sourceID: String, coverStyle: Int) -> Book {
         Book(
             id: appBookID,
@@ -92,7 +97,7 @@ extension SearchBook {
             author: author.isEmpty ? "佚名" : author,
             kind: .novel,
             coverStyle: coverStyle,
-            chapterCount: chapterWordCount > 0 ? chapterWordCount : 0,
+            chapterCount: 0,
             progress: 0,
             lastPosition: "未开始",
             pageCount: nil,
@@ -106,6 +111,18 @@ extension SearchBook {
 
     /// 跨进程稳定的 64 位哈希（FNV-1a）。
     static func stableHash(_ text: String) -> UInt64 {
+        StableID.hash(text)
+    }
+}
+
+/// 跨进程稳定的字符串哈希。
+///
+/// Swift 的 `String.hashValue` 每次启动都会换种子，用它拼出来的 ID
+/// 重启后就和上一次对不上。书籍 ID 早就换成了 FNV-1a，章节 ID 与段落 ID
+/// 当时漏掉了 —— 而段落 ID 会被写进阅读位置和书签一起持久化，
+/// 一旦对不上，重启后就会「记不住读到哪一段」。
+enum StableID {
+    static func hash(_ text: String) -> UInt64 {
         var hash: UInt64 = 0xCBF2_9CE4_8422_2325
         for byte in text.utf8 {
             hash ^= UInt64(byte)
@@ -113,14 +130,23 @@ extension SearchBook {
         }
         return hash
     }
+
+    /// 按书名挑一个封面配色。封面是持久化字段，必须跨启动一致，
+    /// 所以不能直接用 `hashValue`（每次启动换种子 → 同一本书换色）。
+    static func coverStyle(for title: String) -> Int {
+        Int(hash(title) % 6)
+    }
 }
 
 extension BookChapter {
     /// 引擎章节转成 App 章节。此时还没有正文，`paragraphs` 留空，
     /// 真正的正文在打开章节时按需拉取（见 `AppStore.loadNetworkContent`）。
+    ///
+    /// ID 必须跨启动稳定：章节会被缓存进快照，段落 ID 又是「章节 ID + 序号」，
+    /// 用 `hashValue` 的话重启后同一章的段落 ID 全变，阅读位置和书签就失配了。
     func appChapter() -> Chapter {
         Chapter(
-            id: "net-\(title.hashValue)-\(index)-\(url.count)",
+            id: "net-\(StableID.hash(bookUrl + "\u{0}" + url))",
             title: title,
             paragraphs: []
         )

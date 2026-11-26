@@ -774,7 +774,7 @@ struct DiscoverSheet: View {
                     .font(.system(size: 15, weight: .semibold, design: .serif))
                     .foregroundStyle(Palette.text)
                     .lineLimit(1)
-                Text("\(hit.book.author) · \(hit.book.kind.rawValue) · \(hit.book.chapterCount) \(hit.book.unitLabel)")
+                Text("\(hit.book.author) · \(hit.book.kind.rawValue) · \(hit.book.chapterCountLabel)")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Palette.tertiary)
                 Text(hit.sourceName)
@@ -911,31 +911,39 @@ struct DiscoverSheet: View {
 
         loadTask?.cancel()
         let target = pages
+        let requestedID = entry.id
         loadTask = Task { @MainActor in
             let outcome = await store.engine.explore(
                 source: entry.engineSource, kind: entry.kind, page: target
             )
             guard !Task.isCancelled else { return }
+            // 用户可能已经切到别的分类：这时候别把旧分类的结果写进来。
+            guard selectedID == requestedID else { return }
 
             let mapped = outcome.books.map { book in
                 DiscoverHit(
                     book: book.appBook(
                         sourceID: entry.sourceID,
-                        coverStyle: abs(book.name.hashValue) % 6
+                        coverStyle: StableID.coverStyle(for: book.name)
                     ),
                     sourceName: entry.sourceName
                 )
             }
+            let fresh: [DiscoverHit]
             if reset {
                 results = mapped
+                fresh = mapped
             } else {
                 // 同一本书在翻页时可能重复出现，按 ID 去重。
                 let existing = Set(results.map(\.id))
-                results += mapped.filter { !existing.contains($0.id) }
+                fresh = mapped.filter { !existing.contains($0.id) }
+                results += fresh
             }
             page = target
-            // 拿到的条数明显变少就认为没有下一页了；书源通常不返回总数。
-            hasMore = !mapped.isEmpty
+            // 「有没有下一页」只能看这一页有没有带来新书。
+            // 原来写的是 `!mapped.isEmpty`：只要书源忽略 page 参数（很常见），
+            // 每一页都会返回同样的书，这个按钮就永远点不完。
+            hasMore = !fresh.isEmpty
             if let diagnostic = outcome.diagnostics.first(where: { $0.severity == .error }) {
                 errorMessage = diagnostic.message
             }

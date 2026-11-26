@@ -1751,6 +1751,8 @@ struct SegmentCommentsSheet: View {
     @State private var remoteError = ""
     /// 这次显示的是书源真实评论，还是书里自带的本地演示评论。
     @State private var isRemote = false
+    /// 书源返回的是整章评论（Legado 的 ruleReview 没有段落粒度）。
+    @State private var isChapterWide = false
 
     private static let bannedWords = ["加群", "微信", "广告", "代写", "私聊"]
 
@@ -1764,14 +1766,23 @@ struct SegmentCommentsSheet: View {
                         quoteBlock
 
                         HStack {
-                            SectionHeading(text: "本段 \(comments.count) 条段评")
+                            // Legado 的 ruleReview 是「按章」返回评论的，没有段落粒度。
+                            // 拿到的是整章的评论就必须写「本章」，不能声称是「本段」。
+                            SectionHeading(text: isChapterWide ? "本章 \(comments.count) 条段评" : "本段 \(comments.count) 条段评")
                             Spacer()
-                            Text(isRemote ? "只读 · 来自书源" : "演示评论")
+                            Text(isRemote ? (isChapterWide ? "只读 · 来自书源 · 整章" : "只读 · 来自书源") : "演示评论")
                                 .font(.system(size: 9.5, weight: .medium))
                                 .foregroundStyle(isRemote ? Palette.jade : Palette.tertiary)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
                                 .glassCapsule(tint: (isRemote ? Palette.jade : Palette.faint).opacity(0.12))
+                        }
+
+                        if isChapterWide {
+                            Text("书源的评论规则只提供章级粒度，下面是这一章的评论，不是单独针对这一段。")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Palette.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
 
                         if hiddenCount > 0 {
@@ -1917,20 +1928,28 @@ struct SegmentCommentsSheet: View {
         isLoading = false
 
         if let error = result.error {
+            // 抓取失败就把原因显示出来，不要静默退回演示评论 ——
+            // 那样用户会以为看到的是书源评论，实际上一条都没拿到。
             remoteError = error
-            applyLocalComments()
+            comments = []
+            hiddenCount = 0
+            isRemote = false
             return
         }
 
-        // 书源的评论可能是整章的。能按段落正文匹配就过滤，匹配不上就全显示，
-        // 但标清「整章」而不是假装是这一段。
+        // 书源的评论是整章的。能按段落正文匹配就过滤，匹配不上就全显示，
+        // 但标清「整章」而不是假装是这一段（见 isChapterWide）。
         let matched = result.comments.filter { comment in
             !Self.bannedWords.contains { comment.content.localizedCaseInsensitiveContains($0) }
         }
         hiddenCount = result.comments.count - matched.count
+        // 只有整章里恰好能对上本段正文的评论，才算「本段」。
+        isChapterWide = !matched.isEmpty && !matched.contains { comment in
+            comment.content.localizedCaseInsensitiveContains(paragraph.text)
+        }
         comments = matched.enumerated().map { index, comment in
             SegmentComment(
-                id: "src-\(index)-\(comment.id.hashValue)",
+                id: "src-\(index)-\(Self.stableCommentID(comment.id))",
                 author: comment.author ?? "读者",
                 text: comment.content,
                 likes: 0,
@@ -1939,6 +1958,17 @@ struct SegmentCommentsSheet: View {
             )
         }
         isRemote = true
+    }
+
+    /// 评论 ID 只在这次会话里用于列表去重，用 FNV-1a 而不是 hashValue：
+    /// 同一批评论重复打开时行 ID 应该稳定，否则列表每次重建。
+    private static func stableCommentID(_ text: String) -> UInt64 {
+        var hash: UInt64 = 0xCBF2_9CE4_8422_2325
+        for byte in text.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x0000_0100_0000_01B3
+        }
+        return hash
     }
 
     private var quoteBlock: some View {

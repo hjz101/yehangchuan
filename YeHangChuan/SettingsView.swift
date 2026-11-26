@@ -190,8 +190,10 @@ struct SettingsView: View {
                                     showNetworkLogs = true
                                 } label: {
                                     SettingsRow(
-                                        title: "网络诊断",
-                                        value: store.backend.isOnline ? "在线" : "离线",
+                                        title: "网络日志",
+                                        // 这里原来显示的是演示后端的开关状态，与真实网络无关。
+                                        // 改成如实反映「记录是开着还是关着」。
+                                        value: store.diagnostics.isRecording ? "记录中" : "未记录",
                                         systemImage: "network"
                                     )
                                 }
@@ -939,7 +941,8 @@ struct SyncCenterSheet: View {
                         isBusy = true
                         Task { @MainActor in
                             let ok = await store.backend.signIn(email: email)
-                            message = ok ? "登录成功，书源 Cookie 将随会话复用" : "登录失败，请检查模拟网络状态"
+                            // 这是演示账号，不存在真实会话，更不会影响书源 Cookie。
+                            message = ok ? "已登录演示账号（本机模拟，不联网）" : "登录失败，请检查模拟网络状态"
                             isBusy = false
                         }
                     } label: {

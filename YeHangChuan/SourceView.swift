@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 import LegadoCore
 
@@ -155,7 +156,10 @@ struct SourceView: View {
                     .font(.system(size: 16, weight: .semibold, design: .serif))
                     .foregroundStyle(Palette.text)
 
-                Text("共 \(store.sources.count) 个书源，可检索 \(store.sources.filter(\.enabled).reduce(0) { $0 + $1.bookCount }) 本")
+                // 这里原来写「可检索 N 本」，N 是所有书源 bookCount 的累加。
+                // 但 bookCount 只是演示时写死的数字，真实引擎从不知道也不算这个数，
+                // 所以改成能如实反映的：书源总数与已启用数。
+                Text("共 \(store.sources.count) 个书源，\(enabledCount) 个已启用")
                     .font(.system(size: 11.5))
                     .foregroundStyle(Palette.secondary)
 
@@ -265,7 +269,7 @@ struct SourceView: View {
     }
 
     private var footerNote: some View {
-        Text("书源默认关闭；启用前会提示权限与私网风险。检索与解析使用本地模拟服务。")
+        Text("书源默认关闭；启用前会提示权限与私网风险。已启用书源的检索、目录与正文会真实联网，私网地址默认拦截。")
             .font(.system(size: 10.5))
             .foregroundStyle(Palette.tertiary)
             .padding(.horizontal, 2)
@@ -330,7 +334,9 @@ struct SourceRow: View {
                         .background(Palette.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                 }
 
-                Text("\(source.host) · \(source.bookCount) 本")
+                // 原来这里写「N 本」，那个 N 来自演示数据里写死的 bookCount，
+                // 与真实书源无关。改成书源自己的分组，是真实字段。
+                Text("\(source.host) · \(source.group)")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Palette.tertiary)
                     .lineLimit(1)
@@ -743,7 +749,7 @@ struct SourceSearchSheet: View {
                     withAnimation(.easeOut(duration: 0.18)) {
                         results.append(
                             SourceHit(
-                                book: book.appBook(sourceID: appSourceID, coverStyle: abs(book.name.hashValue) % 6),
+                                book: book.appBook(sourceID: appSourceID, coverStyle: StableID.coverStyle(for: book.name)),
                                 sourceID: appSourceID,
                                 sourceName: sourceName
                             )
@@ -893,7 +899,7 @@ struct SearchResultRow: View {
                     .foregroundStyle(Palette.text)
                     .lineLimit(1)
 
-                Text("\(book.author) · \(book.kind.rawValue) · \(book.chapterCount) \(book.unitLabel)")
+                Text("\(book.author) · \(book.kind.rawValue) · \(book.chapterCountLabel)")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Palette.tertiary)
                     .lineLimit(1)
@@ -1017,7 +1023,7 @@ struct SourceDetailSheet: View {
                     .font(.system(size: 19, weight: .semibold, design: .serif))
                     .foregroundStyle(Palette.text)
 
-                Text("\(source.host) · \(source.kind.rawValue) · \(source.bookCount) 本")
+                Text("\(source.host) · \(source.kind.rawValue) · \(source.group)")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Palette.tertiary)
                     .lineLimit(1)
@@ -1240,7 +1246,9 @@ struct SourceDetailSheet: View {
                             let ok = await store.backend.loginSource(source, account: account, password: password)
                             source.login = ok ? .signedIn : .expired
                             source.username = account
-                            loginMessage = ok ? "登录成功，Cookie 已保存到本次会话" : "登录失败，请检查账号或网络"
+                            // 这是演示登录：不会真的向站点发请求，也不会写入任何 Cookie。
+                            // 需要真实登录状态时，书源规则里的 loginUrl / Cookie 由引擎自己处理。
+                            loginMessage = ok ? "已记录本站账号（演示，不发起真实登录请求）" : "登录失败，请检查账号或网络"
                             store.updateSource(source)
                             isBusy = false
                         }
@@ -1254,7 +1262,7 @@ struct SourceDetailSheet: View {
                         Button {
                             source.login = .signedOut
                             source.username = ""
-                            loginMessage = "已清除演示 Cookie"
+                            loginMessage = "已清除本站账号记录"
                             store.updateSource(source)
                         } label: {
                             Text("清除")
@@ -1614,9 +1622,16 @@ struct SourceImportExportSheet: View {
 
 // MARK: - Network logs
 
+/// 网络日志：显示 LegadoCore 真正发出的请求。
+///
+/// 这个页面原来读的是 `MockBackend.logs` —— 那是演示后端自己记的假记录。
+/// 搜索、目录、正文改成真实引擎之后，真实请求根本不进那张表，
+/// 页面就成了「看起来有日志、其实一条真的都没有」。
 struct NetworkLogSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+
+    private var diagnostics: NetworkDiagnostics { store.diagnostics }
 
     var body: some View {
         NavigationStack {
@@ -1625,77 +1640,53 @@ struct NetworkLogSheet: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
-                        Toggle(isOn: Binding(
-                            get: { store.backend.isOnline },
-                            set: { store.backend.isOnline = $0 }
-                        )) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("模拟网络在线")
-                                    .font(.system(size: 13.5, weight: .medium))
-                                    .foregroundStyle(Palette.text)
-                                Text("关闭后，搜索、同步与调试会返回 503")
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(Palette.tertiary)
-                            }
-                        }
-                        .tint(Palette.jade)
-                        .padding(13)
-                        .glassSurface(cornerRadius: 18)
+                        recordingCard
 
                         HStack {
-                            SectionHeading(text: "最近请求", trailing: "\(store.backend.requestCount) 次")
-                            if !store.backend.logs.isEmpty {
+                            SectionHeading(text: "最近请求", trailing: "\(diagnostics.entries.count) 条")
+                            if !diagnostics.entries.isEmpty {
                                 Button("清空") {
-                                    store.backend.logs.removeAll()
+                                    diagnostics.clear()
                                 }
                                 .font(.system(size: 10.5, weight: .medium))
                                 .foregroundStyle(Palette.accent)
                             }
                         }
 
-                        if store.backend.logs.isEmpty {
+                        if diagnostics.entries.isEmpty {
                             ContentUnavailableView(
-                                "还没有请求",
+                                diagnostics.isRecording ? "还没有请求" : "未开启记录",
                                 systemImage: "network",
-                                description: Text("搜索、书源测试或同步后会出现记录")
+                                description: Text(
+                                    diagnostics.isRecording
+                                        ? "搜索、目录、正文、发现、段评或换源之后会出现记录"
+                                        : "打开上面的「记录请求」，再做一次检索或翻页"
+                                )
                             )
                             .padding(.top, 30)
                         } else {
                             VStack(spacing: 0) {
-                                ForEach(store.backend.logs.prefix(20)) { log in
-                                    HStack(spacing: 8) {
-                                        Text(log.method)
-                                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(log.status == 200 ? Palette.jade : Palette.accent)
-                                            .frame(width: 32, alignment: .leading)
-
-                                        Text(log.path)
-                                            .font(.system(size: 10, design: .monospaced))
-                                            .foregroundStyle(Palette.secondary)
-                                            .lineLimit(1)
-
-                                        Spacer()
-
-                                        Text("\(log.status)")
-                                            .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-                                            .foregroundStyle(log.status == 200 ? Palette.jade : Palette.accent)
-                                        Text("\(log.milliseconds) ms")
-                                            .font(.system(size: 9, design: .rounded))
-                                            .foregroundStyle(Palette.tertiary)
-                                            .monospacedDigit()
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 9)
-
-                                    if log.id != store.backend.logs.prefix(20).last?.id {
-                                        Rectangle()
-                                            .fill(Palette.hairline)
-                                            .frame(height: 0.6)
-                                            .padding(.leading, 12)
-                                    }
+                                let shown = Array(diagnostics.entries.prefix(40))
+                                ForEach(shown) { entry in
+                                    entryRow(entry, isLast: entry.id == shown.last?.id)
                                 }
                             }
                             .glassSurface(cornerRadius: 18)
+                        }
+
+                        if !diagnostics.entries.isEmpty {
+                            Button {
+                                UIPasteboard.general.string = diagnostics.exportText
+                                store.showToast("已复制 \(diagnostics.entries.count) 条日志")
+                            } label: {
+                                Text("复制全部日志")
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(Palette.jade)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 11)
+                                    .glassSurface(cornerRadius: 16, tint: Palette.jade.opacity(0.08), interactive: true)
+                            }
+                            .buttonStyle(PressableStyle())
                         }
                     }
                     .padding(18)
@@ -1709,6 +1700,66 @@ struct NetworkLogSheet: View {
                     Button("完成") { dismiss() }
                         .fontWeight(.semibold)
                 }
+            }
+            .onAppear { diagnostics.refresh() }
+        }
+    }
+
+    private var recordingCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: Binding(
+                get: { diagnostics.isRecording },
+                set: { diagnostics.setRecording($0) }
+            )) {
+                Text("记录请求")
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundStyle(Palette.text)
+            }
+            .tint(Palette.jade)
+
+            // 记录会把请求地址写进磁盘，说清楚而不是默认打开。
+            Text("开启后，引擎发出的每条请求地址与状态会写到本机 Application Support/Legado/Logs；关闭时不记录。")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Palette.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(13)
+        .glassSurface(cornerRadius: 18)
+    }
+
+    private func entryRow(_ entry: DiagnosticLogEntry, isLast: Bool) -> some View {
+        let tint: Color = switch entry.level {
+        case .error: Palette.accent
+        case .warning: Palette.gold
+        case .info: Palette.jade
+        }
+
+        return VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 8) {
+                Text(entry.category)
+                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(tint)
+                    .frame(width: 34, alignment: .leading)
+
+                Text(entry.message)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Palette.secondary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(entry.date.formatted(date: .omitted, time: .standard))
+                    .font(.system(size: 8.5, design: .rounded))
+                    .foregroundStyle(Palette.tertiary)
+                    .monospacedDigit()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+
+            if !isLast {
+                Rectangle()
+                    .fill(Palette.hairline)
+                    .frame(height: 0.6)
+                    .padding(.leading, 12)
             }
         }
     }
