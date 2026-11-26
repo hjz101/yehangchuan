@@ -124,18 +124,7 @@ struct SettingsView: View {
                                     SettingsRow(
                                         title: "导出书架数据",
                                         value: "JSON / Markdown",
-                                        systemImage: "square.and.arrow.up"
-                                    )
-                                }
-                                .buttonStyle(.plain)
-
-                                Button {
-                                    showNetworkLogs = true
-                                } label: {
-                                    SettingsRow(
-                                        title: "网络诊断",
-                                        value: store.backend.isOnline ? "在线" : "离线",
-                                        systemImage: "network",
+                                        systemImage: "square.and.arrow.up",
                                         isLast: true
                                     )
                                 }
@@ -193,6 +182,17 @@ struct SettingsView: View {
                                         title: "安装与更新",
                                         value: "TestFlight · 免费",
                                         systemImage: "shippingbox"
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    showNetworkLogs = true
+                                } label: {
+                                    SettingsRow(
+                                        title: "网络诊断",
+                                        value: store.backend.isOnline ? "在线" : "离线",
+                                        systemImage: "network"
                                     )
                                 }
                                 .buttonStyle(.plain)
