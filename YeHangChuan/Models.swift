@@ -694,6 +694,10 @@ final class AppStore {
     func removeBook(_ bookID: String) {
         books.removeAll { $0.id == bookID }
         bookmarks.removeAll { $0.bookID == bookID }
+        // 目录缓存按书 ID 存，而换源不改 ID。删书后如果留着缓存，
+        // 下次从原书源重新入架会拿到「上一个源」的章节，正文却去原源取 —— 对不上。
+        // 顺带也避免快照里堆积已删书籍的整份正文。
+        customChapters[bookID] = nil
         showToast("已从书架移除")
         saveSnapshot()
     }
@@ -931,6 +935,12 @@ final class AppStore {
         for index in mapped.indices {
             mapped[index].networkURL = result.chapters[index].url
         }
+
+        // 上面在 await，期间可能换了源或把书删了。缓存只写回「发起请求时的那个源」，
+        // 否则旧源的目录会盖掉换源后的新目录。
+        guard let live = books.first(where: { $0.id == book.id }),
+              live.sourceID == book.sourceID else { return mapped }
+
         customChapters[book.id] = mapped
         if let bookIndex = books.firstIndex(where: { $0.id == book.id }) {
             books[bookIndex].chapterCount = mapped.count
@@ -959,7 +969,14 @@ final class AppStore {
 
         let result = await engine.content(engineBook: engineBook, chapter: engineChapter, source: engineSource)
         guard !result.paragraphs.isEmpty else { return nil }
-        customChapters[book.id]?[index].paragraphs = result.paragraphs
+
+        // 上面在 await，期间可能换了源——旧下标指向的已经是另一章的缓存，
+        // 甚至可能越界。按章节 ID 重新定位，找不到就只把正文交给调用方，不写缓存。
+        guard let cached = customChapters[book.id],
+              let liveIndex = cached.firstIndex(where: { $0.id == chapterID }) else {
+            return result.paragraphs
+        }
+        customChapters[book.id]?[liveIndex].paragraphs = result.paragraphs
         saveSnapshot()
         return result.paragraphs
     }
@@ -1082,15 +1099,19 @@ final class AppStore {
             return false
         }
 
-        // 验证通过才开始提交。顺序很重要：先写章节，再改 books，
-        // 中途失败不会留下「书指向新源但章节还是旧的」的中间态。
+        // 验证通过才开始提交。上面几步都在 await，书可能已经被删了，
+        // 所以这里重新定位一次：找不到就整件事作废，不要留下孤儿章节。
+        guard let updated = books.firstIndex(where: { $0.id == bookID }) else {
+            showToast("这本书已经不在书架上了")
+            return false
+        }
+
         var mapped = report.chapters.map { $0.appChapter() }
         for chapterIndex in mapped.indices {
             mapped[chapterIndex].networkURL = report.chapters[chapterIndex].url
         }
         customChapters[book.id] = mapped
 
-        guard let updated = books.firstIndex(where: { $0.id == bookID }) else { return false }
         books[updated].sourceID = sourceID
         books[updated].chapterCount = mapped.count
         books[updated].networkBookURL = candidate.searchBook.bookURL
