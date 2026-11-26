@@ -199,12 +199,6 @@ struct Chapter: Identifiable, Hashable, Codable, Sendable {
     var networkURL: String? = nil
 }
 
-struct ReaderPage: Identifiable {
-    let id: String
-    let chapterTitle: String
-    let paragraphs: [Paragraph]
-}
-
 // MARK: - Appearance
 
 enum AppAppearance: String, CaseIterable, Identifiable, Codable {
@@ -1783,67 +1777,6 @@ final class AppStore {
         if let goalMinutes = payload.goalMinutes { self.goalMinutes = goalMinutes }
         if let groups = payload.groups { self.groups = groups }
         flushSnapshot()
-    }
-}
-
-// MARK: - Paginator
-
-enum Paginator {
-    /// 按屏幕实际可用宽高估算每页容量，避免出现半页空白
-    static func pages(
-        for chapters: [Chapter],
-        fontSize: Double,
-        lineSpacing: Double,
-        viewport: CGSize = CGSize(width: 390, height: 844),
-        sideMargin: Double = 28
-    ) -> [ReaderPage] {
-        let horizontalInset = sideMargin * 2
-        let verticalChrome: Double = 78 + 150   // 顶部页眉 + 底部浮层避让
-
-        let lineHeight = fontSize * (1 + lineSpacing)
-        let usableWidth = max(Double(viewport.width) - horizontalInset, 200)
-        let usableHeight = max(Double(viewport.height) - verticalChrome, 260)
-
-        let charsPerLine = usableWidth / fontSize
-        let linesPerPage = usableHeight / lineHeight
-        // 0.88 用于吸收标点挤压、段首缩进与段间距带来的额外占位
-        let capacity = max(120, Int(charsPerLine * linesPerPage * 0.88))
-
-        var result: [ReaderPage] = []
-
-        for chapter in chapters {
-            var buffer: [Paragraph] = []
-            var length = 0
-
-            func flush() {
-                guard let anchor = buffer.first?.id else { return }
-                // 用首段 ID 做身份：改字号重新分页后，仍能凭它找回「同一段文字」落在第几页。
-                // 段落 ID 在全书内唯一（Mock 数据手写、导入书籍用 UUID），因此不会撞车。
-                result.append(
-                    ReaderPage(
-                        id: anchor,
-                        chapterTitle: chapter.title,
-                        paragraphs: buffer
-                    )
-                )
-                buffer.removeAll()
-                length = 0
-            }
-
-            for paragraph in chapter.paragraphs {
-                let count = max(1, paragraph.text.count)
-                if !buffer.isEmpty && length + count > capacity {
-                    flush()
-                }
-                buffer.append(paragraph)
-                length += count
-            }
-
-            if !buffer.isEmpty {
-                flush()
-            }
-        }
-        return result
     }
 }
 

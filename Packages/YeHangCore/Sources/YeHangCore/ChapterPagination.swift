@@ -63,7 +63,11 @@ public struct PageParagraphSlice: Equatable, Sendable {
 }
 
 /// 一页。跨章翻页由调用方按 `chapterIndex` 拼接，不在这里跨越章边界。
-public struct ReadingPage: Equatable, Sendable {
+public struct ReadingPage: Identifiable, Equatable, Sendable {
+    /// 页身份与内容位置绑定，不与页码绑定：改字号重排后页码全变，
+    /// 但「哪一章的第几页」仍然唯一。`ForEach` 靠它判断哪些页是真换了。
+    public var id: String { "\(chapterID)#\(pageIndexInChapter)" }
+
     public let chapterIndex: Int
     public let pageIndexInChapter: Int
     public let chapterID: String

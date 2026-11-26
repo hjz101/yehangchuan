@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 import MediaPlayer
 import LegadoCore
+import YeHangCore
 
 struct ReaderView: View {
     @Environment(AppStore.self) private var store
@@ -10,8 +11,16 @@ struct ReaderView: View {
     let book: Book
     var initialChapterTitle: String? = nil
 
-    @State private var pages: [ReaderPage] = []
+    /// 排好版的整本书。页表来自 `ChapterPagination`（真实 CoreText 排出来），
+    /// 不是按字数估算的 —— 估算的容量与实际排版永远有出入，差的那几个字就画不出来。
+    @State private var pagination: PaginatedBook?
     @State private var pageIndex = 0
+    /// 每发一次重排就加一。后台算完回来时若已经不是最新一次，就丢掉结果：
+    /// 拖字号滑块会连发十几次，晚到的旧结果会把新排版盖回去。
+    @State private var paginationGeneration = 0
+    /// 长按选中的段落。CoreText 画出来的文字拿不到系统的选择菜单，
+    /// 所以由命中测试找出是哪一段，再弹自己的操作条。
+    @State private var selectedParagraph: Paragraph?
     @State private var showChrome = true
     @State private var showTOC = false
     @State private var showSettings = false
@@ -32,7 +41,8 @@ struct ReaderView: View {
 
     private var settings: ReaderSettings { store.settings }
     private var chapters: [Chapter] { store.chapters(for: book) }
-    private var currentPage: ReaderPage? { pages.indices.contains(pageIndex) ? pages[pageIndex] : nil }
+    private var currentPage: ReadingPage? { pagination?.page(at: pageIndex) }
+    private var pageCount: Int { pagination?.pages.count ?? 0 }
 
     /// 当前章节标题，分页与滚动两种模式统一口径。
     private var currentChapterTitle: String {
@@ -52,7 +62,7 @@ struct ReaderView: View {
     }
 
     /// 当前页首段 ID，作为书签与位置恢复的稳定锚点。
-    private var anchorParagraphID: String? { currentPage?.paragraphs.first?.id }
+    private var anchorParagraphID: String? { currentPage?.firstParagraphID }
 
     /// 书签与听书使用的定位锚点，两种阅读模式统一口径。
     private var currentAnchorParagraphID: String? {
@@ -69,16 +79,8 @@ struct ReaderView: View {
                   let index = chapter.paragraphs.firstIndex(where: { $0.id == id }) else { return 0 }
             return chapter.paragraphs.prefix(index).reduce(0) { $0 + $1.text.utf16.count }
         }
-        return anchorOffset
-    }
-
-    /// 当前页首段在所属章节内的 UTF-16 偏移，仅用于展示与兼容旧数据。
-    private var anchorOffset: Int {
-        guard let page = currentPage,
-              let chapter = chapters.first(where: { $0.title == page.chapterTitle }),
-              let first = page.paragraphs.first,
-              let index = chapter.paragraphs.firstIndex(where: { $0.id == first.id }) else { return 0 }
-        return chapter.paragraphs.prefix(index).reduce(0) { $0 + $1.text.utf16.count }
+        // 页在章内的字符位置：排版直接算出来的，不用再逐个段落累加。
+        return currentPage?.chapterRange.location ?? 0
     }
 
     /// 滚动模式下的定位锚点：当前可见段落所在章节与段落本身。
@@ -94,7 +96,14 @@ struct ReaderView: View {
 
     private var progress: Double {
         if isScrollMode { return scrollProgress }
-        return pages.count <= 1 ? 0 : Double(pageIndex) / Double(pages.count - 1)
+        guard let pagination else { return 0 }
+        // 分母是目录章数，不是已排版的页数：在线书按章懒加载，
+        // 拿页数当分母会让「读到第一章末尾」显示成已读 100%。
+        return ReadingProgress.fraction(
+            at: pageIndex,
+            of: pagination.pages,
+            chapterCount: max(chapters.count, book.chapterCount)
+        )
     }
 
     private var chapterText: String {
@@ -104,7 +113,7 @@ struct ReaderView: View {
             return paragraphs.map(\.text).joined(separator: "\n")
         }
         let title = currentPage?.chapterTitle ?? ""
-        let paragraphs = chapters.first { $0.title == title }?.paragraphs ?? currentPage?.paragraphs ?? []
+        let paragraphs = chapters.first { $0.title == title }?.paragraphs ?? []
         return paragraphs.map(\.text).joined(separator: "\n")
     }
 
@@ -174,7 +183,7 @@ struct ReaderView: View {
             guard newSize.width > 1, newSize.height > 1 else { return }
             guard abs(newSize.width - viewport.width) > 1 || abs(newSize.height - viewport.height) > 1 else { return }
             viewport = newSize
-            guard !pages.isEmpty else { return }
+            guard pagination != nil else { return }
             rebuild(restore: false)
         }
         .preferredColorScheme(settings.theme.isDark ? .dark : .light)
@@ -186,6 +195,14 @@ struct ReaderView: View {
         .onChange(of: settings.sideMargin) { _, _ in rebuild(restore: false) }
         .onChange(of: settings.purifyText) { _, _ in rebuild(restore: false) }
         .onChange(of: settings.pageMode) { _, _ in rebuild(restore: false) }
+        .onChange(of: settings.fontDesign) { _, _ in rebuild(restore: false) }
+        .onChange(of: settings.fontWeight) { _, _ in rebuild(restore: false) }
+        .onChange(of: settings.indent) { _, _ in rebuild(restore: false) }
+        .onChange(of: chapters.count) { _, _ in
+            // 在线书拉到目录、补到正文后章数会变：页表要跟着重建，
+            // 否则新下来的章节在书里根本不存在。
+            rebuild(restore: true)
+        }
         .onChange(of: pageIndex) { _, _ in
             syncProgress()
             loadNextChapterIfNeeded()
@@ -200,11 +217,8 @@ struct ReaderView: View {
                         if let paragraph = chapters.first(where: { $0.title == title })?.paragraphs.first {
                             scrollParagraphID = paragraph.id
                         }
-                    } else if let index = pages.firstIndex(where: { $0.chapterTitle == title }) {
+                    } else if let index = pageIndex(ofChapterTitled: title) {
                         pageIndex = index
-                    } else if let index = chapters.firstIndex(where: { $0.title == title }) {
-                        // 该章还没正文，分页里根本不存在，按章节序号估算落点。
-                        pageIndex = min(index, max(pages.count - 1, 0))
                     }
                     await ensureChapterContent(title: title)
                 }
@@ -227,6 +241,27 @@ struct ReaderView: View {
             )
             .presentationDetents([.fraction(0.62), .large])
             .presentationCornerRadius(38)
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $selectedParagraph) { paragraph in
+            ParagraphActionsSheet(
+                paragraph: paragraph,
+                onExcerpt: {
+                    excerpt(paragraph)
+                    selectedParagraph = nil
+                },
+                onComment: {
+                    selectedParagraph = nil
+                    commentParagraph = paragraph
+                },
+                onCopy: {
+                    UIPasteboard.general.string = paragraph.text
+                    selectedParagraph = nil
+                    showFlash("已复制这一段")
+                }
+            )
+            .presentationDetents([.height(240)])
+            .presentationCornerRadius(32)
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showBookmarks) {
@@ -306,14 +341,14 @@ struct ReaderView: View {
 
     @ViewBuilder
     private var readingContent: some View {
-        if isLoadingNetwork && pages.isEmpty {
+        if isLoadingNetwork && pageCount == 0 {
             VStack(spacing: 10) {
                 ProgressView()
                 Text("正在加载在线章节…")
                     .font(.system(size: 12))
                     .foregroundStyle(settings.theme.secondary)
             }
-        } else if let networkError, pages.isEmpty {
+        } else if let networkError, pageCount == 0 {
             VStack(spacing: 10) {
                 Image(systemName: "wifi.exclamationmark")
                     .font(.system(size: 24, weight: .light))
@@ -336,39 +371,46 @@ struct ReaderView: View {
                 }
                 .buttonStyle(PressableStyle(scale: 0.97))
             }
-        } else if pages.isEmpty {
-            ProgressView()
-        } else if settings.pageMode == .slide {
-            if settings.pageTurnEffect == .slide {
-                TabView(selection: $pageIndex) {
-                    ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
-                        ReaderPageView(
-                            page: page,
-                            pageIndex: index,
-                            total: pages.count,
-                            bookTitle: book.title,
-                            settings: settings,
-                            onComment: { commentParagraph = $0 },
-                            onExcerpt: { paragraph in excerpt(paragraph) },
-                            onTap: toggleChrome
-                        )
-                        .tag(index)
+        } else if let pagination, !pagination.isEmpty {
+            if settings.pageMode == .slide {
+                if settings.pageTurnEffect == .slide {
+                    TabView(selection: $pageIndex) {
+                        ForEach(Array(pagination.pages.enumerated()), id: \.element.id) { index, page in
+                            pageView(pagination, page, index: index)
+                                .tag(index)
+                        }
                     }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .environment(\.layoutDirection, settings.direction.layoutDirection)
+                } else {
+                    PageFlipReader(
+                        pagination: pagination,
+                        bookTitle: book.title,
+                        pageIndex: $pageIndex,
+                        settings: settings,
+                        onComment: { commentParagraph = $0 },
+                        onSelect: { selectedParagraph = $0 },
+                        onTap: toggleChrome
+                    )
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .environment(\.layoutDirection, settings.direction.layoutDirection)
             } else {
-                PageFlipReader(
-                    pages: pages,
-                    pageIndex: $pageIndex,
-                    bookTitle: book.title,
+                ScrollReaderView(
+                    chapters: chapters,
                     settings: settings,
+                    visibleParagraphID: $scrollParagraphID,
                     onComment: { commentParagraph = $0 },
                     onExcerpt: { paragraph in excerpt(paragraph) },
                     onTap: toggleChrome
                 )
+                .environment(\.layoutDirection, settings.direction.layoutDirection)
+                .onChange(of: scrollParagraphID) { _, _ in
+                    // 可见段落变化即回写进度；scrollTargetLayout 让每段都是可停靠目标。
+                    updateScrollProgress()
+                    syncProgress()
+                }
             }
-        } else {
+        } else if isScrollMode {
+            // 滚动模式不需要分页，正文一到就能显示。
             ScrollReaderView(
                 chapters: chapters,
                 settings: settings,
@@ -379,14 +421,30 @@ struct ReaderView: View {
             )
             .environment(\.layoutDirection, settings.direction.layoutDirection)
             .onChange(of: scrollParagraphID) { _, _ in
-                // 可见段落变化即回写进度；scrollTargetLayout 让每段都是可停靠目标。
                 updateScrollProgress()
                 syncProgress()
             }
+        } else {
+            ProgressView()
         }
     }
 
     private enum TapZone { case backward, forward }
+
+    /// 分页模式下的一页。绘制层需要 `PaginatedBook` 才能拿到这一页的排版，
+    /// 所以不能只传 `ReadingPage`。
+    private func pageView(_ pagination: PaginatedBook, _ page: ReadingPage, index: Int) -> some View {
+        ReaderPageView(
+            pagination: pagination,
+            page: page,
+            pageIndex: index,
+            bookTitle: book.title,
+            settings: settings,
+            onComment: { commentParagraph = $0 },
+            onSelect: { selectedParagraph = $0 },
+            onTap: toggleChrome
+        )
+    }
 
     private func tapZone(_ zone: TapZone) -> some View {
         Color.clear
@@ -397,7 +455,7 @@ struct ReaderView: View {
                     if !movingForward {
                         pageIndex = max(pageIndex - 1, 0)
                     } else {
-                        pageIndex = min(pageIndex + 1, pages.count - 1)
+                        pageIndex = min(pageIndex + 1, pageCount - 1)
                     }
                 }
             }
@@ -529,7 +587,7 @@ struct ReaderView: View {
         GlassEffectContainer(spacing: 12) {
             VStack(spacing: 12) {
                 HStack(spacing: 9) {
-                    Text(settings.pageMode == .scroll ? "滚动" : "\(pageIndex + 1) / \(pages.count)")
+                    Text(settings.pageMode == .scroll ? "滚动" : "\(pageIndex + 1) / \(pageCount)")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(settings.theme.secondary)
                         .monospacedDigit()
@@ -629,7 +687,7 @@ struct ReaderView: View {
         }
         withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
             if forward {
-                pageIndex = min(pageIndex + 1, max(pages.count - 1, 0))
+                pageIndex = min(pageIndex + 1, max(pageCount - 1, 0))
             } else {
                 pageIndex = max(pageIndex - 1, 0)
             }
@@ -752,17 +810,16 @@ struct ReaderView: View {
     /// 读到最后一段时提前拉下一章，翻页时就不用等。
     /// 只拉当前页所在章节的下一章，避免把整本书的正文都拉下来。
     private func loadNextChapterIfNeeded() {
-        guard book.isNetworkBook, pages.indices.contains(pageIndex) else { return }
-        let currentTitle = pages[pageIndex].chapterTitle
+        guard book.isNetworkBook, let page = currentPage else { return }
 
         // 只有「下一页已经是另一章」时才算快到章尾。
         let nextPageIndex = pageIndex + 1
         let atChapterEnd: Bool = {
-            guard pages.indices.contains(nextPageIndex) else { return true }
-            return pages[nextPageIndex].chapterTitle != currentTitle
+            guard let next = pagination?.page(at: nextPageIndex) else { return true }
+            return next.chapterID != page.chapterID
         }()
         guard atChapterEnd,
-              let index = chapters.firstIndex(where: { $0.title == currentTitle }),
+              let index = chapters.firstIndex(where: { $0.id == page.chapterID }),
               index + 1 < chapters.count,
               chapters[index + 1].paragraphs.isEmpty else { return }
 
@@ -771,74 +828,181 @@ struct ReaderView: View {
             let paragraphs = await store.loadNetworkContent(for: book, chapterID: next.id)
             guard paragraphs?.isEmpty == false else { return }
             // 只重排，不跳转：读者还在原页，等他自己翻过去。
-            rebuild(restore: false, targetChapter: currentTitle)
+            rebuild(restore: false)
         }
     }
 
+    /// 重排整本书。
+    ///
+    /// 排版放到后台队列：50 万字的整本排完约 0.1 秒，在主线程上做会明显卡住
+    /// 拖字号滑块的动画。代价是结果回来得晚一拍，所以带了一个代数（generation）：
+    /// 期间又发起了新的重排，这次的结果就直接丢掉 —— 不然晚到的旧排版
+    /// 会把新的盖回去，表现为「字号调大了又自己变回去」。
+    ///
+    /// - Parameters:
+    ///   - restore: 是否按持久化的阅读位置落脚。
+    ///   - targetChapter: 指定落到这一章的开头（目录跳转、补正文后）。
     private func rebuild(restore: Bool, targetChapter: String? = nil) {
-        // 锚点用「当前页首段的段落 ID」而不是页序号：重排后同一段文字可能不再是某页的第一段，
-        // 所以要按「包含该段」来找，而不是按页 id 相等来找。
+        guard viewport.width > 1, viewport.height > 1 else { return }
+
+        // 锚点用「当前页首段的段落 ID」而不是页序号：重排后同一段文字
+        // 可能不再是某页的第一段，所以要按「包含该段」去找。
         // 滚动模式下当前页首段没有意义，改取滚动定位到的段落。
         let anchorParagraphID: String? = isScrollMode
             ? scrollParagraphID
-            : (pages.indices.contains(pageIndex) ? pages[pageIndex].paragraphs.first?.id : nil)
-        let anchorChapter: String? = isScrollMode
-            ? scrollAnchor.chapterTitle
-            : (pages.indices.contains(pageIndex) ? pages[pageIndex].chapterTitle : nil)
-        let newPages = Paginator.pages(
-            for: chapters,
-            fontSize: settings.fontSize,
-            lineSpacing: settings.lineSpacing,
-            viewport: viewport,
-            sideMargin: settings.sideMargin
+            : currentPage?.firstParagraphID
+        let anchorChapterID: String? = isScrollMode
+            ? nil
+            : currentPage?.chapterID
+        let previousIndex = pageIndex
+        let previousProgress = progress
+
+        let snapshot = chapters
+        let text = snapshot.map { chapter in
+            ChapterText(
+                id: chapter.id,
+                title: chapter.title,
+                paragraphs: chapter.paragraphs.map {
+                    SourceParagraph(
+                        id: $0.id,
+                        text: ReaderTypography.displayText($0, purify: settings.purifyText)
+                    )
+                }
+            )
+        }
+        let hasComments = snapshot.contains { chapter in
+            chapter.paragraphs.contains { !$0.comments.isEmpty }
+        }
+        let typeface = ReaderTypography.typeface(settings)
+        let size = ReaderMetrics.textSize(
+            in: viewport,
+            sideMargin: settings.sideMargin,
+            hasComments: hasComments && !settings.hideSourceComments
         )
-        pages = newPages
+        let chapterCount = max(snapshot.count, book.chapterCount)
 
-        guard !newPages.isEmpty else {
-            pageIndex = 0
-            return
-        }
+        paginationGeneration += 1
+        let generation = paginationGeneration
 
-        if restore, let targetChapter, let index = pageIndexContaining(chapterTitle: targetChapter, paragraphID: nil, in: newPages) {
-            pageIndex = index
-        } else if restore, let position = store.position(for: book.id) {
-            if let index = pageIndexContaining(chapterTitle: position.chapterTitle, paragraphID: position.paragraphID, in: newPages) {
-                pageIndex = index
-            } else {
-                let target = Int((book.progress * Double(max(newPages.count - 1, 0))).rounded())
-                pageIndex = min(max(target, 0), newPages.count - 1)
+        Task { @MainActor in
+            let pages = await Self.paginate(text, typeface: typeface, size: size)
+            guard generation == paginationGeneration else { return }
+
+            let paginated = PaginatedBook(
+                chapters: snapshot,
+                typeface: typeface,
+                size: size,
+                pages: pages,
+                hasComments: hasComments && !settings.hideSourceComments
+            )
+            pagination = paginated
+            pageIndex = Self.resolveIndex(
+                in: paginated,
+                restore: restore,
+                targetChapter: targetChapter,
+                anchorChapterID: anchorChapterID,
+                anchorParagraphID: anchorParagraphID,
+                progress: previousProgress,
+                previousIndex: previousIndex,
+                chapterCount: chapterCount,
+                position: store.position(for: book.id)
+            )
+
+            // 分页算出的落点也是滚动模式的恢复位置：让滚动视图直接滚到那一段。
+            if isScrollMode {
+                scrollParagraphID = paginated.page(at: pageIndex)?.firstParagraphID
+                updateScrollProgress()
             }
-        } else if restore {
-            let target = Int((book.progress * Double(max(newPages.count - 1, 0))).rounded())
-            pageIndex = min(max(target, 0), newPages.count - 1)
-        } else if let anchorParagraphID,
-                  let index = pageIndexContaining(chapterTitle: anchorChapter, paragraphID: anchorParagraphID, in: newPages) {
-            pageIndex = index
-        } else {
-            pageIndex = min(pageIndex, newPages.count - 1)
-        }
 
-        // 分页算出的落点也是滚动模式的恢复位置：让滚动视图直接滚到那一段。
-        if isScrollMode {
-            scrollParagraphID = newPages.indices.contains(pageIndex)
-                ? newPages[pageIndex].paragraphs.first?.id
-                : nil
-            updateScrollProgress()
+            syncProgress()
         }
-
-        syncProgress()
     }
 
-    /// 找到包含指定段落的页；段落 ID 缺失时退化为「该章的第一页」。
-    private func pageIndexContaining(chapterTitle: String?, paragraphID: String?, in pages: [ReaderPage]) -> Int? {
-        guard let chapterTitle else { return nil }
-        if let paragraphID,
-           let index = pages.firstIndex(where: {
-               $0.chapterTitle == chapterTitle && $0.paragraphs.contains { $0.id == paragraphID }
-           }) {
+    /// 后台排版。`ChapterLayout` 持有 `NSAttributedString`，不是线程无关的，
+    /// 所以整件事都在同一个后台任务里做完，只把可跨线程的 `[ReadingPage]` 交回来。
+    private static func paginate(
+        _ chapters: [ChapterText],
+        typeface: ReaderTypeface,
+        size: CGSize
+    ) async -> [ReadingPage] {
+        await Task.detached(priority: .userInitiated) {
+            ChapterPagination.pages(for: chapters, style: typeface.style(), size: size)
+        }.value
+    }
+
+    /// 重排后该停在哪一页。
+    ///
+    /// 优先级是「越具体越优先」：
+    /// 1. 指定的章节（目录点击、补完正文）；
+    /// 2. 持久化的位置（打开书时）；
+    /// 3. 改字号前的锚点段落（最精确，段落 ID 与字号无关）；
+    /// 4. 改字号前的页码（段落都没了的极端情况）；
+    /// 5. 百分比（连页码都对不上的最后兜底）。
+    ///
+    /// 每一步都只在真的找到时才用，找不到就往下走 —— 不猜。
+    private static func resolveIndex(
+        in paginated: PaginatedBook,
+        restore: Bool,
+        targetChapter: String?,
+        anchorChapterID: String?,
+        anchorParagraphID: String?,
+        progress: Double,
+        previousIndex: Int,
+        chapterCount: Int,
+        position: ReadingPosition?
+    ) -> Int {
+        let pages = paginated.pages
+        guard !pages.isEmpty else { return 0 }
+
+        func index(ofChapterTitled title: String) -> Int? {
+            pages.firstIndex { $0.chapterTitle == title }
+        }
+        func index(ofChapterWithID id: String) -> Int? {
+            pages.firstIndex { $0.chapterID == id }
+        }
+        /// 找到「包含这一段的页」。用包含而不是「首段等于」，因为
+        /// 重排后同一段可能不再是某页的第一段。
+        func index(containing paragraphID: String, inChapter chapterID: String?) -> Int? {
+            pages.firstIndex { page in
+                (chapterID == nil || page.chapterID == chapterID)
+                    && page.slices.contains { $0.paragraphID == paragraphID }
+            }
+        }
+
+        if let targetChapter, let index = index(ofChapterTitled: targetChapter) {
             return index
         }
-        return pages.firstIndex { $0.chapterTitle == chapterTitle }
+
+        if restore, let position {
+            if let index = index(containing: position.paragraphID, inChapter: nil) {
+                return index
+            }
+            if let index = index(ofChapterTitled: position.chapterTitle) {
+                return index
+            }
+        }
+
+        if !restore {
+            if let anchorParagraphID, let index = index(containing: anchorParagraphID, inChapter: anchorChapterID) {
+                return index
+            }
+            if let anchorChapterID, let index = index(ofChapterWithID: anchorChapterID) {
+                return index
+            }
+            if pages.indices.contains(previousIndex) {
+                return min(previousIndex, pages.count - 1)
+            }
+        }
+
+        // 最后兜底：按百分比找最接近的一页。
+        // 这条路径会让书签落在段中间也说不定，所以放在最后 ——
+        // 前面的锚点都失效时才用。
+        return ReadingProgress.pageIndex(nearest: progress, in: pages, chapterCount: chapterCount) ?? 0
+    }
+
+    /// 某个章节的首页。章节还没正文时返回 nil，由调用方决定停在原处。
+    private func pageIndex(ofChapterTitled title: String) -> Int? {
+        pagination?.pages.firstIndex { $0.chapterTitle == title }
     }
 
     /// 跳转到书签：优先按段落锚点定位，旧书签没有锚点时才回退到页序号。
@@ -849,12 +1013,20 @@ struct ReaderView: View {
             syncProgress()
             return
         }
-        let target = pageIndexContaining(
-            chapterTitle: bookmark.chapterTitle,
-            paragraphID: bookmark.paragraphID,
-            in: pages
-        )
-        let resolved = target ?? min(max(bookmark.pageIndex, 0), max(pages.count - 1, 0))
+        guard let paginated = pagination, !paginated.isEmpty else { return }
+
+        let target: Int? = bookmark.paragraphID.flatMap { id in
+            paginated.pages.firstIndex { page in
+                page.chapterTitle == bookmark.chapterTitle
+                    && page.slices.contains { $0.paragraphID == id }
+            }
+        }
+        let chapterStart = paginated.pages.firstIndex { $0.chapterTitle == bookmark.chapterTitle }
+        // 段落在重排后可能已经不是某一页的第一段，也可能整段被换源换掉了。
+        // 三级回落：段落 → 该章首页 → 旧页序号。
+        let resolved = target
+            ?? chapterStart
+            ?? min(max(bookmark.pageIndex, 0), paginated.pages.count - 1)
         withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
             pageIndex = resolved
         }
@@ -900,14 +1072,14 @@ struct ReaderView: View {
             )
             return
         }
-        guard !pages.isEmpty, let page = currentPage else { return }
+        guard let page = currentPage else { return }
         store.updateProgress(
             bookID: book.id,
             progress: progress,
             position: page.chapterTitle,
             chapterTitle: page.chapterTitle,
-            paragraphID: page.paragraphs.first?.id,
-            offset: anchorOffset
+            paragraphID: page.firstParagraphID,
+            offset: page.chapterRange.location
         )
     }
 }
@@ -915,27 +1087,19 @@ struct ReaderView: View {
 // MARK: - Cover pager
 
 struct PageFlipReader: View {
-    let pages: [ReaderPage]
-    @Binding var pageIndex: Int
+    let pagination: PaginatedBook
     let bookTitle: String
+    @Binding var pageIndex: Int
     let settings: ReaderSettings
     let onComment: (Paragraph) -> Void
-    let onExcerpt: (Paragraph) -> Void
+    let onSelect: (Paragraph) -> Void
     let onTap: () -> Void
 
     @State private var offset: CGFloat = 0
 
-    private var current: ReaderPage? {
-        pages.indices.contains(pageIndex) ? pages[pageIndex] : nil
-    }
-
-    private var next: ReaderPage? {
-        pages.indices.contains(pageIndex + 1) ? pages[pageIndex + 1] : nil
-    }
-
-    private var previous: ReaderPage? {
-        pages.indices.contains(pageIndex - 1) ? pages[pageIndex - 1] : nil
-    }
+    private var current: ReadingPage? { pagination.page(at: pageIndex) }
+    private var next: ReadingPage? { pagination.page(at: pageIndex + 1) }
+    private var previous: ReadingPage? { pagination.page(at: pageIndex - 1) }
 
     var body: some View {
         GeometryReader { geometry in
@@ -996,15 +1160,15 @@ struct PageFlipReader: View {
         }
     }
 
-    private func pageView(_ page: ReaderPage, index: Int) -> some View {
+    private func pageView(_ page: ReadingPage, index: Int) -> some View {
         ReaderPageView(
+            pagination: pagination,
             page: page,
             pageIndex: index,
-            total: pages.count,
             bookTitle: bookTitle,
             settings: settings,
             onComment: onComment,
-            onExcerpt: onExcerpt,
+            onSelect: onSelect,
             onTap: onTap
         )
     }
@@ -1012,15 +1176,38 @@ struct PageFlipReader: View {
 
 // MARK: - Page
 
+/// 一页正文。
+///
+/// 文字由 CoreText 直接画（`CoreTextPageView`），不用 `Text`：
+/// 分页时量的是 `CTFramesetterCreateFrame` 的结果，画的时候必须是同一套
+/// 排版，否则量出来放得下、画出来放不下，结局就是文字被裁。
+///
+/// 段评胶囊是叠在绘制层上的独立按钮：CoreText 画出来的字拿不到 SwiftUI
+/// 的点击，所以位置由 `PageParagraphBox` 算好，按钮绝对定位到那一行。
 struct ReaderPageView: View {
-    let page: ReaderPage
+    let pagination: PaginatedBook
+    let page: ReadingPage
     let pageIndex: Int
-    let total: Int
     let bookTitle: String
     let settings: ReaderSettings
     let onComment: (Paragraph) -> Void
-    let onExcerpt: (Paragraph) -> Void
+    let onSelect: (Paragraph) -> Void
     let onTap: () -> Void
+
+    /// 本页正文的范围。绘制层与命中测试共用同一个区域。
+    private var textSize: CGSize { pagination.size }
+
+    /// 本页每个段落的盒子里有段评的那些。按段下标索引，用来摆胶囊。
+    private var commentBoxes: [(box: PageParagraphBox, paragraph: Paragraph)] {
+        guard !settings.hideSourceComments, pagination.hasComments else { return [] }
+        return pagination.paragraphBoxes(for: page).compactMap { box in
+            guard let chapter = pagination.chapter(withID: page.chapterID),
+                  chapter.paragraphs.indices.contains(box.paragraphIndex) else { return nil }
+            let paragraph = chapter.paragraphs[box.paragraphIndex]
+            guard !paragraph.comments.isEmpty else { return nil }
+            return (box, paragraph)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1028,7 +1215,9 @@ struct ReaderPageView: View {
                 HStack {
                     Text(page.chapterTitle)
                     Spacer()
-                    Text("\(pageIndex + 1) / \(total)")
+                    // 章内页码：整本页码在几百万字的长篇里会数到好几千，
+                    // 读者真正关心的是「这一章还剩几页」。
+                    Text("\(page.pageIndexInChapter + 1) / \(pagination.chapterPageCounts[page.chapterID] ?? 1)")
                         .monospacedDigit()
                 }
                 .font(.system(size: 10, weight: .medium))
@@ -1037,16 +1226,15 @@ struct ReaderPageView: View {
                 .padding(.bottom, 20)
             }
 
-            VStack(alignment: .leading, spacing: settings.fontSize * (0.72 + settings.lineSpacing * 0.5)) {
-                ForEach(page.paragraphs) { paragraph in
-                    ParagraphView(
-                        paragraph: paragraph,
-                        settings: settings,
-                        onComment: onComment,
-                        onExcerpt: onExcerpt
-                    )
-                }
-            }
+            textLayer
+                .frame(width: textSize.width, height: textSize.height, alignment: .topLeading)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.onAppear {
+                            print("[PageDebug] page view size=\(proxy.size) textSize=\(textSize) pageIndex=\(page.pageIndexInChapter)")
+                        }
+                    }
+                )
 
             Spacer(minLength: 0)
 
@@ -1061,12 +1249,76 @@ struct ReaderPageView: View {
             }
         }
         .padding(.horizontal, settings.sideMargin)
-        .padding(.top, 72)
-        .padding(.bottom, 134)
+        .padding(.top, ReaderMetrics.top)
+        .padding(.bottom, ReaderMetrics.bottom)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onTap)
         .environment(\.layoutDirection, .leftToRight)
+    }
+
+    private var textLayer: some View {
+        ZStack(alignment: .topLeading) {
+            CoreTextPageView(
+                text: colored(pagination.text(for: page)),
+                size: textSize
+            )
+
+            // 触摸层压在文字上：点一下收放工具栏，长按选中一段。
+            // 它只装 tap 与 long press，手指一移动就失败，
+            // 所以外层的滑动手势不受影响。
+            PageTouchSurface(
+                onTap: onTap,
+                onLongPress: { point in
+                    if let paragraph = pagination.paragraph(at: point, in: page) {
+                        onSelect(paragraph)
+                    }
+                }
+            )
+
+            ForEach(commentBoxes, id: \.paragraph.id) { item in
+                Button {
+                    onComment(item.paragraph)
+                } label: {
+                    HStack(spacing: 2.5) {
+                        Image(systemName: "text.bubble.fill")
+                        Text("\(item.paragraph.comments.count)")
+                            .monospacedDigit()
+                    }
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(settings.theme.accent)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3.5)
+                    .glassCapsule(tint: settings.theme.accent.opacity(0.14))
+                }
+                .buttonStyle(.plain)
+                // 贴在段首那一行的右侧，与文字基线大致对齐。
+                .offset(
+                    x: textSize.width - 30,
+                    y: item.box.firstLine.minY + 2
+                )
+            }
+
+            if page.overflows {
+                // 连一行都放不下：如实说清楚，而不是把字裁掉装作正常。
+                Text("这一页放不下一行，请调小字号或减小留白")
+                    .font(.system(size: 11))
+                    .foregroundStyle(settings.theme.accent)
+                    .padding(10)
+                    .glassCapsule()
+            }
+        }
+        .frame(width: textSize.width, height: textSize.height, alignment: .topLeading)
+    }
+
+    /// 把主题的文字颜色刷进富文本。字体与间距已经在排版里定好，这里只改颜色。
+    private func colored(_ text: NSAttributedString) -> NSAttributedString {
+        guard text.length > 0 else { return text }
+        let copy = NSMutableAttributedString(attributedString: text)
+        copy.addAttribute(
+            .foregroundColor,
+            value: UIColor(settings.theme.text),
+            range: NSRange(location: 0, length: copy.length)
+        )
+        return copy
     }
 }
 
@@ -1081,20 +1333,7 @@ struct ParagraphView: View {
     }
 
     private var displayText: String {
-        var text = paragraph.text
-        if settings.purifyText {
-            text = text.replacingOccurrences(
-                of: #"[(（【][^)）】]{0,24}(本章完|求票|作者说)[^)）】]*[)）】]"#,
-                with: "",
-                options: .regularExpression
-            )
-            text = text.replacingOccurrences(
-                of: #"(?m)^\s*(作者说|PS|ps)[:：].*$"#,
-                with: "",
-                options: .regularExpression
-            )
-        }
-        return (settings.indent ? "　　" : "") + text
+        (settings.indent ? "　　" : "") + ReaderTypography.displayText(paragraph, purify: settings.purifyText)
     }
 
     var body: some View {
@@ -1222,6 +1461,64 @@ struct ScrollReaderView: View {
         .scrollPosition(id: $visibleParagraphID)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
+    }
+}
+
+// MARK: - 段落操作
+
+/// 长按选中一段后弹出的操作条。
+///
+/// 分页模式的正文是 CoreText 直接画的，拿不到系统的文字选择菜单
+/// （`Text` 才有）。所以自己命中出是哪一段，在这里给出三件事：
+/// 摘录、看段评、复制。范围是**整段**而不是任意选区 ——
+/// 做真正的跨段选字需要自己实现一整套选择手柄，而读者在这里要的
+/// 往往就是「把这一段留下」。
+struct ParagraphActionsSheet: View {
+    let paragraph: Paragraph
+    let onExcerpt: () -> Void
+    let onComment: () -> Void
+    let onCopy: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(paragraph.text)
+                .font(.system(size: 13))
+                .foregroundStyle(Palette.text)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 10) {
+                action("摘录", symbol: "quote.opening", action: onExcerpt)
+                action(
+                    paragraph.comments.isEmpty ? "段评" : "段评 \(paragraph.comments.count)",
+                    symbol: "text.bubble",
+                    action: onComment
+                )
+                action("复制", symbol: "doc.on.doc", action: onCopy)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(AppBackdrop())
+    }
+
+    private func action(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.system(size: 17, weight: .medium))
+                Text(title)
+                    .font(.system(size: 10.5, weight: .medium))
+            }
+            .foregroundStyle(Palette.text)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .glassSurface(cornerRadius: 16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle(scale: 0.97))
     }
 }
 
