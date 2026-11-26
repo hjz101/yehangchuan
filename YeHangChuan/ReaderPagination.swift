@@ -280,7 +280,6 @@ final class CoreTextPageUIView: UIView {
 
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext(), attributedText.length > 0 else { return }
-        print("[PageDebug] bounds=\(bounds.size) frameWidth=\(frame.width) length=\(attributedText.length)")
         // CoreText 的原点在左下，UIKit 的在左上：翻一次再画。
         context.textMatrix = .identity
         context.translateBy(x: 0, y: bounds.height)

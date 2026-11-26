@@ -1228,13 +1228,6 @@ struct ReaderPageView: View {
 
             textLayer
                 .frame(width: textSize.width, height: textSize.height, alignment: .topLeading)
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear.onAppear {
-                            print("[PageDebug] page view size=\(proxy.size) textSize=\(textSize) pageIndex=\(page.pageIndexInChapter)")
-                        }
-                    }
-                )
 
             Spacer(minLength: 0)
 
