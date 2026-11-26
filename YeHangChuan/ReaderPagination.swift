@@ -212,16 +212,14 @@ final class PaginatedBook {
 
     /// 页内坐标 → 该段的段落对象。长按选段用。
     ///
-    /// 命中落在段与段之间的空隙时，归到纵向最近的那一段 —— 长按差几像素
-    /// 就什么都没选上，那是最恼人的交互。
+    /// 判定规则在 `ParagraphHitTesting`（YeHangCore）里，那边有单测钉住。
+    /// 放在界面层时它跑不进 `swift test`，而模拟器又没法注入长按 ——
+    /// 整条 CoreText 链路就这一环没有防线。这里只做「下标 → 段落」的换算。
     func paragraph(at point: CGPoint, in page: ReadingPage) -> Paragraph? {
-        let boxes = paragraphBoxes(for: page)
-        let box = boxes.last { $0.frame.contains(point) }
-            ?? boxes.min { abs($0.frame.midY - point.y) < abs($1.frame.midY - point.y) }
-        guard let box,
+        guard let index = ParagraphHitTesting.index(at: point, among: paragraphBoxes(for: page)),
               let chapter = chapter(withID: page.chapterID),
-              chapter.paragraphs.indices.contains(box.paragraphIndex) else { return nil }
-        return chapter.paragraphs[box.paragraphIndex]
+              chapter.paragraphs.indices.contains(index) else { return nil }
+        return chapter.paragraphs[index]
     }
 
     /// 缓存放满就整体清掉，而不是逐条淘汰：条目数量本来就少，
