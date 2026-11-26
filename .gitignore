@@ -1,2 +1,12 @@
 .DS_Store
 .workbuddy/
+
+# SwiftPM 构建产物
+.build/
+Packages/*/.build/
+.swiftpm/
+
+# Xcode
+DerivedData/
+*.xcuserstate
+xcuserdata/
