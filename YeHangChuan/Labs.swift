@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import LegadoCore
 
 // MARK: - Export
 
@@ -604,16 +605,42 @@ struct JSSandboxSheet: View {
 
 // MARK: - Online discovery
 
+/// 在线发现：只用已启用书源里声明了 `exploreUrl` 的那几个真实抓取分类。
+///
+/// 原来的实现是伪造数据 —— 分类写死「古风 / 奇幻 / 都市」，
+/// 书目来自 `MockData.searchResults`，跟书源毫无关系。
+/// 现在分类从书源的 `exploreUrl` 里解析出来，书目是真发请求拿的。
 struct DiscoverSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    @State private var category = "古风"
     @State private var isLoading = false
-    @State private var results: [Book] = []
-    @State private var subscribed: Set<String> = ["示例书源"]
+    @State private var isLoadingMore = false
+    @State private var entries: [CategoryEntry] = []
+    @State private var selectedID: String?
+    @State private var results: [DiscoverHit] = []
+    @State private var errorMessage = ""
+    @State private var page = 1
+    @State private var hasMore = false
+    @State private var loadTask: Task<Void, Never>?
 
-    private let categories = ["全部", "古风", "奇幻", "都市", "科幻"]
+    /// 一个可点开的分类：属于哪个书源、引擎是什么、分类本身。
+    struct CategoryEntry: Identifiable {
+        let sourceID: String
+        let sourceName: String
+        let engineSource: LegadoCore.BookSource
+        let kind: ExploreKind
+
+        var id: String { "\(sourceID)#\(kind.id)" }
+    }
+
+    struct DiscoverHit: Identifiable {
+        let book: Book
+        let sourceName: String
+        var id: String { book.id }
+    }
+
+    private var enabledSources: [BookSource] { store.sources.filter(\.enabled) }
 
     var body: some View {
         NavigationStack {
@@ -623,19 +650,35 @@ struct DiscoverSheet: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         header
-                        categoryRow
 
-                        if isLoading {
-                            HStack(spacing: 9) {
-                                ProgressView()
-                                Text("正在聚合已启用书源…")
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(Palette.tertiary)
-                            }
-                            .padding(.top, 30)
+                        if enabledSources.isEmpty {
+                            emptyHint(
+                                "没有启用的书源",
+                                detail: "回到书源页启用一个支持发现的源"
+                            )
+                        } else if isLoading && entries.isEmpty {
+                            loadingHint("正在读取书源分类…")
+                        } else if entries.isEmpty {
+                            emptyHint(
+                                "已启用书源都没有发现分类",
+                                detail: "发现需要书源配置 exploreUrl；只有搜索规则的书源不提供分类"
+                            )
                         } else {
-                            ForEach(results) { book in
-                                resultRow(book)
+                            categoryRow
+
+                            if isLoading {
+                                loadingHint("正在抓取该分类…")
+                            } else if !errorMessage.isEmpty && results.isEmpty {
+                                errorCard
+                            } else if results.isEmpty {
+                                emptyHint("这个分类没有返回书目", detail: "可能是分类为空，或规则未命中")
+                            } else {
+                                ForEach(results) { hit in
+                                    resultRow(hit)
+                                }
+                                if hasMore {
+                                    loadMoreButton
+                                }
                             }
                         }
                     }
@@ -651,10 +694,11 @@ struct DiscoverSheet: View {
                         .fontWeight(.semibold)
                 }
             }
-            .task { await load() }
-            .onChange(of: category) { _, _ in
-                Task { await load() }
+            .task {
+                guard entries.isEmpty else { return }
+                await loadKinds()
             }
+            .onDisappear { loadTask?.cancel() }
         }
     }
 
@@ -670,7 +714,7 @@ struct DiscoverSheet: View {
                 Text("发现与订阅")
                     .font(.system(size: 16, weight: .semibold, design: .serif))
                     .foregroundStyle(Palette.text)
-                Text("仅聚合你已启用的书源；当前为本地模拟数据")
+                Text(subtitle)
                     .font(.system(size: 10.5))
                     .foregroundStyle(Palette.tertiary)
             }
@@ -680,22 +724,38 @@ struct DiscoverSheet: View {
         .glassSurface(cornerRadius: 22)
     }
 
+    private var subtitle: String {
+        if entries.isEmpty {
+            return "读取 \(enabledSources.count) 个已启用书源的发现分类"
+        }
+        let sourcesWithKinds = Set(entries.map(\.sourceID)).count
+        return "\(sourcesWithKinds) 个书源共 \(entries.count) 个分类 · 全部真实抓取"
+    }
+
     private var categoryRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(categories, id: \.self) { item in
+                ForEach(entries) { entry in
+                    let selected = entry.id == selectedID
                     Button {
-                        category = item
+                        selectedID = entry.id
+                        Task { await load(pages: 1, reset: true) }
                     } label: {
-                        Text(item)
-                            .font(.system(size: 12, weight: category == item ? .semibold : .medium))
-                            .foregroundStyle(category == item ? Palette.onAccent : Palette.secondary)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 8)
-                            .background {
-                                if category == item { Capsule().fill(Palette.jade) }
-                            }
-                            .glassCapsule(tint: category == item ? nil : Palette.glassTint, interactive: true)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(entry.kind.title)
+                                .font(.system(size: 12, weight: selected ? .semibold : .medium))
+                                .foregroundStyle(selected ? Palette.onAccent : Palette.secondary)
+                            // 同名分类在不同书源里意思可能不同，标出来源。
+                            Text(entry.sourceName)
+                                .font(.system(size: 8.5))
+                                .foregroundStyle(selected ? Palette.onAccent.opacity(0.75) : Palette.tertiary)
+                        }
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 7)
+                        .background {
+                            if selected { Capsule().fill(Palette.jade) }
+                        }
+                        .glassCapsule(tint: selected ? nil : Palette.glassTint, interactive: true)
                     }
                     .buttonStyle(PressableStyle())
                 }
@@ -704,20 +764,20 @@ struct DiscoverSheet: View {
         .scrollClipDisabled()
     }
 
-    private func resultRow(_ book: Book) -> some View {
+    private func resultRow(_ hit: DiscoverHit) -> some View {
         HStack(spacing: 12) {
-            BookCover(book: book, cornerRadius: 8)
+            BookCover(book: hit.book, cornerRadius: 8)
                 .frame(width: 54)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(book.title)
+                Text(hit.book.title)
                     .font(.system(size: 15, weight: .semibold, design: .serif))
                     .foregroundStyle(Palette.text)
                     .lineLimit(1)
-                Text("\(book.author) · \(book.kind.rawValue) · \(book.chapterCount) \(book.unitLabel)")
+                Text("\(hit.book.author) · \(hit.book.kind.rawValue) · \(hit.book.chapterCount) \(hit.book.unitLabel)")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Palette.tertiary)
-                Text("模拟书源 · 最近更新")
+                Text(hit.sourceName)
                     .font(.system(size: 9.5))
                     .foregroundStyle(Palette.jade)
             }
@@ -725,31 +785,164 @@ struct DiscoverSheet: View {
             Spacer()
 
             Button {
-                store.addToShelf(book)
+                store.addToShelf(hit.book)
             } label: {
-                Image(systemName: store.isOnShelf(book.id) ? "checkmark" : "plus")
+                Image(systemName: store.isOnShelf(hit.book.id) ? "checkmark" : "plus")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(store.isOnShelf(book.id) ? Palette.jade : Palette.onAccent)
+                    .foregroundStyle(store.isOnShelf(hit.book.id) ? Palette.jade : Palette.onAccent)
                     .frame(width: 34, height: 34)
                     .background(
-                        store.isOnShelf(book.id) ? Palette.jade.opacity(0.14) : Palette.accentSolid,
+                        store.isOnShelf(hit.book.id) ? Palette.jade.opacity(0.14) : Palette.accentSolid,
                         in: Circle()
                     )
             }
             .buttonStyle(PressableStyle())
-            .disabled(store.isOnShelf(book.id))
+            .disabled(store.isOnShelf(hit.book.id))
         }
         .padding(12)
         .glassSurface(cornerRadius: 18)
     }
 
-    private func load() async {
+    private var loadMoreButton: some View {
+        Button {
+            Task { await load(pages: page + 1, reset: false) }
+        } label: {
+            HStack(spacing: 8) {
+                if isLoadingMore { ProgressView() }
+                Text(isLoadingMore ? "正在加载第 \(page + 1) 页" : "加载更多")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.jade)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .glassSurface(cornerRadius: 16, tint: Palette.jade.opacity(0.08), interactive: true)
+        }
+        .buttonStyle(PressableStyle())
+        .disabled(isLoadingMore)
+    }
+
+    private var errorCard: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.accent)
+            Text(errorMessage)
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassSurface(cornerRadius: 16, tint: Palette.accent.opacity(0.06))
+    }
+
+    private func loadingHint(_ text: String) -> some View {
+        HStack(spacing: 9) {
+            ProgressView()
+            Text(text)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Palette.tertiary)
+        }
+        .padding(.top, 30)
+    }
+
+    private func emptyHint(_ title: String, detail: String) -> some View {
+        VStack(spacing: 7) {
+            Image(systemName: "safari")
+                .font(.system(size: 24, weight: .light))
+                .foregroundStyle(Palette.tertiary)
+            Text(title)
+                .font(.system(size: 13))
+                .foregroundStyle(Palette.secondary)
+            Text(detail)
+                .font(.system(size: 10))
+                .foregroundStyle(Palette.tertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 44)
+        .padding(.horizontal, 20)
+    }
+
+    // MARK: 数据
+
+    /// 逐个书源读分类。没有 `exploreUrl` 的源直接跳过，不算失败。
+    private func loadKinds() async {
         isLoading = true
-        let response = await store.backend.call("GET", "/v1/discover?category=\(category)")
-        try? await Task.sleep(for: .milliseconds(220))
-        let pool = MockData.searchResults + store.books.filter { $0.kind == .novel }.prefix(2).map { $0 }
-        results = response.ok ? Array(pool.prefix(6)) : []
+        errorMessage = ""
+        var collected: [CategoryEntry] = []
+
+        for source in enabledSources {
+            guard let engineSource = LegadoBridge.engineSource(from: source) else { continue }
+            let result = await store.engine.exploreKinds(source: engineSource)
+            for kind in result.kinds where kind.navigableURL != nil {
+                collected.append(
+                    CategoryEntry(
+                        sourceID: source.id,
+                        sourceName: source.name,
+                        engineSource: engineSource,
+                        kind: kind
+                    )
+                )
+            }
+        }
+
+        entries = collected
         isLoading = false
+
+        guard let first = collected.first else { return }
+        selectedID = first.id
+        await load(pages: 1, reset: true)
+    }
+
+    /// 抓一页。`reset` 为 false 时追加，用于「加载更多」。
+    private func load(pages: Int, reset: Bool) async {
+        guard let entry = entries.first(where: { $0.id == selectedID }) else { return }
+        if reset {
+            isLoading = true
+            errorMessage = ""
+            results = []
+            page = 1
+            hasMore = false
+        } else {
+            isLoadingMore = true
+        }
+
+        loadTask?.cancel()
+        let target = pages
+        loadTask = Task { @MainActor in
+            let outcome = await store.engine.explore(
+                source: entry.engineSource, kind: entry.kind, page: target
+            )
+            guard !Task.isCancelled else { return }
+
+            let mapped = outcome.books.map { book in
+                DiscoverHit(
+                    book: book.appBook(
+                        sourceID: entry.sourceID,
+                        coverStyle: abs(book.name.hashValue) % 6
+                    ),
+                    sourceName: entry.sourceName
+                )
+            }
+            if reset {
+                results = mapped
+            } else {
+                // 同一本书在翻页时可能重复出现，按 ID 去重。
+                let existing = Set(results.map(\.id))
+                results += mapped.filter { !existing.contains($0.id) }
+            }
+            page = target
+            // 拿到的条数明显变少就认为没有下一页了；书源通常不返回总数。
+            hasMore = !mapped.isEmpty
+            if let diagnostic = outcome.diagnostics.first(where: { $0.severity == .error }) {
+                errorMessage = diagnostic.message
+            }
+            isLoading = false
+            isLoadingMore = false
+        }
+        await loadTask?.value
     }
 }
 
