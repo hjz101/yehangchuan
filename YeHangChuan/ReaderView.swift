@@ -247,7 +247,13 @@ struct ReaderView: View {
         }
         .sheet(isPresented: $showSourceSwitch) {
             SourceSwitchSheet(book: book) { source in
-                store.switchSource(bookID: book.id, to: source.id)
+                // 换源现在是真去搜同名书 + 验证，要等网络；
+                // 验证通过后 ReaderView 需要重排，所以回调里再重建一次。
+                let switched = await store.switchSource(bookID: book.id, to: source.id)
+                guard switched else { return false }
+                rebuild(restore: true)
+                await ensureCurrentChapterContent()
+                return true
             }
             .presentationDetents([.medium, .large])
             .presentationCornerRadius(38)

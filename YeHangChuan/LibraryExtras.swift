@@ -1129,9 +1129,15 @@ struct SourceSwitchSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let book: Book
-    let onSwitch: (BookSource) -> Void
+    /// 返回是否切换成功。成功才关面板，失败把原因留在这一行。
+    let onSwitch: (BookSource) async -> Bool
 
     @State private var probes: [String: SourceProbe] = [:]
+    /// 换源是真去搜同名书再验证，要花几秒。正在换的那条书源要显示进度，
+    /// 并且期间禁止重复点，避免并发提交两份章节。
+    @State private var switchingID: String?
+    /// 验证失败的原因，直接显示在对应书源那一行下面。
+    @State private var failures: [String: String] = [:]
 
     private var sources: [BookSource] { store.sources.filter(\.enabled) }
 
@@ -1144,50 +1150,56 @@ struct SourceSwitchSheet: View {
                     VStack(spacing: 9) {
                         ForEach(sources) { source in
                             let probe = probes[source.id]
-                            HStack(spacing: 12) {
-                                Image(systemName: source.kind == .js ? "curlybraces" : "doc.text")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(Palette.jade)
-                                    .frame(width: 34, height: 34)
-                                    .background(Palette.jade.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            let switching = switchingID == source.id
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 12) {
+                                    Image(systemName: source.kind == .js ? "curlybraces" : "doc.text")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(Palette.jade)
+                                        .frame(width: 34, height: 34)
+                                        .background(Palette.jade.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(source.name)
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundStyle(Palette.text)
-                                    Text(probe.map { "\($0.milliseconds) ms · \($0.message)" } ?? "正在检测…")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(probe?.ok == false ? Palette.accent : Palette.tertiary)
-                                        .lineLimit(1)
-                                }
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(source.name)
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundStyle(Palette.text)
+                                        Text(statusText(source: source, probe: probe, switching: switching))
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(statusTint(source: source, probe: probe))
+                                            .lineLimit(2)
+                                    }
 
-                                Spacer()
+                                    Spacer()
 
-                                Button {
-                                    onSwitch(source)
-                                    dismiss()
-                                } label: {
-                                    Text(book.sourceID == source.id ? "当前" : "切换")
-                                        .font(.system(size: 11.5, weight: .semibold))
-                                        .foregroundStyle(book.sourceID == source.id ? Palette.secondary : Palette.onAccent)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 7)
-                                        .background {
-                                            if book.sourceID != source.id {
-                                                Capsule().fill(Palette.accentSolid)
-                                            } else {
-                                                Capsule().fill(Palette.faint)
-                                            }
+                                    if switching {
+                                        ProgressView()
+                                    } else {
+                                        Button {
+                                            startSwitch(source)
+                                        } label: {
+                                            Text(book.sourceID == source.id ? "当前" : "切换")
+                                                .font(.system(size: 11.5, weight: .semibold))
+                                                .foregroundStyle(book.sourceID == source.id ? Palette.secondary : Palette.onAccent)
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 7)
+                                                .background {
+                                                    if book.sourceID != source.id {
+                                                        Capsule().fill(Palette.accentSolid)
+                                                    } else {
+                                                        Capsule().fill(Palette.faint)
+                                                    }
+                                                }
                                         }
+                                        .buttonStyle(PressableStyle())
+                                        .disabled(book.sourceID == source.id || switchingID != nil)
+                                    }
                                 }
-                                .buttonStyle(PressableStyle())
-                                .disabled(book.sourceID == source.id)
                             }
                             .padding(12)
                             .glassSurface(cornerRadius: 18)
                         }
 
-                        Text("切换书源只替换内容来源，当前章节与阅读位置会保留。")
+                        Text("切换会在这个书源里检索同名书，并验证详情、目录与正文都读得到才提交。验证期间阅读位置会按章节标题迁移。")
                             .font(.system(size: 10.5))
                             .foregroundStyle(Palette.tertiary)
                             .padding(.top, 10)
@@ -1221,6 +1233,35 @@ struct SourceSwitchSheet: View {
                     )
                 }
             }
+        }
+    }
+
+    /// 探测状态、正在切换、上次验证失败，三种信息合并成一行。
+    private func statusText(source: BookSource, probe: SourceProbe?, switching: Bool) -> String {
+        if switching { return "正在检索同名书并验证正文…" }
+        if let failure = failures[source.id] { return failure }
+        return probe.map { "\($0.milliseconds) ms · \($0.message)" } ?? "正在检测…"
+    }
+
+    private func statusTint(source: BookSource, probe: SourceProbe?) -> Color {
+        if failures[source.id] != nil { return Palette.accent }
+        return probe?.ok == false ? Palette.accent : Palette.tertiary
+    }
+
+    /// 点击切换：交给上层真正换源，失败就把原因留在这一行。
+    private func startSwitch(_ source: BookSource) {
+        switchingID = source.id
+        failures[source.id] = nil
+        Task { @MainActor in
+            let ok = await onSwitch(source)
+            switchingID = nil
+            guard !ok else {
+                // 成功就直接收起面板，不必让用户再点一次「完成」。
+                dismiss()
+                return
+            }
+            // 上层只弹了 toast，这里补一句更具体的原因。
+            failures[source.id] = store.toast ?? "切换失败"
         }
     }
 }

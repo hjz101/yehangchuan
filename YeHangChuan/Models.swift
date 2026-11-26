@@ -991,12 +991,138 @@ final class AppStore {
         showToast("已创建分组「\(trimmed)」")
     }
 
-    func switchSource(bookID: String, to sourceID: String) {
-        guard let index = books.firstIndex(where: { $0.id == bookID }) else { return }
-        books[index].sourceID = sourceID
-        let name = sources.first { $0.id == sourceID }?.name ?? "本地"
-        showToast("已切换到「\(name)」，阅读位置保留")
+    // MARK: 换源
+
+    /// 换源所需的「当前书是谁、读到哪儿」。引擎只认它自己的 `Book`，
+    /// 这一层把 App 的 `progress` / `lastPosition` 翻译成章节序号与标题。
+    func switchTarget(for book: Book) -> TitleAuthor {
+        let chapters = chapters(for: book)
+        let position = positions[book.id]
+        // 定位当前章节：优先用持久化的位置锚点，其次用 lastPosition 里记的标题。
+        let currentTitle = position?.chapterTitle ?? book.lastPosition
+        let index = chapters.firstIndex { $0.title == currentTitle } ?? 0
+
+        // 当前段落在章内的 UTF-16 偏移。分三段写，别塞进一个闭包里 ——
+        // 那样编译器会放弃类型检查。
+        var offset = 0
+        if let position,
+           let chapter = chapters.first(where: { $0.title == position.chapterTitle }),
+           let paragraphIndex = chapter.paragraphs.firstIndex(where: { $0.id == position.paragraphID }) {
+            offset = chapter.paragraphs.prefix(paragraphIndex)
+                .reduce(0) { $0 + $1.text.utf16.count }
+        }
+
+        let chapterTitle = chapters.indices.contains(index) ? chapters[index].title : nil
+        let currentSource = sources.first { $0.id == book.sourceID }
+
+        return TitleAuthor(
+            title: book.title,
+            author: book.author,
+            bookURL: book.networkBookURL,
+            tocURL: book.networkTocURL,
+            origin: currentSource?.ruleSourceURL ?? currentSource?.host,
+            chapterIndex: index,
+            chapterTitle: chapterTitle,
+            offset: offset,
+            chapterCount: chapters.count
+        )
+    }
+
+    /// 真实换源：去其它已启用书源搜同名书，逐个验证，只提交验证通过的那一个。
+    ///
+    /// 原来的实现只是把 `sourceID` 改一下就说「已切换」—— 那句话是假的，
+    /// 章节内容一个字节都没变。现在验证通过才提交，失败就把原因说出来。
+    @discardableResult
+    func switchSource(bookID: String, to sourceID: String) async -> Bool {
+        guard let index = books.firstIndex(where: { $0.id == bookID }) else { return false }
+        let book = books[index]
+
+        guard let appSource = sources.first(where: { $0.id == sourceID }),
+              let engineSource = LegadoBridge.engineSource(from: appSource) else {
+            showToast("书源规则无法解析，无法切换")
+            return false
+        }
+        guard LegadoBridge.isSearchable(engineSource) else {
+            showToast("「\(appSource.name)」没有搜索规则，无法换源")
+            return false
+        }
+        // 本地书没有书源地址，换源无从谈起。
+        guard book.isNetworkBook else {
+            showToast("本地书不能换源")
+            return false
+        }
+
+        let target = switchTarget(for: book)
+
+        // 先在这个源里搜同名书。只接受规范化书名一致的候选，
+        // 否则「换源」会把你带到另一本书上去。
+        let candidates = await engine.switchCandidates(book: target, sources: [engineSource]) { _ in }
+        guard let candidate = candidates.first else {
+            showToast("「\(appSource.name)」里没有找到《\(book.title)》")
+            return false
+        }
+
+        // 四步验证：详情 → 目录 → 章节匹配 → 正文。
+        let prepared = await engine.prepareSwitch(
+            book: target, candidate: candidate, source: engineSource
+        )
+        guard let report = prepared.error == nil ? prepared.report : nil,
+              !report.chapters.isEmpty else {
+            showToast(prepared.error ?? "候选书源无法读取")
+            return false
+        }
+
+        // 验证通过才开始提交。顺序很重要：先写章节，再改 books，
+        // 中途失败不会留下「书指向新源但章节还是旧的」的中间态。
+        var mapped = report.chapters.map { $0.appChapter() }
+        for chapterIndex in mapped.indices {
+            mapped[chapterIndex].networkURL = report.chapters[chapterIndex].url
+        }
+        customChapters[book.id] = mapped
+
+        guard let updated = books.firstIndex(where: { $0.id == bookID }) else { return false }
+        books[updated].sourceID = sourceID
+        books[updated].chapterCount = mapped.count
+        books[updated].networkBookURL = candidate.searchBook.bookURL
+        books[updated].networkTocURL = candidate.searchBook.tocURL.isEmpty
+            ? nil : candidate.searchBook.tocURL
+
+        // 阅读位置迁到新源的对应章节。匹配上了就说匹配上，
+        // 没匹配上退回同序号，并且如实告诉用户。
+        let matchedTitle = report.matchedTitle
+        let progress = books[updated].progress
+        if let matchedTitle, report.exactChapterMatch {
+            books[updated].lastPosition = matchedTitle
+            positions[bookID] = ReadingPosition(
+                bookID: bookID,
+                chapterTitle: matchedTitle,
+                paragraphID: "",
+                offset: 0,
+                progress: progress,
+                updatedAt: Date()
+            )
+        } else {
+            let fallback = mapped.indices.contains(report.matchedIndex)
+                ? mapped[report.matchedIndex].title
+                : mapped.first?.title ?? book.lastPosition
+            books[updated].lastPosition = fallback
+            positions[bookID] = ReadingPosition(
+                bookID: bookID,
+                chapterTitle: fallback,
+                paragraphID: "",
+                offset: 0,
+                progress: progress,
+                updatedAt: Date()
+            )
+        }
         saveSnapshot()
+
+        if report.exactChapterMatch, let matchedTitle {
+            showToast("已切换到「\(appSource.name)」，定位到「\(matchedTitle)」")
+        } else {
+            showToast("已切换到「\(appSource.name)」，但这个源缺少同名章节，已按序号就近定位")
+        }
+        return true
     }
 
     // MARK: Bookmarks
