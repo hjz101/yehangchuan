@@ -19,6 +19,10 @@ struct ReaderView: View {
     @State private var showSourceSwitch = false
     @State private var commentParagraph: Paragraph?
     @State private var flash: String?
+    /// 在线书正在拉目录或正文。
+    @State private var isLoadingNetwork = false
+    /// 在线书加载失败的原因，显示在正文区而不是静默空白。
+    @State private var networkError: String?
     @State private var viewport: CGSize = CGSize(width: 390, height: 844)
     /// 滚动模式下当前可见段落的 ID，与 ScrollReaderView 的 scrollPosition 双向绑定。
     @State private var scrollParagraphID: String?
@@ -181,20 +185,28 @@ struct ReaderView: View {
         .onChange(of: settings.sideMargin) { _, _ in rebuild(restore: false) }
         .onChange(of: settings.purifyText) { _, _ in rebuild(restore: false) }
         .onChange(of: settings.pageMode) { _, _ in rebuild(restore: false) }
-        .onChange(of: pageIndex) { _, _ in syncProgress() }
+        .onChange(of: pageIndex) { _, _ in
+            syncProgress()
+            loadNextChapterIfNeeded()
+        }
         .sheet(isPresented: $showTOC) {
             TOCSheet(chapters: chapters, currentTitle: currentChapterTitle) { title in
-                if isScrollMode {
-                    if let paragraph = chapters.first(where: { $0.title == title })?.paragraphs.first {
-                        scrollParagraphID = paragraph.id
-                        updateScrollProgress()
-                        syncProgress()
-                    }
-                } else if let index = pages.firstIndex(where: { $0.chapterTitle == title }) {
-                    pageIndex = index
-                }
                 hideChromeAfterDelay()
                 showTOC = false
+                // 在线书跳到新章节时正文还没拉，先跳过去（会显示加载态）再补正文。
+                Task { @MainActor in
+                    if isScrollMode {
+                        if let paragraph = chapters.first(where: { $0.title == title })?.paragraphs.first {
+                            scrollParagraphID = paragraph.id
+                        }
+                    } else if let index = pages.firstIndex(where: { $0.chapterTitle == title }) {
+                        pageIndex = index
+                    } else if let index = chapters.firstIndex(where: { $0.title == title }) {
+                        // 该章还没正文，分页里根本不存在，按章节序号估算落点。
+                        pageIndex = min(index, max(pages.count - 1, 0))
+                    }
+                    await ensureChapterContent(title: title)
+                }
             }
             .presentationDetents([.medium, .large])
             .presentationCornerRadius(38)
@@ -283,7 +295,37 @@ struct ReaderView: View {
 
     @ViewBuilder
     private var readingContent: some View {
-        if pages.isEmpty {
+        if isLoadingNetwork && pages.isEmpty {
+            VStack(spacing: 10) {
+                ProgressView()
+                Text("正在加载在线章节…")
+                    .font(.system(size: 12))
+                    .foregroundStyle(settings.theme.secondary)
+            }
+        } else if let networkError, pages.isEmpty {
+            VStack(spacing: 10) {
+                Image(systemName: "wifi.exclamationmark")
+                    .font(.system(size: 24, weight: .light))
+                    .foregroundStyle(settings.theme.secondary)
+                Text(networkError)
+                    .font(.system(size: 12))
+                    .foregroundStyle(settings.theme.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+
+                Button {
+                    Task { @MainActor in await ensureCurrentChapterContent() }
+                } label: {
+                    Text("重试")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(Palette.onAccent)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 9)
+                        .background(Palette.accentSolid, in: Capsule())
+                }
+                .buttonStyle(PressableStyle(scale: 0.97))
+            }
+        } else if pages.isEmpty {
             ProgressView()
         } else if settings.pageMode == .slide {
             if settings.pageTurnEffect == .slide {
@@ -601,6 +643,25 @@ struct ReaderView: View {
     private func bootstrap() {
         rebuild(restore: true, targetChapter: initialChapterTitle)
 
+        // 在线书：本地还没有目录时先拉目录，拉到再重排。
+        // 已有缓存就直接显示，避免每次打开都等网络。
+        if book.isNetworkBook && (store.customChapters[book.id]?.isEmpty ?? true) {
+            isLoadingNetwork = true
+            Task { @MainActor in
+                let loaded = await store.loadNetworkChapters(for: book)
+                isLoadingNetwork = false
+                guard !loaded.isEmpty else {
+                    networkError = store.engine.lastError ?? "目录加载失败"
+                    return
+                }
+                rebuild(restore: true, targetChapter: initialChapterTitle)
+                await ensureCurrentChapterContent()
+            }
+        } else if book.isNetworkBook {
+            // 目录有缓存，但当前章可能还没拉正文。
+            Task { @MainActor in await ensureCurrentChapterContent() }
+        }
+
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-showReaderSettings") {
@@ -618,6 +679,81 @@ struct ReaderView: View {
         if arguments.contains("-noTurn") { settings.pageTurnEffect = .none }
         if arguments.contains("-scrollMode") { settings.pageMode = .scroll }
         #endif
+    }
+
+    /// 在线书的正文是按章懒加载的：目录阶段只有标题，正文要等翻到这一章才拉。
+    /// 拉完重排一次，让分页把新段落算进去。
+    private func ensureCurrentChapterContent() async {
+        guard book.isNetworkBook, !chapters.isEmpty else { return }
+        // pages 为空时 currentChapterTitle 会退到 book.lastPosition，
+        // 那可能不是真实章节名，所以优先按「当前页 → 锚点 → 第一章」找。
+        let targetTitle = currentPage?.chapterTitle
+            ?? store.position(for: book.id)?.chapterTitle
+            ?? chapters.first?.title
+        guard let targetTitle,
+              let chapter = chapters.first(where: { $0.title == targetTitle }),
+              chapter.paragraphs.isEmpty else { return }
+
+        isLoadingNetwork = true
+        let paragraphs = await store.loadNetworkContent(for: book, chapterID: chapter.id)
+        isLoadingNetwork = false
+
+        guard let paragraphs, !paragraphs.isEmpty else {
+            networkError = store.engine.lastError ?? "正文加载失败"
+            return
+        }
+        networkError = nil
+        rebuild(restore: false, targetChapter: targetTitle)
+    }
+
+    /// 按章节标题补正文。目录里点某一章时用，标题可能不带正文。
+    private func ensureChapterContent(title: String) async {
+        guard book.isNetworkBook,
+              let chapter = chapters.first(where: { $0.title == title }),
+              chapter.paragraphs.isEmpty else {
+            if isScrollMode {
+                updateScrollProgress()
+                syncProgress()
+            }
+            return
+        }
+
+        isLoadingNetwork = true
+        let paragraphs = await store.loadNetworkContent(for: book, chapterID: chapter.id)
+        isLoadingNetwork = false
+
+        guard paragraphs?.isEmpty == false else {
+            networkError = store.engine.lastError ?? "正文加载失败"
+            return
+        }
+        networkError = nil
+        rebuild(restore: true, targetChapter: title)
+    }
+
+    /// 读到最后一段时提前拉下一章，翻页时就不用等。
+    /// 只拉当前页所在章节的下一章，避免把整本书的正文都拉下来。
+    private func loadNextChapterIfNeeded() {
+        guard book.isNetworkBook, pages.indices.contains(pageIndex) else { return }
+        let currentTitle = pages[pageIndex].chapterTitle
+
+        // 只有「下一页已经是另一章」时才算快到章尾。
+        let nextPageIndex = pageIndex + 1
+        let atChapterEnd: Bool = {
+            guard pages.indices.contains(nextPageIndex) else { return true }
+            return pages[nextPageIndex].chapterTitle != currentTitle
+        }()
+        guard atChapterEnd,
+              let index = chapters.firstIndex(where: { $0.title == currentTitle }),
+              index + 1 < chapters.count,
+              chapters[index + 1].paragraphs.isEmpty else { return }
+
+        let next = chapters[index + 1]
+        Task { @MainActor in
+            let paragraphs = await store.loadNetworkContent(for: book, chapterID: next.id)
+            guard paragraphs?.isEmpty == false else { return }
+            // 只重排，不跳转：读者还在原页，等他自己翻过去。
+            rebuild(restore: false, targetChapter: currentTitle)
+        }
     }
 
     private func rebuild(restore: Bool, targetChapter: String? = nil) {

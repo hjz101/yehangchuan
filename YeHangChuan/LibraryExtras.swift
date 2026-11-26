@@ -1205,8 +1205,20 @@ struct SourceSwitchSheet: View {
                 }
             }
             .task {
+                // 换源前先真实探一次，不把「能不能用」留到切换之后才发现。
                 for source in sources {
-                    probes[source.id] = await store.backend.probe(source)
+                    guard let engineSource = LegadoBridge.engineSource(from: source) else {
+                        probes[source.id] = SourceProbe(
+                            id: source.id, name: source.name, ok: false,
+                            milliseconds: 0, message: "规则无法解析"
+                        )
+                        continue
+                    }
+                    let result = await store.engine.probe(source: engineSource)
+                    probes[source.id] = SourceProbe(
+                        id: source.id, name: source.name, ok: result.ok,
+                        milliseconds: result.milliseconds, message: result.message
+                    )
                 }
             }
         }

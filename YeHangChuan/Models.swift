@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import LegadoCore
 
 // MARK: - Book
 
@@ -42,8 +43,15 @@ struct Book: Identifiable, Hashable, Codable, Sendable {
     var group: String? = nil
     var sourceID: String? = nil
     var lastReadAt: Date? = nil
+    /// 来自网络书源时的书籍地址与目录地址；本地书与演示书为 nil。
+    /// 这两个字段是重新进入阅读页后还能继续拉正文的前提，所以必须持久化。
+    var networkBookURL: String? = nil
+    var networkTocURL: String? = nil
 
     var unitLabel: String { kind == .comic ? "话" : "章" }
+
+    /// 是不是一本书源上的在线书。
+    var isNetworkBook: Bool { networkBookURL?.isEmpty == false && sourceID != nil }
 }
 
 // MARK: - Source
@@ -66,6 +74,42 @@ struct BookSource: Identifiable, Hashable, Codable, Sendable {
     var lastError: String? = nil
     var username: String = ""
     var rule: String = ""
+
+    /// 规则的正文来源：Legado 书源的 `bookSourceUrl`。
+    /// 与 `host` 的区别是这里保留原串（可能含协议、路径），用于去重与展示。
+    var ruleSourceURL: String? {
+        guard let data = rule.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return (object["bookSourceUrl"] ?? object["host"]) as? String
+    }
+
+    /// Legado 的 `bookSourceUrl` 允许逗号分隔多个备用域名，
+    /// `https://a.com,https://b.com` 这种写法很常见。
+    /// 逐个 normalize 后返回，空串与解析失败的丢弃。
+    static func splitHosts(_ raw: String) -> [String] {
+        raw.split(whereSeparator: { $0 == "," || $0 == "，" })
+            .map { URLHost.normalize(String($0)) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// 规则里是否含 JS：`@js:` 前缀、`<js>` 块，或 searchUrl 是脚本。
+    /// Legado 没有 App 自造的 `kind` 字段，判断是不是脚本源只能看规则本身。
+    static func containsJavaScript(_ row: [String: Any]) -> Bool {
+        func scans(_ value: Any?) -> Bool {
+            guard let text = value as? String else { return false }
+            let lower = text.lowercased()
+            return lower.contains("@js:") || lower.contains("<js>") || lower.contains("webview")
+        }
+        if scans(row["searchUrl"]) { return true }
+
+        for key in ["ruleSearch", "ruleBookInfo", "ruleToc", "ruleContent", "ruleExplore"] {
+            guard let rule = row[key] as? [String: Any] else { continue }
+            if rule.values.contains(where: scans) { return true }
+        }
+        return scans(row["jsLib"])
+    }
 }
 
 enum SourceLoginState: String, Codable {
@@ -95,6 +139,8 @@ struct Chapter: Identifiable, Hashable, Codable, Sendable {
     let id: String
     let title: String
     var paragraphs: [Paragraph]
+    /// 在线书源的章节地址。本地与演示章节为 nil，保证旧快照仍能解码。
+    var networkURL: String? = nil
 }
 
 struct ReaderPage: Identifiable {
@@ -562,6 +608,8 @@ final class AppStore {
     var player = AudioPlayer()
     var speech = SpeechPlayer()
     var backend = MockBackend()
+    /// 真实书源引擎。搜索、目录、正文走它；AI / TTS / 同步仍由 backend 模拟。
+    var engine = SourceEngine()
     var backup = BackupCenter()
     var bookmarks: [Bookmark] = []
     var positions: [String: ReadingPosition] = [:]
@@ -643,6 +691,13 @@ final class AppStore {
     func addToShelf(_ book: Book) {
         guard !books.contains(where: { $0.id == book.id }) else { return }
         books.insert(book, at: 0)
+        if book.isNetworkBook {
+            // 在线书加入书架后立刻拉一次目录，让章节数是真的而不是 0。
+            // 拉取失败不影响入架，阅读页里还能重试。
+            Task { @MainActor in
+                _ = await loadNetworkChapters(for: book, force: true)
+            }
+        }
         showToast("已加入书架：\(book.title)")
         saveSnapshot()
     }
@@ -805,6 +860,83 @@ final class AppStore {
     func chapters(for book: Book) -> [Chapter] {
         if let custom = customChapters[book.id], !custom.isEmpty { return custom }
         return MockData.chapters(for: book)
+    }
+
+    // MARK: 在线书源
+
+    /// 把检索到的一本书加入书架。此时只有元数据，
+    /// 目录与正文在打开阅读页时按需拉取（见 `loadNetworkChapters`）。
+    func addNetworkBook(searchBook: SearchBook, sourceID: String) {
+        guard !books.contains(where: { $0.id == searchBook.appBookID }) else {
+            showToast("《\(searchBook.name)》已在书架")
+            return
+        }
+        let book = searchBook.appBook(sourceID: sourceID, coverStyle: abs(searchBook.name.hashValue) % 6)
+        books.insert(book, at: 0)
+        showToast("已加入书架：《\(book.title)》")
+        saveSnapshot()
+    }
+
+    /// 拉取并缓存目录。已缓存过就不再请求，除非强制刷新。
+    @discardableResult
+    func loadNetworkChapters(for book: Book, force: Bool = false) async -> [Chapter] {
+        guard book.isNetworkBook else { return chapters(for: book) }
+        if !force, let cached = customChapters[book.id], !cached.isEmpty { return cached }
+        guard let appSource = sources.first(where: { $0.id == book.sourceID }),
+              let engineSource = LegadoBridge.engineSource(from: appSource) else {
+            engine.lastError = "书源已被移除或规则无法解析"
+            return []
+        }
+        guard let bookURL = book.networkBookURL else { return [] }
+
+        var searchBook = SearchBook(
+            bookURL: bookURL,
+            origin: engineSource.bookSourceUrl,
+            originName: engineSource.bookSourceName,
+            type: 0,
+            name: book.title,
+            author: book.author
+        )
+        if let toc = book.networkTocURL, !toc.isEmpty { searchBook.tocURL = toc }
+        let result = await engine.chapters(searchBook: searchBook, source: engineSource)
+        guard !result.chapters.isEmpty else { return [] }
+
+        // 引擎章节 → App 章节，正文留空，打开时再拉。
+        var mapped = result.chapters.map { $0.appChapter() }
+        for index in mapped.indices {
+            mapped[index].networkURL = result.chapters[index].url
+        }
+        customChapters[book.id] = mapped
+        if let bookIndex = books.firstIndex(where: { $0.id == book.id }) {
+            books[bookIndex].chapterCount = mapped.count
+            books[bookIndex].networkTocURL = result.book.tocUrl.isEmpty ? nil : result.book.tocUrl
+        }
+        saveSnapshot()
+        return mapped
+    }
+
+    /// 拉取指定章节的正文，成功后写回缓存。
+    @discardableResult
+    func loadNetworkContent(for book: Book, chapterID: String) async -> [Paragraph]? {
+        guard book.isNetworkBook,
+              let appSource = sources.first(where: { $0.id == book.sourceID }),
+              let engineSource = LegadoBridge.engineSource(from: appSource),
+              let bookURL = book.networkBookURL,
+              let chapters = customChapters[book.id],
+              let index = chapters.firstIndex(where: { $0.id == chapterID }),
+              let url = chapters[index].networkURL else { return nil }
+        // 已经拉过就不再请求。
+        if !chapters[index].paragraphs.isEmpty { return chapters[index].paragraphs }
+
+        var engineChapter = BookChapter(url: url, title: chapters[index].title, bookUrl: bookURL, index: index)
+        engineChapter.baseUrl = bookURL
+        let engineBook = LegadoCore.Book(bookUrl: bookURL, name: book.title, author: book.author, origin: engineSource.bookSourceUrl)
+
+        let result = await engine.content(engineBook: engineBook, chapter: engineChapter, source: engineSource)
+        guard !result.paragraphs.isEmpty else { return nil }
+        customChapters[book.id]?[index].paragraphs = result.paragraphs
+        saveSnapshot()
+        return result.paragraphs
     }
 
     func importBook(_ draft: ImportDraft) {

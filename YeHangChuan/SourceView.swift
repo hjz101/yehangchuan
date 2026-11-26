@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import LegadoCore
 
 struct SourceView: View {
     @Environment(AppStore.self) private var store
@@ -420,7 +421,7 @@ struct AddSourceSheet: View {
                     Button("添加") {
                         store.addSource(
                             name: name,
-                            kind: kind,
+                            kind: LegadoBridge.detectedKind(ruleJSON: config) ?? kind,
                             host: hostFromConfig,
                             rule: config
                         )
@@ -448,16 +449,22 @@ struct AddSourceSheet: View {
 
     private var kindPicker: some View {
         VStack(alignment: .leading, spacing: 9) {
-            SectionHeading(text: "类型")
+            SectionHeading(text: "规则类型")
 
             GlassSegmented(
                 items: [SourceKind.json, SourceKind.js],
-                title: { $0 == .json ? "JSON 配置" : "JS 脚本" },
+                title: { $0 == .json ? "选择器规则" : "含 JS 脚本" },
                 selection: $kind
             )
             .onChange(of: kind) { _, newKind in
                 config = template(for: newKind)
             }
+
+            Text(kind == .js
+                 ? "规则里含 @js: 或 jsLib，运行时在 JavaScriptCore 中执行。"
+                 : "规则用 CSS 选择器、JSONPath 或正则表达式提取字段。")
+                .font(.system(size: 10))
+                .foregroundStyle(Palette.tertiary)
         }
     }
 
@@ -503,32 +510,77 @@ struct AddSourceSheet: View {
         }
     }
 
-    /// 从配置 JSON 里读 host；读不到就交给 addSource 用默认值。
-    /// README 式配置常见 "host" 或 "bookSourceUrl"，两种都认。
+    /// 从配置 JSON 里读书源地址。
+    /// Legado 3.0 的字段是 `bookSourceUrl`；也兼容 `host` 与 `searchUrl`。
+    /// 多域名写法（逗号分隔）取第一个，完整的原串仍会随规则一起保存。
     private var hostFromConfig: String {
         guard let data = config.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return ""
         }
-        let raw = (object["host"] ?? object["bookSourceUrl"] ?? object["search"]) as? String ?? ""
-        return URLHost.normalize(raw)
+        let raw = (object["bookSourceUrl"] ?? object["host"] ?? object["searchUrl"] ?? object["search"]) as? String ?? ""
+        return BookSource.splitHosts(raw).first ?? ""
     }
 
+    /// 模板必须是能直接跑的 Legado 3.0 书源，否则添加完仍然搜不到书。
     private func template(for kind: SourceKind) -> String {
         switch kind {
         case .json:
             """
             {
-              "name": "我的书源",
-              "search": "https://example.com/search?q={kw}",
-              "chapter": "https://example.com/chapter/{id}"
+              "bookSourceName": "我的书源",
+              "bookSourceUrl": "https://www.example.com",
+              "bookSourceGroup": "自建",
+              "bookSourceType": 0,
+              "enabled": false,
+              "searchUrl": "https://www.example.com/search?q={{key}}",
+              "ruleSearch": {
+                "bookList": "class.result-list@tag.li",
+                "name": "tag.h3@text",
+                "author": "class.author@text",
+                "bookUrl": "tag.a@href",
+                "intro": "class.intro@text",
+                "lastChapter": "class.last@text"
+              },
+              "ruleBookInfo": {
+                "name": "tag.h1@text",
+                "author": "id.info@tag.p.1@text",
+                "tocUrl": "id.list@tag.a@href"
+              },
+              "ruleToc": {
+                "chapterList": "id.list@tag.li",
+                "chapterName": "tag.a@text",
+                "chapterUrl": "tag.a@href"
+              },
+              "ruleContent": {
+                "content": "id.content@html"
+              }
             }
             """
         case .js:
             """
-            function search(keyword) {
-              return fetch(`/search?q=${keyword}`)
-                .then(r => r.json())
+            {
+              "bookSourceName": "我的脚本源",
+              "bookSourceUrl": "https://api.example.com",
+              "bookSourceGroup": "自建",
+              "bookSourceType": 0,
+              "enabled": false,
+              "searchUrl": "https://api.example.com/search?q={{key}}&page={{page}}",
+              "ruleSearch": {
+                "bookList": "$.data[*]",
+                "name": "$.title",
+                "author": "$.author",
+                "bookUrl": "$.url",
+                "coverUrl": "$.cover"
+              },
+              "ruleToc": {
+                "chapterList": "$.chapters[*]",
+                "chapterName": "$.title",
+                "chapterUrl": "$.url"
+              },
+              "ruleContent": {
+                "content": "@js:JSON.parse(result).content"
+              }
             }
             """
         }
@@ -546,18 +598,26 @@ struct SourceSearchSheet: View {
     @State private var isSearching = false
     @State private var hitsBySource: [String: Int] = [:]
     @State private var searchTask: Task<Void, Never>?
+    /// 真实检索结果，按书源逐条到达。
+    @State private var results: [SourceHit] = []
+    /// 每个书源的失败原因，界面上要能看见，而不是静默空结果。
+    @State private var sourceErrors: [String: String] = [:]
+    @State private var searchedKeyword = ""
+
+    /// 检索结果 + 它来自哪个书源。同一本书可能在多个源都有，
+    /// 加书架时需要知道用哪个源，所以不能合并成一个 `Book`。
+    struct SourceHit: Identifiable {
+        let book: Book
+        let sourceID: String
+        let sourceName: String
+        var id: String { "\(sourceID)#\(book.id)" }
+    }
 
     private var enabledSources: [BookSource] {
         store.sources.filter(\.enabled)
     }
 
-    private var results: [Book] {
-        guard !query.isEmpty else { return MockData.searchResults }
-        return MockData.searchResults.filter {
-            $0.title.localizedCaseInsensitiveContains(query)
-                || $0.author.localizedCaseInsensitiveContains(query)
-        }
-    }
+    private var enabledCount: Int { enabledSources.count }
 
     var body: some View {
         NavigationStack {
@@ -582,14 +642,10 @@ struct SourceSearchSheet: View {
 
                         ScrollView {
                             VStack(spacing: 9) {
-                                if !isSearching && !enabledSources.isEmpty {
+                                if !isSearching && !searchedKeyword.isEmpty {
                                     HStack(spacing: 5) {
                                         Image(systemName: "antenna.radiowaves.left.and.right")
-                                        // 检索是逐个书源依次请求的，别写成「并发」。
-                                        Text("依次检索 \(enabledSources.count) 个书源")
-                                        if hitsBySource.values.reduce(0, +) > results.count {
-                                            Text("· \(hitsBySource.values.reduce(0, +) - results.count) 条重复已合并")
-                                        }
+                                        Text("并发检索 \(enabledCount) 个书源 · \(results.count) 条结果")
                                     }
                                     .font(.system(size: 9.5, weight: .medium))
                                     .foregroundStyle(Palette.tertiary)
@@ -600,22 +656,15 @@ struct SourceSearchSheet: View {
                                 if isSearching {
                                     searchingState
                                 } else if results.isEmpty {
-                                    VStack(spacing: 8) {
-                                        Image(systemName: "magnifyingglass")
-                                            .font(.system(size: 24, weight: .light))
-                                            .foregroundStyle(Palette.tertiary)
-                                        Text("没有匹配的结果")
-                                            .font(.system(size: 13))
-                                            .foregroundStyle(Palette.secondary)
-                                    }
-                                    .padding(.top, 48)
+                                    emptyState
                                 } else {
-                                    ForEach(results) { book in
-                                        SearchResultRow(
-                                            book: book,
-                                            sources: Array(enabledSources.prefix(2).map(\.name))
-                                        )
+                                    ForEach(results) { hit in
+                                        SearchResultRow(book: hit.book, sources: [hit.sourceName])
                                     }
+                                }
+
+                                if !sourceErrors.isEmpty {
+                                    errorSection
                                 }
                             }
                             .padding(.horizontal, 18)
@@ -644,26 +693,111 @@ struct SourceSearchSheet: View {
         }
     }
 
+    /// 真实检索：把已启用书源翻译成引擎书源，交给 LegadoCore 并发抓取。
+    /// 规则解析不了的源会单独列出原因，而不是假装没搜到。
     private func runSearch() {
         searchTask?.cancel()
-        guard !enabledSources.isEmpty else { return }
+        let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !keyword.isEmpty, !enabledSources.isEmpty else {
+            results = []
+            sourceErrors = [:]
+            searchedKeyword = ""
+            isSearching = false
+            return
+        }
+
         isSearching = true
-        let keyword = query
+        searchedKeyword = keyword
+        results = []
+        sourceErrors = [:]
+
         searchTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(260))
+            // 输入停下来再发请求，避免每敲一个字就打一次网络。
+            try? await Task.sleep(for: .milliseconds(420))
             guard !Task.isCancelled else { return }
-            var hits: [String: Int] = [:]
+
+            var engineSources: [LegadoCore.BookSource] = []
             for source in enabledSources {
-                let response = await store.backend.call(
-                    "GET",
-                    "/source/\(source.id)/search?kw=\(keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
-                )
-                if response.ok { hits[source.id] = 3 + (source.bookCount % 3) }
+                if let engine = LegadoBridge.engineSource(from: source) {
+                    engineSources.append(engine)
+                } else {
+                    sourceErrors[source.name] = "规则无法解析成 Legado 书源"
+                }
             }
-            guard !Task.isCancelled else { return }
-            hitsBySource = hits
+
+            guard !engineSources.isEmpty else {
+                isSearching = false
+                return
+            }
+
+            let collected = await store.engine.search(keyword: keyword, sources: engineSources) { outcome in
+                let sourceName = engineSources.first { $0.id == outcome.sourceID }?.bookSourceName ?? outcome.sourceID
+                if let message = outcome.diagnostics.first(where: { $0.severity == .error })?.message {
+                    sourceErrors[sourceName] = message
+                }
+                for book in outcome.books {
+                    // 书源 ID 用界面侧的，加书架时才能找回来。
+                    let appSourceID = enabledSources.first { $0.host == outcome.sourceID || $0.id == outcome.sourceID }?.id
+                        ?? LegadoBridge.appSourceID(engineID: outcome.sourceID, in: enabledSources)
+                        ?? outcome.sourceID
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        results.append(
+                            SourceHit(
+                                book: book.appBook(sourceID: appSourceID, coverStyle: abs(book.name.hashValue) % 6),
+                                sourceID: appSourceID,
+                                sourceName: sourceName
+                            )
+                        )
+                    }
+                }
+            }
+            hitsBySource = Dictionary(grouping: collected, by: \.sourceID).mapValues(\.count)
             withAnimation(.easeOut(duration: 0.2)) { isSearching = false }
         }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: searchedKeyword.isEmpty ? "magnifyingglass" : "text.magnifyingglass")
+                .font(.system(size: 24, weight: .light))
+                .foregroundStyle(Palette.tertiary)
+            Text(searchedKeyword.isEmpty ? "输入书名或作者开始检索" : "没有匹配的结果")
+                .font(.system(size: 13))
+                .foregroundStyle(Palette.secondary)
+            if !searchedKeyword.isEmpty && sourceErrors.isEmpty {
+                Text("检索真实网络请求，速度取决于书源站点")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Palette.tertiary)
+            }
+        }
+        .padding(.top, 48)
+    }
+
+    private var errorSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("以下书源没有返回结果")
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(Palette.tertiary)
+
+            ForEach(Array(sourceErrors.keys.sorted()), id: \.self) { name in
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Palette.accent)
+                    Text(name)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Palette.secondary)
+                    Text(sourceErrors[name] ?? "")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Palette.tertiary)
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassSurface(cornerRadius: 14, tint: Palette.accent.opacity(0.06))
     }
 
     private var searchingState: some View {
@@ -928,8 +1062,25 @@ struct SourceDetailSheet: View {
             actionCard("测试连接", symbol: "bolt.horizontal", tint: Palette.jade) {
                 isBusy = true
                 Task { @MainActor in
-                    let result = await store.backend.probe(source)
-                    probe = result
+                    guard let engineSource = LegadoBridge.engineSource(from: source) else {
+                        probe = SourceProbe(
+                            id: source.id,
+                            name: source.name,
+                            ok: false,
+                            milliseconds: 0,
+                            message: "规则无法解析成 Legado 书源"
+                        )
+                        isBusy = false
+                        return
+                    }
+                    let result = await store.engine.probe(source: engineSource)
+                    probe = SourceProbe(
+                        id: source.id,
+                        name: source.name,
+                        ok: result.ok,
+                        milliseconds: result.milliseconds,
+                        message: result.message
+                    )
                     source.latency = result.milliseconds
                     source.lastError = result.ok ? nil : result.message
                     store.updateSource(source)
@@ -940,7 +1091,27 @@ struct SourceDetailSheet: View {
             actionCard("批量测试", symbol: "checklist", tint: Palette.gold) {
                 isBusy = true
                 Task { @MainActor in
-                    report = await store.backend.batchProbe(store.sources)
+                    // 并发探测，但每个源内部只发一次最小请求。
+                    var collected: [SourceProbe] = []
+                    await withTaskGroup(of: SourceProbe.self) { group in
+                        for item in store.sources {
+                            group.addTask { @MainActor in
+                                guard let engineSource = LegadoBridge.engineSource(from: item) else {
+                                    return SourceProbe(
+                                        id: item.id, name: item.name, ok: false,
+                                        milliseconds: 0, message: "规则无法解析"
+                                    )
+                                }
+                                let result = await store.engine.probe(source: engineSource)
+                                return SourceProbe(
+                                    id: item.id, name: item.name, ok: result.ok,
+                                    milliseconds: result.milliseconds, message: result.message
+                                )
+                            }
+                        }
+                        for await probe in group { collected.append(probe) }
+                    }
+                    report = collected.sorted { $0.milliseconds < $1.milliseconds }
                     isBusy = false
                 }
             }
@@ -948,7 +1119,23 @@ struct SourceDetailSheet: View {
             actionCard("运行调试", symbol: "ladybug", tint: Palette.accent) {
                 isBusy = true
                 Task { @MainActor in
-                    debugLines = await store.backend.debug(source, query: "长风")
+                    guard let engineSource = LegadoBridge.engineSource(from: source) else {
+                        debugLines = [
+                            DebugLine(step: "配置", detail: "规则无法解析成 Legado 书源", ok: false, milliseconds: 0)
+                        ]
+                        isBusy = false
+                        return
+                    }
+                    let result = await store.engine.debug(source: engineSource, keyword: "长风")
+                    // 引擎的五步调试直接映射成界面上的日志行。
+                    debugLines = result.steps.map { step in
+                        DebugLine(
+                            step: step.stage.title,
+                            detail: step.summary,
+                            ok: step.status == .passed || step.status == .warning,
+                            milliseconds: step.elapsedMilliseconds
+                        )
+                    }
                     isBusy = false
                 }
             }
@@ -1268,7 +1455,8 @@ struct SourceImportExportSheet: View {
                         }
                         .buttonStyle(PressableStyle(scale: 0.97))
 
-                        Text("只读取书源名称、地址与类型，不执行任何 JavaScript。导入的规则仅保存在本机演示数据中。")
+                        // 引擎已经能执行规则里的 JS，这句不能再写「不执行」。
+                        Text("按 Legado 3.0 书源格式解析，保留全部规则字段。启用后检索与正文会真实联网；规则里的 JS 在 JavaScriptCore 中执行，私网地址一律拦截。")
                             .font(.system(size: 10.5))
                             .foregroundStyle(Palette.tertiary)
                     }
@@ -1319,54 +1507,71 @@ struct SourceImportExportSheet: View {
             return
         }
 
-        // 已存在的地址 + 本次已加入的地址，一起参与去重。
+        // 已存在的书源地址 + 本次已加入的地址，一起参与去重。
         // 原来只跟已有书源比，同一个文件里写两遍会重复导入两份。
-        var seenHosts = Set(store.sources.map { URLHost.normalize($0.host) })
+        var seenURLs = Set(store.sources.map { $0.ruleSourceURL ?? $0.host })
         var added: [BookSource] = []
         var duplicates = 0
         var invalid = 0
         var blockedPrivate = 0
 
         for row in rows {
-            let name = (row["name"] ?? row["bookSourceName"]) as? String ?? ""
-            let rawHost = (row["host"] ?? row["bookSourceUrl"] ?? row["search"]) as? String ?? ""
-            guard !name.isEmpty, !rawHost.isEmpty else {
+            // Legado 3.0 的字段名（bookSourceName / bookSourceUrl）优先，
+            // 也兼容 App 自己的简写（name / host）。
+            let name = (row["bookSourceName"] ?? row["name"]) as? String ?? ""
+            let rawURL = (row["bookSourceUrl"] ?? row["host"] ?? row["searchUrl"] ?? row["search"]) as? String ?? ""
+            guard !name.trimmingCharacters(in: .whitespaces).isEmpty,
+                  !rawURL.trimmingCharacters(in: .whitespaces).isEmpty else {
                 invalid += 1
                 continue
             }
-            let normalizedHost = URLHost.normalize(rawHost)
-            guard !normalizedHost.isEmpty else {
+
+            // 书源地址可能是逗号分隔的多域名：`https://a.com,https://b.com`。
+            // 拿整串去 normalize 会得到 `a.com,https` 这种垃圾串，
+            // 所以先拆开，再逐个判定与去重。
+            let hosts = BookSource.splitHosts(rawURL)
+            guard !hosts.isEmpty else {
                 invalid += 1
                 continue
             }
-            guard !seenHosts.contains(normalizedHost) else {
+
+            let identity = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !seenURLs.contains(identity) else {
                 duplicates += 1
                 continue
             }
-            guard !URLHost.isPrivate(normalizedHost) else {
+            // 只要有一个域名指向私网就整条拒绝：书源可以在规则里拼地址，
+            // 放行一半等于没拦。
+            guard !hosts.contains(where: { URLHost.isPrivate($0) }) else {
                 blockedPrivate += 1
                 continue
             }
-            seenHosts.insert(normalizedHost)
+            seenURLs.insert(identity)
 
-            // 每个书源只保存自己那一条规则，而不是把整份导入文件的文本塞进去。
+            // 规则原文按行重新序列化，保留全部 Legado 字段。
             let ownRule: String = {
                 guard let ruleData = try? JSONSerialization.data(
                     withJSONObject: row,
-                    options: [.prettyPrinted, .sortedKeys]
+                    options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
                 ) else { return "" }
                 return String(data: ruleData, encoding: .utf8) ?? ""
             }()
 
-            let kindText = (row["kind"] as? String ?? "json").lowercased()
+            // 类型跟着 Legado 的 bookSourceType 走：0 小说 / 1 音频 / 2 图片 / 3 文件。
+            // 原来只看 App 自造的 "kind" 字段，Legado 书源没有这个键，
+            // 结果全部落成 JSON，界面上完全看不出是不是 JS 源。
+            let hasJS = BookSource.containsJavaScript(row)
+            let kind: SourceKind = hasJS ? .js : .json
+
             added.append(
                 BookSource(
                     id: UUID().uuidString,
                     name: name,
-                    host: normalizedHost,
-                    kind: kindText == "js" ? .js : .json,
+                    host: hosts[0],
+                    kind: kind,
                     enabled: false,
                     bookCount: 0,
+                    group: (row["bookSourceGroup"] as? String)?.components(separatedBy: ",").first ?? "小说",
                     rule: ownRule
                 )
             )
@@ -1380,17 +1585,27 @@ struct SourceImportExportSheet: View {
     }
 
     private func exportJSON() {
+        // 导出成 Legado 3.0 的字段名，导入回阅读类 App 时能直接认。
+        // 规则本身已经是完整书源 JSON，能解析就原样输出，解析不了才退回元数据。
         let rows = store.sources.map { source -> [String: Any] in
-            [
-                "name": source.name,
-                "host": source.host,
-                "kind": source.kind == .js ? "js" : "json",
+            if let raw = source.rule.data(using: .utf8),
+               let object = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] {
+                var copy = object
+                copy["bookSourceName"] = source.name
+                copy["enabled"] = source.enabled
+                return copy
+            }
+            return [
+                "bookSourceName": source.name,
+                "bookSourceUrl": source.host,
+                "bookSourceGroup": source.group,
+                "bookSourceType": 0,
                 "enabled": source.enabled
             ]
         }
         guard let data = try? JSONSerialization.data(
             withJSONObject: rows,
-            options: [.prettyPrinted, .sortedKeys]
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         ), let text = String(data: data, encoding: .utf8) else { return }
         json = text
         message = "已生成导出预览，不会写入文件"
