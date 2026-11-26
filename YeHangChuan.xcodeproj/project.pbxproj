@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000010 /* LegadoCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* LegadoCore */; };
+		A10000000000000000000013 /* YeHangCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000014 /* YeHangCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,6 +25,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000010 /* LegadoCore in Frameworks */,
+				A10000000000000000000013 /* YeHangCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -67,6 +69,7 @@
 			name = YeHangChuan;
 			packageProductDependencies = (
 				A10000000000000000000011 /* LegadoCore */,
+				A10000000000000000000014 /* YeHangCore */,
 			);
 			productName = YeHangChuan;
 			productReference = A10000000000000000000003 /* YeHangChuan.app */;
@@ -98,6 +101,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A10000000000000000000012 /* XCLocalSwiftPackageReference "Packages/LegadoCore" */,
+				A10000000000000000000015 /* XCLocalSwiftPackageReference "Packages/YeHangCore" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A10000000000000000000006 /* Products */;
@@ -265,12 +269,20 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/LegadoCore;
 		};
+		A10000000000000000000015 /* XCLocalSwiftPackageReference "Packages/YeHangCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/YeHangCore;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		A10000000000000000000011 /* LegadoCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = LegadoCore;
+		};
+		A10000000000000000000014 /* YeHangCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = YeHangCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
