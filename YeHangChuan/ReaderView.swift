@@ -312,18 +312,24 @@ struct ReaderView: View {
             )
 
             if settings.theme == .voyage {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [Color(hex: 0x2B5C7A).opacity(0.35), .clear],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: 220
-                        )
-                    )
-                    .frame(width: 440, height: 440)
-                    .blur(radius: 60)
-                    .offset(x: 120, y: -280)
+                // 放在 overlay 里：固定 440pt 的圆不能进入 ZStack 的理想尺寸，
+                // 否则整个阅读器被撑到 440pt 宽，正文左右都会被切掉。
+                Color.clear
+                    .overlay {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [Color(hex: 0x2B5C7A).opacity(0.35), .clear],
+                                    center: .center,
+                                    startRadius: 0,
+                                    endRadius: 220
+                                )
+                            )
+                            .frame(width: 440, height: 440)
+                            .blur(radius: 60)
+                            .offset(x: 120, y: -280)
+                    }
+                    .allowsHitTesting(false)
             }
 
             if settings.theme == .paper {
@@ -1283,9 +1289,10 @@ struct ReaderPageView: View {
                     .glassCapsule(tint: settings.theme.accent.opacity(0.14))
                 }
                 .buttonStyle(.plain)
-                // 贴在段首那一行的右侧，与文字基线大致对齐。
+                // 贴在段首那一行的右侧留白里（正文宽度已经扣掉 gutter），
+                // 不能压在正文上 —— 之前减 30 正好盖住行尾几个字。
                 .offset(
-                    x: textSize.width - 30,
+                    x: textSize.width + 2,
                     y: item.box.firstLine.minY + 2
                 )
             }

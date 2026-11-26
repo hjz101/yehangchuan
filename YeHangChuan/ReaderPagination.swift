@@ -11,10 +11,10 @@ import YeHangCore
 /// 的前提。以前一边按字数估算容量、一边交给 SwiftUI 自己排版，两份结果
 /// 对不上，文字被裁掉正是从那里来的。
 enum ReaderMetrics {
-    /// 顶部留给书名的空间。
-    static let top: CGFloat = 72
-    /// 底部留给进度条与工具条的空间。
-    static let bottom: CGFloat = 134
+    /// 顶部留给悬浮工具栏与页眉的空间。
+    static let top: CGFloat = 96
+    /// 底部留给页脚、进度条与工具条的空间。
+    static let bottom: CGFloat = 152
     /// 段评胶囊挂靠的右侧留白。只在书里确实有段评时保留 ——
     /// 没有段评的书不该为一条永远不会出现的胶囊让出正文宽度。
     static let commentGutter: CGFloat = 24
