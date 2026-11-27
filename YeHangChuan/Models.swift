@@ -1621,7 +1621,7 @@ final class AppStore {
     /// 这正是旧方案的病根 —— 一个字段读不出来，整座书库就没了。
     @discardableResult
     private func apply(_ contents: LibraryStore.Contents) -> Bool {
-        let sections = JSONValue.object(contents.sections)
+        let sections = YeHangCore.JSONValue.object(contents.sections)
 
         func decode<T: Decodable>(_ key: String, as type: T.Type) -> T? {
             guard let value = sections[key],
