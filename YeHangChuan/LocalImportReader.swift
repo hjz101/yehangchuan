@@ -115,10 +115,26 @@ enum LocalImportReader {
     }
 
     private static func readEPUB(_ url: URL, name: String) throws -> Outcome {
+        let draft = try makeEPUBDraft(from: url, name: name, detailPrefix: "本机 EPUB")
+        return .draft(draft)
+    }
+
+    /// 从内存里的字节解析 EPUB。链接导入拿到的是 `Data`，没有沙箱文件，
+    /// 与本地文件共用同一条解析路径，避免两套解析逻辑慢慢长歪。
+    static func readEPUBData(_ data: Data, name: String) throws -> Outcome {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("yehang-epub-\(UUID().uuidString).epub")
+        try data.write(to: temp, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let draft = try makeEPUBDraft(from: temp, name: name, detailPrefix: "链接 EPUB")
+        return .draft(draft)
+    }
+
+    private static func makeEPUBDraft(from file: URL, name: String, detailPrefix: String) throws -> ImportDraftBox {
         let service = LocalBookService.live()
-        let report = try service.openFile(at: url)
+        let report = try service.openFile(at: file)
         guard !report.chapters.isEmpty else {
-            return .failure("EPUB 里没有找到章节。")
+            throw ImportError.storage("EPUB 里没有找到章节。")
         }
         // 整包只开一次：以前是每章都重新打开并遍历整个 zip，
         // 200 章的书等于扫了 200 遍压缩包目录。
@@ -147,16 +163,16 @@ enum LocalImportReader {
             ))
         }
         guard failures < chapters.count else {
-            return .failure("EPUB 正文解析失败：所有章节都读不出内容。")
+            throw ImportError.storage("EPUB 正文解析失败：所有章节都读不出内容。")
         }
         let note = failures > 0 ? " · \(failures) 章解析失败" : ""
-        return .draft(ImportDraftBox(
+        return ImportDraftBox(
             title: report.book.name.isEmpty ? name : report.book.name,
-            author: report.book.author.isEmpty ? "本地 EPUB" : report.book.author,
+            author: report.book.author.isEmpty ? "佚名" : report.book.author,
             kind: .novel,
-            detail: "本机 EPUB · 真实解析 · \(chapters.count) 章\(note)",
+            detail: "\(detailPrefix) · 真实解析 · \(chapters.count) 章\(note)",
             chapters: chapters
-        ))
+        )
     }
 
     private static func readAudio(_ url: URL, name: String, ext: String) throws -> Outcome {
