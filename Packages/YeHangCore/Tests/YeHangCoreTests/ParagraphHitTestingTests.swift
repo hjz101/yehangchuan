@@ -11,17 +11,20 @@ final class ParagraphHitTestingTests: XCTestCase {
             PageParagraphBox(
                 paragraphIndex: 0,
                 frame: CGRect(x: 0, y: 0, width: 300, height: 100),
-                firstLine: CGRect(x: 0, y: 0, width: 300, height: 20)
+                firstLine: CGRect(x: 0, y: 0, width: 300, height: 20),
+                lastLine: CGRect(x: 0, y: 80, width: 300, height: 20)
             ),
             PageParagraphBox(
                 paragraphIndex: 1,
                 frame: CGRect(x: 0, y: 120, width: 300, height: 40),
-                firstLine: CGRect(x: 0, y: 120, width: 300, height: 20)
+                firstLine: CGRect(x: 0, y: 120, width: 300, height: 20),
+                lastLine: CGRect(x: 0, y: 140, width: 300, height: 20)
             ),
             PageParagraphBox(
                 paragraphIndex: 2,
                 frame: CGRect(x: 0, y: 200, width: 300, height: 40),
-                firstLine: CGRect(x: 0, y: 200, width: 300, height: 20)
+                firstLine: CGRect(x: 0, y: 200, width: 300, height: 20),
+                lastLine: CGRect(x: 0, y: 220, width: 300, height: 20)
             )
         ]
     }
@@ -54,12 +57,14 @@ final class ParagraphHitTestingTests: XCTestCase {
         let tall = PageParagraphBox(
             paragraphIndex: 7,
             frame: CGRect(x: 0, y: 0, width: 300, height: 400),
-            firstLine: CGRect(x: 0, y: 0, width: 300, height: 20)
+            firstLine: CGRect(x: 0, y: 0, width: 300, height: 20),
+            lastLine: CGRect(x: 0, y: 380, width: 300, height: 20)
         )
         let short = PageParagraphBox(
             paragraphIndex: 8,
             frame: CGRect(x: 0, y: 420, width: 300, height: 40),
-            firstLine: CGRect(x: 0, y: 420, width: 300, height: 20)
+            firstLine: CGRect(x: 0, y: 420, width: 300, height: 20),
+            lastLine: CGRect(x: 0, y: 440, width: 300, height: 20)
         )
         XCTAssertEqual(ParagraphHitTesting.index(at: CGPoint(x: 10, y: 380), among: [tall, short]), 7)
         XCTAssertEqual(ParagraphHitTesting.index(at: CGPoint(x: 10, y: 415), among: [tall, short]), 8)
