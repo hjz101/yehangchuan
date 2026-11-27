@@ -319,6 +319,35 @@ struct ReaderView: View {
         }
     }
 
+    /// 正文为空时的失败出口：明确说明原因，并给出返回书架的路，
+    /// 不再让用户对着一个永远转不完的进度圈。
+    private var emptyContentState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(settings.theme.secondary)
+            Text("这本书没有可显示的正文")
+                .font(.system(size: 15, weight: .semibold, design: .serif))
+                .foregroundStyle(settings.theme.text)
+            Text("可能是导入时内容解析失败。可以返回书架重新导入这本书。")
+                .font(.system(size: 12))
+                .foregroundStyle(settings.theme.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 36)
+            Button {
+                dismiss()
+            } label: {
+                Text("返回书架")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Palette.onAccent)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 9)
+                    .background(Palette.accentSolid, in: Capsule())
+            }
+            .buttonStyle(PressableStyle(scale: 0.97))
+        }
+    }
+
     // MARK: Background
 
     private var readerBackground: some View {
@@ -363,6 +392,14 @@ struct ReaderView: View {
 
     // MARK: Content
 
+    /// 这本书有没有一个字能显示。用来区分「还在排版」和「确实没有正文」——
+    /// 后者必须给出失败出口，否则用户只会看到一个永远转不完的圈。
+    private var hasContent: Bool {
+        chapters.contains { chapter in
+            chapter.paragraphs.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        }
+    }
+
     @ViewBuilder
     private var readingContent: some View {
         if isLoadingNetwork && pageCount == 0 {
@@ -395,6 +432,8 @@ struct ReaderView: View {
                 }
                 .buttonStyle(PressableStyle(scale: 0.97))
             }
+        } else if !hasContent {
+            emptyContentState
         } else if let pagination, !pagination.isEmpty {
             if settings.pageMode == .slide {
                 if settings.pageTurnEffect == .slide {

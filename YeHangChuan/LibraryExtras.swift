@@ -296,19 +296,40 @@ struct SmartImportSheet: View {
             do {
                 let service = LocalBookService.live()
                 let report = try service.openFile(at: url)
+                var failures = 0
                 let chapters = report.chapters.enumerated().map { index, source in
-                    let text = (try? service.loadContent(book: report.book, chapter: source).content) ?? ""
+                    let chapterID = "epub-\(index)"
+                    let paragraphs: [Paragraph]
+                    do {
+                        let text = try service.loadContent(book: report.book, chapter: source).content
+                        paragraphs = TextSegmenter.paragraphs(from: text, chapterID: chapterID)
+                        if paragraphs.isEmpty { failures += 1 }
+                    } catch {
+                        failures += 1
+                        paragraphs = []
+                    }
+                    // 不能静默塞空正文：那会让阅读页永远停在转圈。
+                    // 单章失败放一段明确的说明，让用户知道是解析问题而不是书没内容。
+                    let finalParagraphs = paragraphs.isEmpty
+                        ? [Paragraph(id: "\(chapterID)-error", text: "本章正文解析失败，可能是 EPUB 内该文件损坏或格式不受支持。")]
+                        : paragraphs
                     return Chapter(
                         id: "epub-\(index)-\(source.title.prefix(12))",
                         title: source.title,
-                        paragraphs: TextSegmenter.paragraphs(from: text, chapterID: "epub-\(index)")
+                        paragraphs: finalParagraphs
                     )
                 }
+                guard failures < chapters.count || chapters.isEmpty else {
+                    isParsing = false
+                    message = "EPUB 正文解析失败：所有章节都读不出内容，请换一个文件。"
+                    return
+                }
+                let note = failures > 0 ? " · \(failures) 章解析失败" : ""
                 draft = ImportDraft(
                     title: report.book.name.isEmpty ? name : report.book.name,
                     author: report.book.author.isEmpty ? "本地 EPUB" : report.book.author,
                     kind: .novel,
-                    detail: "本机 EPUB · 真实解析 · \(chapters.count) 章",
+                    detail: "本机 EPUB · 真实解析 · \(chapters.count) 章\(note)",
                     chapters: chapters
                 )
             } catch {
