@@ -99,7 +99,9 @@ public struct LocalBookService: Sendable {
     public var tocRules: [TxtTocRule]
     private var usesFallbackTocRule = true
 
-    public init(maximumFileSize: Int64 = .max, tocRules: [TxtTocRule] = []) {
+    /// 单本 TXT 默认上限 100 MB。`.max` 会让 `oversized` 分支形同虚设，
+    /// 一份畸形文件足以把整本读进内存后再切章。
+    public init(maximumFileSize: Int64 = 100 * 1024 * 1024, tocRules: [TxtTocRule] = []) {
         self.maximumFileSize = maximumFileSize
         self.tocRules = tocRules.filter(\.enable).sorted { $0.serialNumber < $1.serialNumber }
     }

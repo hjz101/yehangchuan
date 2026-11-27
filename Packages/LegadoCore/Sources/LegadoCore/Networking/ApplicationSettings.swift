@@ -10,7 +10,9 @@ public struct ApplicationSettings: Codable, Equatable, Sendable {
     public var chapterCacheMB = 256
     public var prefetchChapters = 5
     public var recordLog = false
-    public var ignoreCertificateErrors = true
+    /// 默认校验服务端证书。只有用户通过 `ApplicationSettingsStore.save` 显式开启时
+    /// 才接受不受信任的证书（例如自签名书源）。
+    public var ignoreCertificateErrors = false
 
     public init() {}
 

@@ -431,7 +431,7 @@ struct JSSandboxSheet: View {
                 }
                 .scrollIndicators(.hidden)
             }
-            .navigationTitle("JS 书源沙箱")
+            .navigationTitle("JS 沙箱演示")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -453,7 +453,7 @@ struct JSSandboxSheet: View {
                 Text("权限与分发警告")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Palette.text)
-                Text("执行远程脚本违反 App Store 2.5.2，因此仅用于 TestFlight / 自签。脚本由你自行提供，App 不预装、不推荐。")
+                Text("执行远程脚本违反 App Store 2.5.2，因此仅用于 TestFlight / 自签。脚本由你自行提供，App 不预装、不推荐。本页只演示权限边界：真实书源 JS 在 JavaScriptCore 中执行，没有 WKWebView 进程隔离，下面的日志是模拟结果。")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -531,7 +531,7 @@ struct JSSandboxSheet: View {
 
     private var resultCard: some View {
         VStack(alignment: .leading, spacing: 9) {
-            SectionHeading(text: "沙箱日志", trailing: "\(logs.count) 步")
+            SectionHeading(text: "演示日志", trailing: "\(logs.count) 步")
 
             if logs.isEmpty {
                 Text("尚未运行。演示会模拟 WKWebView 隔离、受限桥接、私网拦截和脚本超时。")
@@ -581,10 +581,10 @@ struct JSSandboxSheet: View {
             let response = await store.backend.call("POST", "/v1/js/sandbox/run", base: 360)
             var rows: [DebugLine] = []
             let steps: [(String, String)] = [
-                ("创建独立进程", "WKWebView 在独立进程启动"),
-                ("注入受限桥接", strictMode ? "仅暴露 fetch 与 DOM 解析" : "严格模式关闭，权限扩大"),
-                ("网络与文件拦截", allowPrivate ? "私网访问已放行" : "私网、file://、Keychain 均被拒绝"),
-                ("执行搜索规则", response.ok ? "返回 3 条模拟结果" : "请求超时，已中止")
+                ("模拟独立进程", "仅演示；实际 JS 在 JavaScriptCore 中运行，无进程隔离"),
+                ("模拟受限桥接", strictMode ? "演示：仅暴露 fetch 与 DOM 解析" : "演示：严格模式关闭，权限扩大"),
+                ("模拟网络与文件拦截", allowPrivate ? "演示：私网访问已放行" : "演示：私网、file://、Keychain 均被拒绝"),
+                ("模拟执行搜索规则", response.ok ? "返回 3 条模拟结果" : "模拟请求超时，已中止")
             ]
             for (index, step) in steps.enumerated() {
                 rows.append(
