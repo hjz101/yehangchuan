@@ -847,6 +847,7 @@ struct SyncCenterSheet: View {
     @State private var email = "reader@yehangchuan.app"
     @State private var isBusy = false
     @State private var forceConflict = false
+    @State private var useRealCloud = false
     @State private var message = ""
 
     private var syncTint: Color {
@@ -995,25 +996,54 @@ struct SyncCenterSheet: View {
             SectionHeading(text: "同步")
 
             VStack(alignment: .leading, spacing: 12) {
-                Toggle(isOn: $forceConflict) {
-                    Text("下一次同步制造冲突")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Palette.text)
+                Toggle(isOn: $useRealCloud) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("使用真实 iCloud 私有库")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Palette.text)
+                        Text("需要登录 iCloud 并在 Xcode 开启 iCloud capability")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Palette.tertiary)
+                    }
                 }
-                .tint(Palette.accent)
+                .tint(Palette.jade)
+
+                if !useRealCloud {
+                    Toggle(isOn: $forceConflict) {
+                        Text("下一次同步制造冲突")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Palette.text)
+                    }
+                    .tint(Palette.accent)
+                }
 
                 Button {
-                    isBusy = true
-                    Task { @MainActor in
-                        _ = await store.backend.sync(forceConflict: forceConflict)
-                        forceConflict = false
-                        isBusy = false
+                    if useRealCloud {
+                        Task { @MainActor in await uploadToCloud() }
+                    } else {
+                        isBusy = true
+                        Task { @MainActor in
+                            _ = await store.backend.sync(forceConflict: forceConflict)
+                            forceConflict = false
+                            isBusy = false
+                        }
                     }
                 } label: {
-                    Label("立即同步", systemImage: "arrow.triangle.2.circlepath")
+                    Label(useRealCloud ? "上传到 iCloud" : "立即同步", systemImage: "arrow.triangle.2.circlepath")
                         .readableButtonStyle(tint: Palette.accentSolid)
                 }
                 .buttonStyle(PressableStyle(scale: 0.97))
+
+                if useRealCloud {
+                    Button {
+                        Task { @MainActor in await downloadFromCloud() }
+                    } label: {
+                        Label("从 iCloud 拉取并恢复", systemImage: "arrow.down.to.line")
+                            .readableButtonStyle(tint: Palette.jade)
+                    }
+                    .buttonStyle(PressableStyle(scale: 0.97))
+                    .disabled(isBusy)
+                }
 
                 if store.backend.syncState == .conflict {
                     HStack(spacing: 9) {
@@ -1041,12 +1071,40 @@ struct SyncCenterSheet: View {
                     }
                 }
 
-                Text("演示同步会写入本机状态并记录请求，不会连接真实 iCloud。")
+                Text(useRealCloud
+                     ? "真实模式会读写当前 Apple ID 的 CloudKit 私有数据库；未登录或权限不足会如实报错。"
+                     : "演示同步只写入本机状态并记录请求，不会连接 iCloud。")
                     .font(.system(size: 10))
                     .foregroundStyle(Palette.tertiary)
             }
             .padding(14)
             .glassSurface(cornerRadius: 20)
+        }
+    }
+
+    private func uploadToCloud() async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await CloudSyncService.shared.upload(store.exportedSnapshotData())
+            message = "快照已写入真实 iCloud 私有数据库"
+        } catch {
+            message = "iCloud 上传失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func downloadFromCloud() async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            guard let data = try await CloudSyncService.shared.download() else {
+                message = "iCloud 里还没有本站的快照"
+                return
+            }
+            try store.importSnapshotData(data)
+            message = "已从 iCloud 恢复快照"
+        } catch {
+            message = "iCloud 拉取失败：\(error.localizedDescription)"
         }
     }
 

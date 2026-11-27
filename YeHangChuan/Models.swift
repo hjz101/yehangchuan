@@ -1730,6 +1730,18 @@ final class AppStore {
         )
     }
 
+    /// 给 iCloud 私有库上传用的快照数据，编码策略与本机落盘一致。
+    func exportedSnapshotData() throws -> Data {
+        try JSONEncoder().encode(makeSnapshot())
+    }
+
+    /// 从 iCloud 拉回快照并套用到当前状态；坏数据直接抛错，不污染本机。
+    func importSnapshotData(_ data: Data) throws {
+        let snapshot = try JSONDecoder().decode(Snapshot.self, from: data)
+        apply(snapshot)
+        saveSnapshot()
+    }
+
     /// 合并写入：连续调用只会在最后一次之后 0.6 秒真正落盘，编码在后台线程完成。
     /// 落盘走的是新存储（`LibraryStore`）：索引只写元数据，正文按书分文件，
     /// 而且只重写这次真的改过的那一本。
