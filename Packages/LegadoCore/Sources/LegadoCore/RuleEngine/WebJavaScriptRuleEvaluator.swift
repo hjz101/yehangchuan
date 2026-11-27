@@ -35,7 +35,6 @@ public final class WebJavaScriptRuleEvaluator: NSObject, WKScriptMessageHandler 
     private var webView: WKWebView!
     private let transport: any HTTPTransport
     private var pending: [String: CheckedContinuation<JSONValue, Error>] = [:]
-    private var timeoutTask: Task<Void, Never>?
     /// 空白文档是否已经就绪。`evaluate` 在第一次执行前等它。
     private var documentReady: Task<Void, Error>?
     /// 导航代理必须被强引用，否则回调可能落在已经释放的对象上。
@@ -115,20 +114,30 @@ public final class WebJavaScriptRuleEvaluator: NSObject, WKScriptMessageHandler 
         // 桥接的 Promise 可能永远不落地（远端不响应），所以这里必须有自己的
         // 上限，不能无限等 `callAsyncJavaScript`。两类结果都交给 `resolve`，
         // 由它对 `pending` 做一次性的取走，先到的那个说了算。
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<JSONValue, Error>) in
-            pending["main"] = continuation
+        //
+        // 键与计时器都按这次调用单独持有：多个书源会并发跑 `<webjs>`，
+        // 共用一个固定键 / 一个计时器会让后一次覆盖前一次，
+        // 前一次就永远等不到结果，或者被别人的超时打断。
+        let token = UUID().uuidString
+        var timer: Task<Void, Never>?
+        defer {
+            pending.removeValue(forKey: token)
+            timer?.cancel()
+        }
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<JSONValue, Error>) in
+            pending[token] = continuation
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 do {
                     let value = try await self.webView.callAsyncJavaScript(
                         body, arguments: arguments, in: nil, contentWorld: .page
                     )
-                    self.resolve("main", value: value, error: nil)
+                    self.resolve(token, value: value, error: nil)
                 } catch {
-                    self.resolve("main", value: nil, error: error)
+                    self.resolve(token, value: nil, error: error)
                 }
             }
-            timeoutTask = Task { [weak self] in
+            timer = Task { [weak self] in
                 // 被取消时 `Task.sleep` 会立刻抛错。必须在这里退出，
                 // 否则会顺着往下走，把「上一次尝试」的超时记到下一次的头上。
                 do {
@@ -136,15 +145,13 @@ public final class WebJavaScriptRuleEvaluator: NSObject, WKScriptMessageHandler 
                 } catch {
                     return
                 }
-                self?.resolve("main", value: nil, error: WebJavaScriptError.timeout)
+                self?.resolve(token, value: nil, error: WebJavaScriptError.timeout)
             }
         }
     }
 
     private func resolve(_ id: String, value: Any?, error: Error?) {
         guard let continuation = pending.removeValue(forKey: id) else { return }
-        timeoutTask?.cancel()
-        timeoutTask = nil
         if let error { continuation.resume(throwing: error) }
         else { continuation.resume(returning: JSONValue.bridge(value)) }
     }

@@ -134,4 +134,23 @@ final class WebJavaScriptRuleEvaluatorTests: XCTestCase {
         )
         XCTAssertEqual(output.value, .number(Double(html.count)))
     }
+
+    /// 同一本 WebView 会被多个书源并发使用。曾经用固定键等结果，
+    /// 后一次会覆盖前一次，前一次就永远挂在那里。
+    func testConcurrentEvaluationsKeepTheirOwnResults() async throws {
+        let evaluator = self.evaluator!
+        async let first = evaluator.evaluate(
+            script: "await new Promise(r => setTimeout(r, 120)); return 'first';",
+            result: .string(""),
+            executionContext: .init()
+        )
+        async let second = evaluator.evaluate(
+            script: "return 'second';",
+            result: .string(""),
+            executionContext: .init()
+        )
+        let (a, b) = try await (first, second)
+        XCTAssertEqual(a.value, .string("first"))
+        XCTAssertEqual(b.value, .string("second"))
+    }
 }
