@@ -27,17 +27,24 @@ final class SourceEngine {
         }
         let guarded = HostGuardedTransport(base: URLSessionHTTPTransport())
         transport = guarded
-        search = BookSearchService(transport: guarded)
-        books = NetworkBookService(transport: guarded)
-        debugger = BookSourceDebugger(transport: guarded)
-        explorer = BookExploreService(transport: guarded)
+        // 书源里 `webView:true` 的请求交给真实的 WKWebView 执行器。
+        // 不注入时这些书源会在 `SourceNetworkPolicy` 里直接报「不支持后台
+        // WKWebView 请求」—— 阅读 3.0 里靠页面脚本渲染的源就一个都读不了。
+        // 注册表也写一份，任何在 App 之外构造的服务（默认参数）都能取到。
+        let pages = WebViewSourcePageExecutor.shared
+        SourceWebViewExecutorRegistry.shared.register(pages)
+        search = BookSearchService(transport: guarded, webViewExecutor: pages)
+        books = NetworkBookService(transport: guarded, webViewExecutor: pages)
+        debugger = BookSourceDebugger(transport: guarded, webViewExecutor: pages)
+        explorer = BookExploreService(transport: guarded, webViewExecutor: pages)
         // 换源服务自己会去别的书源搜同名书、拉详情、取目录、验正文，
-        // 每一步都必须走同一个带私网拦截的 transport，否则换源能绕开拦截。
+        // 每一步都必须走同一个带私网拦截的 transport，否则换源能绕开拦截；
+        // WebView 执行器同理，否则换到 WebView 源上会静默失败。
         switcher = BookSourceSwitchService(
-            searcher: BookSearchService(transport: guarded),
-            detailLoader: NetworkBookService(transport: guarded),
-            chapterLoader: NetworkBookService(transport: guarded),
-            contentLoader: NetworkBookService(transport: guarded)
+            searcher: BookSearchService(transport: guarded, webViewExecutor: pages),
+            detailLoader: NetworkBookService(transport: guarded, webViewExecutor: pages),
+            chapterLoader: NetworkBookService(transport: guarded, webViewExecutor: pages),
+            contentLoader: NetworkBookService(transport: guarded, webViewExecutor: pages)
         )
     }
 
@@ -203,9 +210,157 @@ final class SourceEngine {
 
     // MARK: - 调试与连通性
 
+    /// 取一本书的真实地址组（搜索 → 详情 → 目录 → 首章），给沙箱填默认值。
+    ///
+    /// 沙箱需要一条**真实存在**的页地址才有意义；让用户自己从搜索网页里抄
+    /// 一个地址是最不可靠的做法。这里就用书源自己的规则走一遍，
+    /// 每一级能取到就填、取不到就说明卡在哪一级。
+    func sampleAddresses(
+        source: LegadoCore.BookSource,
+        keyword: String
+    ) async -> (search: String?, book: String?, toc: String?, chapter: String?, note: String) {
+        let report = await search.search(keyword: keyword, page: 1, sources: [source])
+        guard let sample = report.books.first else {
+            let reason = report.outcomes
+                .flatMap(\.diagnostics)
+                .first(where: { $0.severity == .error })?.message
+                ?? "搜索没有命中任何书，后续地址取不到"
+            return (source.searchUrl, nil, nil, nil, "搜索阶段：\(reason)")
+        }
+        let detail = await books.loadDetail(searchBook: sample, source: source)
+        let book = detail.book
+        let chapters = await books.loadChapters(book: book, source: source)
+        let firstChapter = chapters.chapters.first(where: { !$0.isVolume && !$0.url.isEmpty })
+        var note = "样本《\(sample.name)》"
+        if chapters.chapters.isEmpty {
+            let reason = chapters.diagnostics.first(where: { $0.severity == .error })?.message
+            note += "；目录为空\(reason.map { "：\($0)" } ?? "")"
+        }
+        return (
+            source.searchUrl,
+            book.bookUrl.isEmpty ? nil : book.bookUrl,
+            book.tocUrl.isEmpty ? nil : book.tocUrl,
+            firstChapter?.url,
+            note
+        )
+    }
+
     /// 五步调试：配置 → 搜索 → 详情 → 目录 → 正文，每步都有真实耗时与诊断。
     func debug(source: LegadoCore.BookSource, keyword: String) async -> BookSourceDebugReport {
         await debugger.run(source: source, keyword: keyword)
+    }
+
+    /// JS 沙箱：按书源里的一条真实地址规则发一次请求（该走 WebView 就走，
+    /// 不该走就不走），可选用一段脚本覆盖书源的 `webJs`，把真实页面交给它。
+    ///
+    /// 这不是「模拟执行」：地址规则来自书源本身、请求经过同一条传输层与
+    /// 私网闸门、WebView 用的是同一位执行器，结果直接决定阅读时能读到什么。
+    func sandbox(
+        source: LegadoCore.BookSource,
+        urlRule: String,
+        keyword: String,
+        overrideScript: String?
+    ) async -> (lines: [DebugLine], preview: String) {
+        let started = ProcessInfo.processInfo.systemUptime
+        func elapsed() -> Int { Int((ProcessInfo.processInfo.systemUptime - started) * 1_000) }
+        var lines: [DebugLine] = []
+
+        let trimmedRule = urlRule.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedRule.isEmpty else {
+            return ([DebugLine(step: "地址规则", detail: "没有可执行的地址规则", ok: false, milliseconds: 0)], "")
+        }
+
+        let prepared: PreparedRequest
+        do {
+            let headers = try BookSourceHeaderResolver().resolve(source)
+            prepared = try LegadoURLBuilder().prepare(
+                trimmedRule,
+                context: .init(key: keyword, page: 1, source: source),
+                baseURL: URL(string: source.bookSourceUrl),
+                defaultHeaders: headers
+            )
+        } catch {
+            return ([DebugLine(step: "规则解析", detail: error.localizedDescription, ok: false, milliseconds: elapsed())], "")
+        }
+
+        var request = prepared
+        if let overrideScript, !overrideScript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // 沙箱脚本按书源 `webJs` 的语义执行：在真实页面里跑，return 什么就是货。
+            #if DEBUG
+            request.webJavaScript = overrideScript
+            #else
+            // 分发版本不允许把任意脚本注入远程页面（App Store 2.5.2）。
+            return ([DebugLine(step: "脚本", detail: "分发版本不允许自定义注入脚本", ok: false, milliseconds: elapsed())], "")
+            #endif
+        }
+
+        lines.append(DebugLine(
+            step: "地址规则",
+            detail: prepareSummary(prepared, override: overrideScript),
+            ok: true,
+            milliseconds: elapsed()
+        ))
+
+        let tracesBefore = WebViewSourcePageExecutor.shared.recentTraces.count
+        do {
+            let response = try await SourceNetworkPolicy.shared.execute(
+                request,
+                source: source,
+                transport: transport,
+                timeout: 30,
+                webViewExecutor: WebViewSourcePageExecutor.shared
+            )
+            let text = response.decodedText
+            let newTraces = Array(WebViewSourcePageExecutor.shared.recentTraces.prefix(
+                max(WebViewSourcePageExecutor.shared.recentTraces.count - tracesBefore, 0)
+            ))
+            if let trace = newTraces.first(where: { $0.url == prepared.url.absoluteString }) {
+                lines.append(DebugLine(
+                    step: trace.mode.title,
+                    detail: "HTTP \(trace.statusCode) · \(trace.byteCount) 字节"
+                        + (trace.usedWebJs ? " · 执行了 webJs" : "")
+                        + (trace.matchedSourceRegex.map { " · 资源正则命中 \($0)" } ?? ""),
+                    ok: trace.error == nil,
+                    milliseconds: trace.elapsedMilliseconds
+                ))
+            } else {
+                lines.append(DebugLine(
+                    step: "原生请求",
+                    detail: "HTTP \(response.statusCode) · \(response.data.count) 字节 · 这条规则没要求 WebView",
+                    ok: true,
+                    milliseconds: elapsed()
+                ))
+            }
+            lines.append(DebugLine(
+                step: "响应解析",
+                detail: "\(text.count) 字 · 字符集 \(response.requestedCharset ?? "自动")"
+                    + (response.finalURL.absoluteString != prepared.url.absoluteString
+                        ? " · 最终地址 \(response.finalURL.host ?? "")"
+                        : ""),
+                ok: text.count > 0,
+                milliseconds: elapsed()
+            ))
+            return (lines, String(text.prefix(600)))
+        } catch {
+            lines.append(DebugLine(
+                step: "请求失败",
+                detail: error.localizedDescription,
+                ok: false,
+                milliseconds: elapsed()
+            ))
+            return (lines, "")
+        }
+    }
+
+    private func prepareSummary(_ prepared: PreparedRequest, override: String?) -> String {
+        var parts = [prepared.url.absoluteString]
+        if prepared.useWebView { parts.append("要求 WebView") }
+        if prepared.webJavaScript != nil {
+            parts.append(override == nil ? "书源自带 webJs" : "沙箱脚本覆盖 webJs")
+        }
+        if prepared.sourceRegex != nil { parts.append("带资源正则") }
+        if prepared.webViewDelayMilliseconds > 0 { parts.append("延迟 \(prepared.webViewDelayMilliseconds) ms") }
+        return parts.joined(separator: " · ")
     }
 
     /// 「测试连接」：跑一次最小搜索，能搜到书就算通。

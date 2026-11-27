@@ -73,9 +73,14 @@ public struct BookSourceDebugger: Sendable {
     private let searchService: BookSearchService
     private let bookService: NetworkBookService
 
-    public init(transport: any HTTPTransport = URLSessionHTTPTransport()) {
-        searchService = BookSearchService(transport: transport)
-        bookService = NetworkBookService(transport: transport)
+    public init(
+        transport: any HTTPTransport = URLSessionHTTPTransport(),
+        webViewExecutor: (any SourceWebViewRequestExecuting)? = nil
+    ) {
+        // 调试必须和真实阅读走同一条链路，否则「调试通过、阅读失败」
+        // 或者反过来，两种结果都骗人。WebView 执行器同样要传下去。
+        searchService = BookSearchService(transport: transport, webViewExecutor: webViewExecutor)
+        bookService = NetworkBookService(transport: transport, webViewExecutor: webViewExecutor)
     }
 
     public func run(source: BookSource, keyword: String) async -> BookSourceDebugReport {
