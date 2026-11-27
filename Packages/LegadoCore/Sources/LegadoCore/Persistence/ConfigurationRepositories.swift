@@ -425,8 +425,14 @@ public final class PersistentRuntimeCache: @unchecked Sendable {
     public static let shared = PersistentRuntimeCache()
     private let lock = NSLock()
     private var handle: OpaquePointer?
+    private let settings: CredentialSettings
 
-    public init(url: URL = LegadoDatabase.defaultURL()) {
+    /// Keychain 账号命名空间：缓存与 Cookie 分开放，避免同名键互相覆盖。
+    private static let cacheNamespace = "cache:"
+    private static let cookieNamespace = "cookie:"
+
+    public init(url: URL = LegadoDatabase.defaultURL(), settings: CredentialSettings = .shared) {
+        self.settings = settings
         let migrator = try? LegadoDatabase(url: url)
         _ = migrator
         sqlite3_open_v2(
@@ -440,89 +446,217 @@ public final class PersistentRuntimeCache: @unchecked Sendable {
 
     deinit { if let handle { sqlite3_close(handle) } }
 
+    // MARK: - 缓存读写
+
     public func get(_ key: String, now: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) -> String? {
+        let backend = settings.backend
+        let keychain = settings.keychain
+        let account = Self.cacheNamespace + key
+
+        if backend == .keychainPreferred, let value = keychain.read(account) {
+            return value
+        }
+
         lock.lock()
-        defer { lock.unlock() }
-        guard let handle else { return nil }
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(
-            handle,
-            "SELECT value FROM caches WHERE `key` = ? AND (deadline = 0 OR deadline > ?)",
-            -1,
-            &statement,
-            nil
-        ) == SQLITE_OK, let statement else { return nil }
-        defer { sqlite3_finalize(statement) }
-        sqlite3_bind_text(statement, 1, key, -1, Self.transient)
-        sqlite3_bind_int64(statement, 2, now)
-        guard sqlite3_step(statement) == SQLITE_ROW,
-              let value = sqlite3_column_text(statement, 0) else { return nil }
-        return String(cString: value)
+        let fromSQLite = Self.readValue(handle, "SELECT value FROM caches WHERE `key` = ? AND (deadline = 0 OR deadline > ?)", key, now)
+        lock.unlock()
+
+        if let value = fromSQLite {
+            // 历史数据的补齐走显式 backfillKeychain()，不在每次读时都写钥匙串。
+            return value
+        }
+        // SQLite 没有，Keychain 有：重装后本地库被清、钥匙串保留的场景。
+        // 回填 SQLite，让这条链路始终以 SQLite 为权威副本。
+        if backend != .sqlite, let value = keychain.read(account) {
+            put(key, value: value)
+            return value
+        }
+        return nil
     }
 
     public func put(_ key: String, value: String, deadline: Int64 = 0) {
         lock.lock()
-        defer { lock.unlock() }
-        guard let handle else { return }
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(
+        let wrote = Self.writeValue(
             handle,
             """
             INSERT INTO caches(`key`, value, deadline) VALUES(?, ?, ?)
             ON CONFLICT(`key`) DO UPDATE SET value = excluded.value, deadline = excluded.deadline
             """,
-            -1,
-            &statement,
-            nil
-        ) == SQLITE_OK, let statement else { return }
-        defer { sqlite3_finalize(statement) }
-        sqlite3_bind_text(statement, 1, key, -1, Self.transient)
-        sqlite3_bind_text(statement, 2, value, -1, Self.transient)
-        sqlite3_bind_int64(statement, 3, deadline)
-        sqlite3_step(statement)
+            key, value, deadline
+        )
+        lock.unlock()
+
+        guard wrote else { return }
+        let backend = settings.backend
+        guard backend != .sqlite else { return }
+        let account = Self.cacheNamespace + key
+        // 只有永不过期的条目才是凭据（loginHeader / loginInfo / JS 变量）；
+        // 带 deadline 的临时缓存不该进钥匙串。若之前镜像过又改成临时，删掉旧副本。
+        if deadline == 0 {
+            settings.keychain.write(account, value)
+        } else {
+            settings.keychain.delete(account)
+        }
     }
 
+    // MARK: - Cookie 读写
+
     public func cookie(for key: String) -> String? {
+        let backend = settings.backend
+        let keychain = settings.keychain
+        let account = Self.cookieNamespace + key
+
+        if backend == .keychainPreferred, let value = keychain.read(account) {
+            return value
+        }
+
         lock.lock()
-        defer { lock.unlock() }
-        guard let handle else { return nil }
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(handle, "SELECT cookie FROM cookies WHERE url = ?", -1, &statement, nil) == SQLITE_OK,
-              let statement else { return nil }
-        defer { sqlite3_finalize(statement) }
-        sqlite3_bind_text(statement, 1, key, -1, Self.transient)
-        guard sqlite3_step(statement) == SQLITE_ROW, let value = sqlite3_column_text(statement, 0) else { return nil }
-        return String(cString: value)
+        let fromSQLite = Self.readValue(handle, "SELECT cookie FROM cookies WHERE url = ?", key)
+        lock.unlock()
+
+        if let value = fromSQLite { return value }
+        if backend != .sqlite, let value = keychain.read(account) {
+            putCookie(key: key, value: value)
+            return value
+        }
+        return nil
     }
 
     public func putCookie(key: String, value: String) {
         lock.lock()
-        defer { lock.unlock() }
-        guard let handle else { return }
-        var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(
+        let wrote = Self.writeValue(
             handle,
             "INSERT INTO cookies(url, cookie) VALUES(?, ?) ON CONFLICT(url) DO UPDATE SET cookie = excluded.cookie",
-            -1,
-            &statement,
-            nil
-        ) == SQLITE_OK, let statement else { return }
-        defer { sqlite3_finalize(statement) }
-        sqlite3_bind_text(statement, 1, key, -1, Self.transient)
-        sqlite3_bind_text(statement, 2, value, -1, Self.transient)
-        sqlite3_step(statement)
+            key, value
+        )
+        lock.unlock()
+
+        guard wrote, settings.backend != .sqlite else { return }
+        settings.keychain.write(Self.cookieNamespace + key, value)
     }
 
     public func deleteCookie(key: String) {
         lock.lock()
+        Self.executeBound(handle, "DELETE FROM cookies WHERE url = ?", text: key)
+        lock.unlock()
+        if settings.backend != .sqlite {
+            settings.keychain.delete(Self.cookieNamespace + key)
+        }
+    }
+
+    // MARK: - 对账 / 枚举（供迁移验证使用）
+
+    /// 把所有永久缓存键读出来（不含带 deadline 的临时项），供对账与回填。
+    public func allCredentialCacheKeys() -> [String] {
+        lock.lock()
         defer { lock.unlock() }
+        return Self.column(handle, "SELECT `key` FROM caches WHERE deadline = 0")
+    }
+
+    public func allCookieKeys() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return Self.column(handle, "SELECT url FROM cookies")
+    }
+
+    /// 逐键比对 SQLite 与 Keychain，产出对账报告。只读，不修改任何一边。
+    public func reconcile() -> CredentialReconciliation {
+        let keychain = settings.keychain
+        var report = CredentialReconciliation()
+        for key in allCredentialCacheKeys() {
+            guard let sqlite = sqliteCacheValue(key) else { continue }
+            report.checked += 1
+            compare(sqlite, keychain: keychain, account: Self.cacheNamespace + key, key: key, into: &report)
+        }
+        for key in allCookieKeys() {
+            guard let sqlite = sqliteCookieValue(key) else { continue }
+            report.checked += 1
+            compare(sqlite, keychain: keychain, account: Self.cookieNamespace + key, key: key, into: &report)
+        }
+        return report
+    }
+
+    /// 把当前 SQLite 里的全部凭据强制回填到 Keychain（对账通过后调用）。
+    public func backfillKeychain() {
+        guard settings.backend != .sqlite else { return }
+        let keychain = settings.keychain
+        for key in allCredentialCacheKeys() {
+            if let value = sqliteCacheValue(key) { keychain.write(Self.cacheNamespace + key, value) }
+        }
+        for key in allCookieKeys() {
+            if let value = sqliteCookieValue(key) { keychain.write(Self.cookieNamespace + key, value) }
+        }
+    }
+
+    private func sqliteCacheValue(_ key: String) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return Self.readValue(handle, "SELECT value FROM caches WHERE `key` = ? AND deadline = 0", key)
+    }
+
+    private func sqliteCookieValue(_ key: String) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return Self.readValue(handle, "SELECT cookie FROM cookies WHERE url = ?", key)
+    }
+
+    private func compare(
+        _ sqlite: String,
+        keychain: any KeychainStoring,
+        account: String,
+        key: String,
+        into report: inout CredentialReconciliation
+    ) {
+        guard let mirrored = keychain.read(account) else {
+            report.missing.append(key)
+            return
+        }
+        if mirrored != sqlite { report.mismatch.append(key) }
+    }
+
+    // MARK: - SQLite 原语
+
+    private static func readValue(_ handle: OpaquePointer?, _ sql: String, _ key: String, _ now: Int64? = nil) -> String? {
+        guard let handle else { return nil }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK, let statement else { return nil }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, key, -1, transient)
+        if let now { sqlite3_bind_int64(statement, 2, now) }
+        guard sqlite3_step(statement) == SQLITE_ROW, let value = sqlite3_column_text(statement, 0) else { return nil }
+        return String(cString: value)
+    }
+
+    private static func writeValue(_ handle: OpaquePointer?, _ sql: String, _ key: String, _ value: String, _ deadline: Int64? = nil) -> Bool {
+        guard let handle else { return false }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK, let statement else { return false }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_text(statement, 1, key, -1, transient)
+        sqlite3_bind_text(statement, 2, value, -1, transient)
+        if let deadline { sqlite3_bind_int64(statement, 3, deadline) }
+        return sqlite3_step(statement) == SQLITE_DONE
+    }
+
+    private static func executeBound(_ handle: OpaquePointer?, _ sql: String, text: String) {
         guard let handle else { return }
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(handle, "DELETE FROM cookies WHERE url = ?", -1, &statement, nil) == SQLITE_OK,
-              let statement else { return }
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK, let statement else { return }
         defer { sqlite3_finalize(statement) }
-        sqlite3_bind_text(statement, 1, key, -1, Self.transient)
+        sqlite3_bind_text(statement, 1, text, -1, transient)
         sqlite3_step(statement)
+    }
+
+    private static func column(_ handle: OpaquePointer?, _ sql: String) -> [String] {
+        guard let handle else { return [] }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK, let statement else { return [] }
+        defer { sqlite3_finalize(statement) }
+        var result: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW, let c = sqlite3_column_text(statement, 0) {
+            result.append(String(cString: c))
+        }
+        return result
     }
 
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

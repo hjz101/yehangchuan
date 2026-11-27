@@ -87,6 +87,17 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 | 听书与多角色（v2.0–v2.1） | 系统语音真实播放；后台、锁屏、CarPlay、多角色映射模拟 |
 | 隐私 / 内容来源 / 分发 | 首次与设置常驻说明，自签安装（Sign to Run Locally），无内购 |
 
+## 凭据存储迁移
+
+书源登录 Header、Cookie 与 JS 变量目前以 SQLite 为权威副本，并**双写**到系统 Keychain（服务 `com.huaiju.yehangchuan.credentials`）。迁移是可回滚、分批推进的：
+
+- 默认阶段 `dualWrite`：SQLite 仍权威、绝不删除；Keychain 作为第二份随写，写入后以 `PersistentRuntimeCache.reconcile()` 对账。
+- 对账无 `missing` / `mismatch` 后，用 `backfillKeychain()` 补齐历史数据，再把 `CredentialSettings.shared.backend` 切到 `keychainPreferred` 才以 Keychain 优先读。
+- 任一步异常，把 `backend` 切回 `.sqlite` 即完全回到迁移前行为（回滚开关，无需重启）。
+- Keychain 不可用时写入失败被吞掉，登录态仍从 SQLite 读取，不会白屏。
+
+尚未覆盖：WebDAV 密码仍存于 `servers` 表的配置 JSON（当前 App 无 WebDAV 入口，属休眠路径）。
+
 ## 护眼
 
 全 App 暖色滤光与亮度压低；阅读页内置「护眼」绿色主题；支持可调暖度、亮度与 20 分钟休息提醒。护眼强度保存在本机。
