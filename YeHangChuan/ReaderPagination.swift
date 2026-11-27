@@ -11,19 +11,32 @@ import YeHangCore
 /// 的前提。以前一边按字数估算容量、一边交给 SwiftUI 自己排版，两份结果
 /// 对不上，文字被裁掉正是从那里来的。
 enum ReaderMetrics {
-    /// 顶部留给悬浮工具栏与页眉的空间。
-    static let top: CGFloat = 96
-    /// 底部留给页脚、进度条与工具条的空间。
-    static let bottom: CGFloat = 152
+    /// 上下留白的默认值：顶部给悬浮工具栏与页眉，底部给页脚、进度条与工具条。
+    /// 读者可以在阅读设置里改，所以这里只是初值。
+    static let defaultTop: CGFloat = 96
+    static let defaultBottom: CGFloat = 152
+    /// 工具栏与抓手本身占的高度，可拖的边界不能再越过它们太多。
+    static let minTop: CGFloat = 76
+    static let maxTop: CGFloat = 240
+    /// 下边界最小 100：微调抓手与「完成」按钮本身要占掉七八十点，
+    /// 再小抓手就钻到控件底下抓不到了。
+    static let minBottom: CGFloat = 100
+    static let maxBottom: CGFloat = 320
     /// 段评胶囊挂靠的右侧留白。只在书里确实有段评时保留 ——
     /// 没有段评的书不该为一条永远不会出现的胶囊让出正文宽度。
     static let commentGutter: CGFloat = 24
 
-    static func textSize(in viewport: CGSize, sideMargin: Double, hasComments: Bool) -> CGSize {
+    static func textSize(
+        in viewport: CGSize,
+        sideMargin: Double,
+        topMargin: Double,
+        bottomMargin: Double,
+        hasComments: Bool
+    ) -> CGSize {
         let gutter = hasComments ? commentGutter : 0
         return CGSize(
             width: max(viewport.width - sideMargin * 2 - gutter, 40),
-            height: max(viewport.height - top - bottom, 40)
+            height: max(viewport.height - topMargin - bottomMargin, 40)
         )
     }
 }

@@ -386,6 +386,8 @@ final class ReaderSettings {
     var fontDesign: ReaderFontDesign = .serif
     var fontWeight: ReaderWeight = .regular
     var sideMargin: Double = 28
+    var topMargin: Double = 96
+    var bottomMargin: Double = 152
     var indent: Bool = true
     var showHeaderFooter: Bool = true
     var volumeKeyTurn: Bool = false
@@ -403,6 +405,8 @@ final class ReaderSettings {
             fontDesign: fontDesign,
             fontWeight: fontWeight,
             sideMargin: sideMargin,
+            topMargin: topMargin,
+            bottomMargin: bottomMargin,
             indent: indent,
             showHeaderFooter: showHeaderFooter,
             volumeKeyTurn: volumeKeyTurn,
@@ -421,6 +425,8 @@ final class ReaderSettings {
         fontDesign = snapshot.fontDesign
         fontWeight = snapshot.fontWeight
         sideMargin = snapshot.sideMargin
+        topMargin = snapshot.topMargin
+        bottomMargin = snapshot.bottomMargin
         indent = snapshot.indent
         showHeaderFooter = snapshot.showHeaderFooter
         volumeKeyTurn = snapshot.volumeKeyTurn
@@ -439,6 +445,8 @@ struct ReaderSnapshot: Codable, Equatable, Sendable {
     var fontDesign: ReaderFontDesign = .serif
     var fontWeight: ReaderWeight = .regular
     var sideMargin: Double = 28
+    var topMargin: Double = 96
+    var bottomMargin: Double = 152
     var indent: Bool = true
     var showHeaderFooter: Bool = true
     var volumeKeyTurn: Bool = false
@@ -447,7 +455,7 @@ struct ReaderSnapshot: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case fontSize, lineSpacing, theme, pageMode, pageTurnEffect, direction
-        case fontDesign, fontWeight, sideMargin, indent, showHeaderFooter
+        case fontDesign, fontWeight, sideMargin, topMargin, bottomMargin, indent, showHeaderFooter
         case volumeKeyTurn, hideSourceComments, purifyText
     }
 
@@ -466,6 +474,8 @@ struct ReaderSnapshot: Codable, Equatable, Sendable {
         fontDesign = (try? c.decodeIfPresent(ReaderFontDesign.self, forKey: .fontDesign)).flatMap { $0 } ?? fontDesign
         fontWeight = (try? c.decodeIfPresent(ReaderWeight.self, forKey: .fontWeight)).flatMap { $0 } ?? fontWeight
         sideMargin = try c.decodeIfPresent(Double.self, forKey: .sideMargin) ?? sideMargin
+        topMargin = try c.decodeIfPresent(Double.self, forKey: .topMargin) ?? topMargin
+        bottomMargin = try c.decodeIfPresent(Double.self, forKey: .bottomMargin) ?? bottomMargin
         indent = try c.decodeIfPresent(Bool.self, forKey: .indent) ?? indent
         showHeaderFooter = try c.decodeIfPresent(Bool.self, forKey: .showHeaderFooter) ?? showHeaderFooter
         volumeKeyTurn = try c.decodeIfPresent(Bool.self, forKey: .volumeKeyTurn) ?? volumeKeyTurn
@@ -485,6 +495,8 @@ struct ReaderSnapshot: Codable, Equatable, Sendable {
         fontDesign: ReaderFontDesign,
         fontWeight: ReaderWeight,
         sideMargin: Double,
+        topMargin: Double,
+        bottomMargin: Double,
         indent: Bool,
         showHeaderFooter: Bool,
         volumeKeyTurn: Bool,
@@ -500,6 +512,8 @@ struct ReaderSnapshot: Codable, Equatable, Sendable {
         self.fontDesign = fontDesign
         self.fontWeight = fontWeight
         self.sideMargin = sideMargin
+        self.topMargin = topMargin
+        self.bottomMargin = bottomMargin
         self.indent = indent
         self.showHeaderFooter = showHeaderFooter
         self.volumeKeyTurn = volumeKeyTurn

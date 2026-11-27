@@ -10,6 +10,9 @@ struct ReaderView: View {
 
     let book: Book
     var initialChapterTitle: String? = nil
+    /// 从大纲或书封直接进「版心微调」。工具栏是浮层，得先亮出来，
+    /// 否则读者落在一个没有工具栏、却也没法拖的画面里。
+    var startInFrameAdjust = false
 
     /// 排好版的整本书。页表来自 `ChapterPagination`（真实 CoreText 排出来），
     /// 不是按字数估算的 —— 估算的容量与实际排版永远有出入，差的那几个字就画不出来。
@@ -27,6 +30,8 @@ struct ReaderView: View {
     @State private var showBookmarks = false
     @State private var showListen = false
     @State private var showSourceSwitch = false
+    /// 版心微调：四边抓手直接拖正文的边界。
+    @State private var showFrameAdjust = false
     @State private var commentParagraph: Paragraph?
     /// 点「导出正文」后生成的临时 TXT，驱动分享面板。
     @State private var exportFile: ExportedTextFile?
@@ -184,6 +189,21 @@ struct ReaderView: View {
                 .allowsHitTesting(false)
             }
 
+            if showFrameAdjust {
+                ReaderFrameAdjustOverlay(
+                    viewport: viewport,
+                    theme: settings.theme,
+                    initialSideMargin: settings.sideMargin,
+                    initialTopMargin: settings.topMargin,
+                    initialBottomMargin: settings.bottomMargin,
+                    onCommit: applyFrame,
+                    onDone: {
+                        withAnimation(.easeInOut(duration: 0.2)) { showFrameAdjust = false }
+                    }
+                )
+                .transition(.opacity)
+            }
+
             EyeCareLayer(settings: store.eyeCare)
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { newSize in
@@ -200,7 +220,25 @@ struct ReaderView: View {
         .onDisappear { flushReadingTime() }
         .onChange(of: settings.fontSize) { _, _ in rebuild(restore: false) }
         .onChange(of: settings.lineSpacing) { _, _ in rebuild(restore: false) }
-        .onChange(of: settings.sideMargin) { _, _ in rebuild(restore: false) }
+        // 三个刻度合成一个观察点：在纸上拖一次边界只重排一次。
+        .onChange(of: [settings.sideMargin, settings.topMargin, settings.bottomMargin]) { _, _ in
+            rebuild(restore: false)
+        }
+        .onChange(of: showFrameAdjust) { _, isShowing in
+            // 微调时收起工具栏，四条边和画出来的版心就是全部信息；
+            // 退出时把工具栏亮回来，否则读者会落在「点哪都没反应」的画面里。
+            if isShowing {
+                // 等阅读设置那张 sheet 真正退场再收工具栏：收早了，抓手会先于
+                // 遮罩出现，看起来像面板内容漏到了阅读页上。
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(350))
+                    guard showFrameAdjust else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) { showChrome = false }
+                }
+            } else {
+                revealChrome()
+            }
+        }
         .onChange(of: settings.purifyText) { _, _ in rebuild(restore: false) }
         .onChange(of: settings.pageMode) { _, _ in rebuild(restore: false) }
         .onChange(of: settings.fontDesign) { _, _ in rebuild(restore: false) }
@@ -243,7 +281,17 @@ struct ReaderView: View {
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showSettings) {
-            ReaderSettingsSheet(settings: settings)
+            ReaderSettingsSheet(
+                settings: settings,
+                onAdjustFrame: {
+                    // 设置面板退场、抓手上场。等面板收完再切换，
+                    // 否则抓手会先消失一次，看起来像点了没反应。
+                    showSettings = false
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showFrameAdjust = true
+                    }
+                }
+            )
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
                 .presentationDragIndicator(.visible)
@@ -707,6 +755,11 @@ struct ReaderView: View {
                         }
                         showFlash(settings.hideSourceComments ? "已屏蔽段评" : "已显示段评")
                     }
+                    toolButton("版心", symbol: "rectangle.inset.filled") {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showFrameAdjust = true
+                        }
+                    }
                     toolButton("设置", symbol: "textformat.size") { showSettings = true }
                 }
                 .padding(.vertical, 7)
@@ -732,6 +785,20 @@ struct ReaderView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())
+    }
+
+    /// 抓手松手后才落地。三个值在同一个事务里改完，合成一个观察点，
+    /// 一次拖动只重建一次页表。
+    private func applyFrame(sideMargin: Double, topMargin: Double, bottomMargin: Double) {
+        guard sideMargin != settings.sideMargin
+                || topMargin != settings.topMargin
+                || bottomMargin != settings.bottomMargin else { return }
+        // 松手后只重排一次，由三个值合在一起的观察点触发；
+        // 同一个事务里的多次写入不会被拆成多次排版。
+        settings.sideMargin = sideMargin
+        settings.topMargin = topMargin
+        settings.bottomMargin = bottomMargin
+        store.saveSnapshot()
     }
 
     // MARK: Actions
@@ -863,7 +930,10 @@ struct ReaderView: View {
 
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("-showReaderSettings") {
+        if startInFrameAdjust {
+            showChrome = false
+            showFrameAdjust = true
+        } else if arguments.contains("-showReaderSettings") {
             showSettings = true
         } else if arguments.contains("-showComments") {
             commentParagraph = chapters.flatMap(\.paragraphs).first { !$0.comments.isEmpty }
@@ -874,9 +944,14 @@ struct ReaderView: View {
         if arguments.contains("-showBookmarks") { showBookmarks = true }
         if arguments.contains("-showListen") { showListen = true }
         if arguments.contains("-showSourceSwitch") { showSourceSwitch = true }
+        if arguments.contains("-frameAdjust") {
+            showFrameAdjust = true
+            showChrome = false
+        }
         if arguments.contains("-coverTurn") { settings.pageTurnEffect = .cover }
         if arguments.contains("-noTurn") { settings.pageTurnEffect = .none }
         if arguments.contains("-scrollMode") { settings.pageMode = .scroll }
+        if arguments.contains("-slideMode") { settings.pageMode = .slide }
         #endif
     }
 
@@ -1041,6 +1116,8 @@ struct ReaderView: View {
         let size = ReaderMetrics.textSize(
             in: viewport,
             sideMargin: settings.sideMargin,
+            topMargin: settings.topMargin,
+            bottomMargin: settings.bottomMargin,
             hasComments: hasComments && !settings.hideSourceComments
         )
         let chapterCount = max(snapshot.count, book.chapterCount)
@@ -1387,40 +1464,43 @@ struct ReaderPageView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if settings.showHeaderFooter {
-                HStack {
-                    Text(page.chapterTitle)
-                    Spacer()
-                    // 章内页码：整本页码在几百万字的长篇里会数到好几千，
-                    // 读者真正关心的是「这一章还剩几页」。
-                    Text("\(page.pageIndexInChapter + 1) / \(pagination.chapterPageCounts[page.chapterID] ?? 1)")
-                        .monospacedDigit()
+        // 页眉页脚浮在正文之外。版面起点必须是 `topMargin` 本身：
+        // 微调时抓手画在哪条线上，正文就该从哪条线开始，否则拖到页面最上沿
+        // 也挪不动第一行，读者会觉得这个边界是假的。
+        textLayer
+            .padding(.horizontal, settings.sideMargin)
+            .padding(.top, settings.topMargin)
+            .padding(.bottom, settings.bottomMargin)
+            .overlay(alignment: .top) {
+                if settings.showHeaderFooter {
+                    HStack {
+                        Text(page.chapterTitle)
+                        Spacer()
+                        // 章内页码：整本页码在几百万字的长篇里会数到好几千，
+                        // 读者真正关心的是「这一章还剩几页」。
+                        Text("\(page.pageIndexInChapter + 1) / \(pagination.chapterPageCounts[page.chapterID] ?? 1)")
+                            .monospacedDigit()
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                    .tracking(0.9)
+                    .foregroundStyle(settings.theme.secondary)
+                    .padding(.horizontal, settings.sideMargin)
+                    .padding(.top, max(settings.topMargin - 32, 8))
                 }
-                .font(.system(size: 10, weight: .medium))
-                .tracking(0.9)
-                .foregroundStyle(settings.theme.secondary)
-                .padding(.bottom, 20)
             }
-
-            textLayer
-                .frame(width: textSize.width, height: textSize.height, alignment: .topLeading)
-
-            Spacer(minLength: 0)
-
-            if settings.showHeaderFooter {
-                HStack {
-                    Text(bookTitle)
-                    Spacer()
-                    Text(page.chapterTitle)
+            .overlay(alignment: .bottom) {
+                if settings.showHeaderFooter {
+                    HStack {
+                        Text(bookTitle)
+                        Spacer()
+                        Text(page.chapterTitle)
+                    }
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(settings.theme.secondary.opacity(0.55))
+                    .padding(.horizontal, settings.sideMargin)
+                    .padding(.bottom, max(settings.bottomMargin - 30, 8))
                 }
-                .font(.system(size: 9.5))
-                .foregroundStyle(settings.theme.secondary.opacity(0.55))
             }
-        }
-        .padding(.horizontal, settings.sideMargin)
-        .padding(.top, ReaderMetrics.top)
-        .padding(.bottom, ReaderMetrics.bottom)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .environment(\.layoutDirection, .leftToRight)
     }
@@ -1623,8 +1703,9 @@ struct ScrollReaderView: View {
             }
             .scrollTargetLayout()
             .padding(.horizontal, settings.sideMargin)
-            .padding(.top, 90)
-            .padding(.bottom, 130)
+            // 上下留白与分页共用一套刻度：切到滚动模式时版心不会突然变宽变高。
+            .padding(.top, settings.topMargin - 6)
+            .padding(.bottom, settings.bottomMargin - 22)
             .environment(\.layoutDirection, .leftToRight)
         }
         .scrollIndicators(.hidden)
@@ -1690,6 +1771,292 @@ struct ParagraphActionsSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle(scale: 0.97))
+    }
+}
+
+// MARK: - Frame Adjust
+
+/// 版心微调的四个抓手。
+///
+/// 拖动过程只改本地值并画一层遮罩，正文一次都不重排；松手才把结果交给阅读页，
+/// 由它统一改设置、重排、落盘。这样拖一次最多排一次版，字也不会在指头下跳来跳去。
+struct ReaderFrameAdjustOverlay: View {
+    let viewport: CGSize
+    let theme: ReaderTheme
+    let initialSideMargin: Double
+    let initialTopMargin: Double
+    let initialBottomMargin: Double
+    let onCommit: (Double, Double, Double) -> Void
+    let onDone: () -> Void
+
+    @State private var sideDrag: (start: Double, current: Double)?
+    @State private var topDrag: (start: Double, current: Double)?
+    @State private var bottomDrag: (start: Double, current: Double)?
+
+    private var sideMargin: Double { sideDrag?.current ?? initialSideMargin }
+    private var topMargin: Double { topDrag?.current ?? initialTopMargin }
+    private var bottomMargin: Double { bottomDrag?.current ?? initialBottomMargin }
+
+    var body: some View {
+        let page = viewport
+        // 正文与边界线共用同一组刻度；虚线在绘制时再向外让一点，
+        // 免得首尾那个字压在线上。
+        let textBox = CGRect(
+            x: sideMargin,
+            y: topMargin,
+            width: max(page.width - sideMargin * 2, 40),
+            height: max(page.height - topMargin - bottomMargin, 40)
+        )
+        // 左右落在正文边缘内 2 点：末端那几个字的笔画会探到版心线外，
+        // 不往里收一点，虚线就穿字而过。上下留出一行的高度，不切字头字脚。
+        let frame = CGRect(
+            x: textBox.minX + 2,
+            y: textBox.minY - 2,
+            width: max(textBox.width - 4, 8),
+            height: max(textBox.height + 4, 8)
+        )
+
+        ZStack(alignment: .topLeading) {
+            // 版心外按底色遮住。遮成不透明而不是压暗，是因为文字此刻仍是旧版心的
+            // 排版：只压暗会看到字从框外继续往外排，读者分不清哪条线才是边界。
+            // 遮住之后，框外就是页边，底部按钮也有了一块不会压住正文的地方。
+            edgeMasks(outsideOf: frame, in: page)
+
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(theme.accent.opacity(0.9), style: StrokeStyle(lineWidth: 1.2, dash: [6, 4]))
+                .frame(width: frame.width, height: frame.height)
+                .offset(x: frame.minX, y: frame.minY)
+                .allowsHitTesting(false)
+
+            ForEach(edges, id: \.self) { edge in
+                grabber(for: edge)
+                    .position(position(for: edge, in: frame))
+            }
+
+            // 控件放在屏幕底部，避开正文起点：放在顶部会压住页眉和第一行。
+            VStack(spacing: 8) {
+                Spacer()
+
+                // 底边推得再低，也不能压到底部浮层：微调时工具栏收起来了，
+                // 但点一下正文它就会回来，线路仍要留够。
+                if page.height - bottomMargin < ReaderMetrics.defaultBottom {
+                    Label("底边已压到工具栏，退出时会恢复浮层", systemImage: "exclamationmark.triangle")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(theme.secondary)
+                        .padding(.bottom, 2)
+                }
+
+                HStack(spacing: 14) {
+                    Label("上 \(Int(topMargin))", systemImage: "arrow.up.and.down")
+                    Text("左右 \(Int(sideMargin))")
+                    Label("下 \(Int(bottomMargin))", systemImage: "arrow.up.and.down")
+                }
+                .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                .foregroundStyle(theme.secondary)
+                .monospacedDigit()
+
+                HStack(spacing: 10) {
+                    Button {
+                        resetFrame()
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(theme.text)
+                            .glassCircle(diameter: 40)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .accessibilityLabel("恢复默认版心")
+
+                    Button {
+                        commitAll()
+                        onDone()
+                    } label: {
+                        Text("完成")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Palette.onAccent)
+                            .frame(maxWidth: 160)
+                            .padding(.vertical, 12)
+                            .glassCapsule(tint: Palette.accentSolid.opacity(0.9), interactive: true)
+                    }
+                    .buttonStyle(PressableStyle(scale: 0.97))
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, 14)
+        }
+        .frame(width: page.width, height: page.height, alignment: .topLeading)
+        .animation(.easeInOut(duration: 0.18), value: sideDrag == nil)
+        .animation(.easeInOut(duration: 0.18), value: topDrag == nil)
+        .animation(.easeInOut(duration: 0.18), value: bottomDrag == nil)
+    }
+
+    private enum Edge: Hashable {
+        case top, bottom, left, right
+    }
+
+    private var edges: [Edge] { [.top, .bottom, .left, .right] }
+
+    /// 框外四块遮罩，拼起来正好是「整页减去版心」。用四块矩形而不是
+    /// 一个排空路径，是为了让遮罩的边缘不落在版心线上：差半个像素就会
+    /// 把虚线擦掉半条。
+    private func edgeMasks(outsideOf frame: CGRect, in page: CGSize) -> some View {
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(theme.background)
+                .frame(width: page.width, height: max(frame.minY, 0))
+                .offset(y: 0)
+
+            Rectangle()
+                .fill(theme.background)
+                .frame(
+                    width: page.width,
+                    height: max(page.height - frame.maxY, 0)
+                )
+                .offset(y: frame.maxY)
+
+            Rectangle()
+                .fill(theme.background)
+                .frame(
+                    width: max(frame.minX, 0),
+                    height: max(frame.height, 0)
+                )
+                .offset(x: 0, y: frame.minY)
+
+            Rectangle()
+                .fill(theme.background)
+                .frame(
+                    width: max(page.width - frame.maxX, 0),
+                    height: max(frame.height, 0)
+                )
+                .offset(x: frame.maxX, y: frame.minY)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func position(for edge: Edge, in frame: CGRect) -> CGPoint {
+        switch edge {
+        case .top: CGPoint(x: frame.midX, y: frame.minY)
+        case .bottom: CGPoint(x: frame.midX, y: frame.maxY)
+        case .left: CGPoint(x: frame.minX, y: frame.midY)
+        case .right: CGPoint(x: frame.maxX, y: frame.midY)
+        }
+    }
+
+    @ViewBuilder
+    private func grabber(for edge: Edge) -> some View {
+        let isVertical = edge == .top || edge == .bottom
+        let size = isVertical ? CGSize(width: 72, height: 26) : CGSize(width: 26, height: 72)
+        let isDragging = dragState(for: edge) != nil
+
+        // 抓手本身画得很小，可点区域放大到 44pt 以上，手指才不会总是抓空。
+        ZStack {
+            Capsule()
+                .fill(Palette.accentSolid)
+                .frame(
+                    width: isVertical ? 34 : 6,
+                    height: isVertical ? 6 : 34
+                )
+                .opacity(isDragging ? 1 : 0.9)
+
+            Image(systemName: isVertical ? "arrow.up.and.down" : "arrow.left.and.right")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Palette.onAccent)
+                .opacity(isDragging ? 1 : 0)
+        }
+        .frame(width: size.width, height: size.height)
+        .contentShape(Rectangle())
+        .gesture(dragGesture(for: edge))
+        .accessibilityLabel(accessibilityLabel(for: edge))
+    }
+
+    private func dragGesture(for edge: Edge) -> some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { value in
+                switch edge {
+                case .left:
+                    let next = clamp(
+                        (sideDrag?.start ?? initialSideMargin) + value.translation.width,
+                        to: 16...46
+                    )
+                    sideDrag = (sideDrag?.start ?? initialSideMargin, next)
+                case .right:
+                    let next = clamp(
+                        (sideDrag?.start ?? initialSideMargin) - value.translation.width,
+                        to: 16...46
+                    )
+                    sideDrag = (sideDrag?.start ?? initialSideMargin, next)
+                case .top:
+                    let next = clamp(
+                        (topDrag?.start ?? initialTopMargin) + value.translation.height,
+                        to: Double(ReaderMetrics.minTop)...Double(ReaderMetrics.maxTop)
+                    )
+                    topDrag = (topDrag?.start ?? initialTopMargin, next)
+                case .bottom:
+                    let next = clamp(
+                        (bottomDrag?.start ?? initialBottomMargin) - value.translation.height,
+                        to: Double(ReaderMetrics.minBottom)...Double(ReaderMetrics.maxBottom)
+                    )
+                    bottomDrag = (bottomDrag?.start ?? initialBottomMargin, next)
+                }
+            }
+            .onEnded { _ in
+                // 拖的过程中不重排，松手才交给阅读页。
+                switch edge {
+                case .left, .right:
+                    if let sideDrag { commit(side: sideDrag.current) }
+                    sideDrag = nil
+                case .top:
+                    if let topDrag { commit(top: topDrag.current) }
+                    topDrag = nil
+                case .bottom:
+                    if let bottomDrag { commit(bottom: bottomDrag.current) }
+                    bottomDrag = nil
+                }
+            }
+    }
+
+    private func dragState(for edge: Edge) -> Double? {
+        switch edge {
+        case .left, .right: sideDrag?.current
+        case .top: topDrag?.current
+        case .bottom: bottomDrag?.current
+        }
+    }
+
+    private func accessibilityLabel(for edge: Edge) -> String {
+        switch edge {
+        case .top: "上边界"
+        case .bottom: "下边界"
+        case .left: "左边界"
+        case .right: "右边界"
+        }
+    }
+
+    private func clamp(_ value: Double, to range: ClosedRange<Double>) -> Double {
+        min(max(value, range.lowerBound), range.upperBound)
+    }
+
+    private func commit(side: Double) {
+        onCommit(side, topMargin, bottomMargin)
+    }
+
+    private func commit(top: Double) {
+        onCommit(sideMargin, top, bottomMargin)
+    }
+
+    private func commit(bottom: Double) {
+        onCommit(sideMargin, topMargin, bottom)
+    }
+
+    private func commitAll() {
+        onCommit(sideMargin, topMargin, bottomMargin)
+    }
+
+    private func resetFrame() {
+        sideDrag = (28, 28)
+        topDrag = (Double(ReaderMetrics.defaultTop), Double(ReaderMetrics.defaultTop))
+        bottomDrag = (Double(ReaderMetrics.defaultBottom), Double(ReaderMetrics.defaultBottom))
+        onCommit(28, Double(ReaderMetrics.defaultTop), Double(ReaderMetrics.defaultBottom))
     }
 }
 
@@ -1796,6 +2163,8 @@ struct ReaderSettingsSheet: View {
     @Bindable var settings: ReaderSettings
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    /// 退场后由阅读页接管，进入拖动抓手的版心微调。
+    var onAdjustFrame: (() -> Void)? = nil
     @State private var eyePreview = false
 
     var body: some View {
@@ -1807,6 +2176,7 @@ struct ReaderSettingsSheet: View {
                     VStack(alignment: .leading, spacing: 24) {
                         preview
 
+                        frameSection
                         fontSizeSection
                         lineSpacingSection
                         themeSection
@@ -2048,18 +2418,7 @@ struct ReaderSettingsSheet: View {
                     selection: $settings.fontWeight
                 )
 
-                HStack {
-                    Text("左右留白")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.secondary)
-                    Slider(value: $settings.sideMargin, in: 16...46, step: 1)
-                        .tint(Palette.accent)
-                    Text("\(Int(settings.sideMargin))")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Palette.tertiary)
-                        .monospacedDigit()
-                        .frame(width: 22)
-                }
+                frameSlider("左右留白", value: $settings.sideMargin, range: 16...46)
 
                 Toggle("首行缩进", isOn: $settings.indent)
                     .font(.system(size: 13))
@@ -2156,6 +2515,97 @@ struct ReaderSettingsSheet: View {
             }
             .padding(14)
             .glassSurface(cornerRadius: 20)
+        }
+    }
+
+    /// 版心的完整形状：上下左右四个刻度，加上按真实比例画出来的预览。
+    /// 预览盒子的比例就是屏幕，版心框的位置对应正文真正落笔的地方。
+    private var frameSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeading(
+                text: "版心",
+                trailing: "\(Int(settings.topMargin)) · \(Int(settings.sideMargin)) · \(Int(settings.bottomMargin))"
+            )
+
+            VStack(spacing: 12) {
+                framePreview
+
+                frameSlider("上边界", value: $settings.topMargin, range: ReaderMetrics.minTop...ReaderMetrics.maxTop)
+                frameSlider("左右", value: $settings.sideMargin, range: 16...46)
+                frameSlider("下边界", value: $settings.bottomMargin, range: ReaderMetrics.minBottom...ReaderMetrics.maxBottom)
+
+                if let onAdjustFrame {
+                    Button {
+                        onAdjustFrame()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "hand.draw")
+                            Text("在正文上直接拖边界")
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.accent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .glassCapsule(tint: Palette.accent.opacity(0.1), interactive: true)
+                    }
+                    .buttonStyle(PressableStyle())
+                }
+            }
+            .padding(14)
+            .glassSurface(cornerRadius: 20)
+        }
+    }
+
+    private var framePreview: some View {
+        GeometryReader { geometry in
+            let page = geometry.size
+            let scaleX = page.width / max(previewViewport.width, 1)
+            let scaleY = page.height / max(previewViewport.height, 1)
+            let frame = CGRect(
+                x: settings.sideMargin * scaleX,
+                y: settings.topMargin * scaleY,
+                width: max(page.width - settings.sideMargin * 2 * scaleX, 4),
+                height: max(page.height - (settings.topMargin + settings.bottomMargin) * scaleY, 4)
+            )
+
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(settings.theme.background)
+
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(settings.theme.text.opacity(0.055))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(settings.theme.accent.opacity(0.65), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    }
+                    .frame(width: frame.width, height: frame.height)
+                    .offset(x: frame.minX, y: frame.minY)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Palette.text.opacity(0.1), lineWidth: 0.8)
+            }
+        }
+        .frame(height: 150)
+    }
+
+    /// 预览按 iPhone 竖屏比例缩放，与阅读页上看到的画面同一套几何。
+    private var previewViewport: CGSize { CGSize(width: 390, height: 844) }
+
+    private func frameSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.secondary)
+                .frame(width: 52, alignment: .leading)
+            Slider(value: value, in: range, step: 1)
+                .tint(Palette.accent)
+            Text("\(Int(value.wrappedValue))")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(Palette.tertiary)
+                .monospacedDigit()
+                .frame(width: 26, alignment: .trailing)
         }
     }
 

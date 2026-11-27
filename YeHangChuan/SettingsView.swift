@@ -36,6 +36,7 @@ struct SettingsView: View {
     @State private var showCompliance = false
     @State private var showEyeCare = false
     @State private var showAlert: SettingsAlert?
+    @State private var readerForFrameAdjust: Book?
     /// 图片缓存的真实占用，进页面后异步统计一次。
     /// nil 表示还没算出来，这时候显示「计算中」而不是显示一个假的 0。
     @State private var imageCacheBytes: Int?
@@ -298,10 +299,22 @@ struct SettingsView: View {
                 .appChrome(store)
         }
         .sheet(isPresented: $showReaderSettings) {
-            ReaderSettingsSheet(settings: store.settings)
+            ReaderSettingsSheet(
+                settings: store.settings,
+                onAdjustFrame: {
+                    // 正文不在这一屏，抓手没法拖；直接送读者进最近在读的书。
+                    showReaderSettings = false
+                    readerForFrameAdjust = store.continueBook
+                        ?? store.books.first { $0.kind == .novel && $0.progress > 0 }
+                        ?? store.books.first { $0.kind == .novel }
+                }
+            )
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
                 .appChrome(store)
+        }
+        .fullScreenCover(item: $readerForFrameAdjust) { book in
+            ReaderView(book: book, startInFrameAdjust: true)
         }
         .sheet(isPresented: $showDistribution) {
             DistributionSheet()
