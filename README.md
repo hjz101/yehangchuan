@@ -2,7 +2,7 @@
 
 iOS 小说阅读器 Demo，按 **iOS 27 原生 Liquid Glass（液态玻璃）** 重做界面，并把《iOS 小说阅读器产品规划 v5》的功能纳入可操作演示。
 
-书源相关链路（搜索、目录、正文、发现、段评、换源、调试）已经接上真实的 Legado 规则引擎，会真的联网；导入、阅读、听书、统计、备份走真实本机能力。内置一条**离线示例书源**：规则是完整的 Legado 3.0 JSON，内容由本机提供，开箱即可验证搜索→目录→正文，不连外网也不访问私网。**AI、iCloud 同步、漫画 ZIP 解析仍是 `MockBackend` 模拟**，界面上都标了「模拟」。TTS 系统语音朗读与 mp3/m4a/m4b 本地文件播放都是真实的。
+书源相关链路（搜索、目录、正文、发现、段评、换源、调试）已经接上真实的 Legado 规则引擎，会真的联网；导入、阅读、听书、统计、备份走真实本机能力。内置一条**离线示例书源**：规则是完整的 Legado 3.0 JSON，内容由本机提供，开箱即可验证搜索→目录→正文，不连外网也不访问私网。CBZ/ZIP 漫画会真实解包、按自然页序读取并降采样展示；TTS 系统语音朗读与 mp3/m4a/m4b 本地文件播放都是真实的。**AI 与 iCloud 同步仍是 `MockBackend` 模拟**，界面上都标了「模拟」。
 
 ## 运行
 
@@ -21,7 +21,7 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 ./Scripts/verify.sh
 ```
 
-一条命令跑完全部门禁：YeHangCore（91 项）+ LegadoCore（5 项）单测与 App 构建。PR 由 `.github/workflows/ci.yml` 自动跑同一套门禁（需 Xcode 27.2 的 macOS runner）。脚本会识别 Rosetta shell 并以原生 arm64 跑 `swift test`，避免「0 tests passed 但退出码为 0」的假通过。
+一条命令跑完全部门禁：YeHangCore + LegadoCore 单测与 App 构建。PR 由 `.github/workflows/ci.yml` 自动跑同一套门禁（需 Xcode 27.2 的 macOS runner）。脚本会识别 Rosetta shell 并以原生 arm64 跑 `swift test`，避免「0 tests passed 但退出码为 0」的假通过。
 
 ## 设计系统
 
@@ -56,8 +56,8 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 | **摘录** | 摘录流、按书筛选、只看收藏、写笔记、复制 |
 | **统计** | 今日目标环、7 日柱状图、13 周 91 天热力图、连续天数与偏好星期洞察；数据来自真实翻页停留时间，落盘到本机 `read_records.json`，无记录时如实归零 |
 | **设置** | 阅读偏好、每日目标、护眼与外观（界面明暗 + 暖色滤光）、备份、缓存、导出、账户与同步、分发与合规、功能实验室 |
-| **导入** | 系统文件选择；TXT 真实编码探测与章节切分；EPUB 真实按需解析章节与正文（单章失败会明确标注，不会留下空白页）；mp3/m4a/m4b 真实导入并复制进沙箱持久化、按真实时长播放；漫画 ZIP 模拟导入；链接与剪贴板 |
-| **漫画** | 页漫 / 条漫切换、进度恢复、图片缓存、系统语音描述 |
+| **导入** | 系统文件选择；TXT 真实编码探测与章节切分；EPUB 真实按需解析章节与正文（单章失败会明确标注，不会留下空白页）；mp3/m4a/m4b 真实导入并复制进沙箱持久化、按真实时长播放；CBZ/ZIP 漫画真实解包、按自然页序读取真实页图；链接与剪贴板 |
+| **漫画** | 页漫 / 条漫切换、真实页图按需降采样、进度恢复、图片缓存落盘、系统语音描述；沙箱文件缺失时明确提示重新导入 |
 | **实验室** | AI 摘要 / 封面 / TTS、JS 书源沙箱、在线发现、多角色与后台播放配置 |
 
 ### 听书
@@ -71,7 +71,7 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 | 规划项 | Demo 落地 |
 | --- | --- |
 | TXT 导入 / 编码 / 章节切分 | 真实读取 UTF-8、GB18030、UTF-16，正则切章，重复标题合并 |
-| EPUB / 漫画 / 音频解析 | EPUB 真实按需读取 ZIP 内章节与正文；音频文件复制进沙箱后用 AVPlayer 真实播放并读真实时长；漫画 ZIP 以演示章节进入书架，漫画可读 |
+| EPUB / 漫画 / 音频解析 | EPUB 真实按需读取 ZIP 内章节与正文；音频文件复制进沙箱后用 AVPlayer 真实播放并读真实时长；CBZ/ZIP 真实解包，按自然页序读取页图并降采样展示与缓存（RAR/7z 仍不支持） |
 | 分页与三种翻页 | 平移、覆盖、无动画；另有上下滚动 |
 | 进度恢复 | 章节 + 段落 ID + UTF-16 offset 持久化，字号变化后可回到同一段 |
 | 阅读设置 / 目录 / 书签 / 笔记 | 即时生效并持久化；书签备注可编辑 |
@@ -130,8 +130,8 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 
 ## 未实现
 
-- CBZ / RAR / 7z 解包（EPUB 真实按需读取、mp3/m4a/m4b 真实播放已实现）。
+- RAR / 7z 解包（CBZ/ZIP 已真实解包并按自然页序读取；EPUB 真实按需读取、mp3/m4a/m4b 真实播放已实现）。
 - CloudKit、WKWebView 执行 JS（规则 JS 走的是 JavaScriptCore）、真实 AI 请求与本机 ZIP 打包。
 - App Store 分发与内购；当前为自签安装定位，`DEVELOPMENT_TEAM` 留空，Xcode 选 **Sign to Run Locally**。已提供 AppIcon、隐私清单（`PrivacyInfo.xcprivacy`）与后台音频声明，真机安装前在 Xcode 的 Devices 里选好目标设备即可。
 
-标着「模拟」的入口（AI、TTS、iCloud 同步、漫画与音频解析）不会发出真实网络请求。**书源链路例外：启用书源后，搜索、目录、正文、发现、段评与换源都会真的联网**，请求地址可在「设置 → 网络日志」里查看（需要先打开记录开关）。
+标着「模拟」的入口（AI、TTS 多角色、iCloud 同步、CarPlay）不会发出真实网络请求。**书源链路例外：启用书源后，搜索、目录、正文、发现、段评与换源都会真的联网**，请求地址可在「设置 → 网络日志」里查看（需要先打开记录开关）。
