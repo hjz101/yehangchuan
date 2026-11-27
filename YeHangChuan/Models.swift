@@ -1804,7 +1804,15 @@ final class AppStore {
         groups = snapshot.groups
         customChapters = snapshot.customChapters
         eyeCare = snapshot.eyeCare
+        ensureBuiltinDemoSource()
         syncPrivateAllowList()
+    }
+
+    /// 老快照里只有两条没有解析规则的书源，搜不到书。补一条完整规则的
+    /// 离线示例源即可，不动用户自己已有的源。
+    private func ensureBuiltinDemoSource() {
+        guard !sources.contains(where: { $0.id == "source-offline-demo" }) else { return }
+        sources.append(contentsOf: MockData.sources)
     }
 
     // MARK: Backup

@@ -4,6 +4,12 @@ import SwiftUI
 struct YeHangChuanApp: App {
     @State private var store = AppStore()
 
+    init() {
+        // 内置离线示例书源：引擎与规则都是真的，内容由本机提供，
+        // 让没有网络时也能完整验证搜索 → 目录 → 正文。
+        BuiltinDemoContent.install()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

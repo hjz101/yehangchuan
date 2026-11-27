@@ -108,6 +108,35 @@ public protocol HTTPTransport: Sendable {
     func data(for request: URLRequest) async throws -> HTTPResponse
 }
 
+/// 给所有 LegadoCore 发起的 URLSession 追加自定义 URLProtocol。
+///
+/// `URLProtocol.registerClass` 只覆盖 shared/default 会话，而传输层用的是
+/// `.ephemeral`，所以必须在这里显式塞进 configuration，否则内置离线书源的
+/// scheme 会被当成不支持的 URL。
+public enum URLSessionProtocolRegistry {
+    private final class Box: @unchecked Sendable {
+        private let lock = NSLock()
+        private var classes: [AnyClass] = []
+        func add(_ value: AnyClass) {
+            lock.withLock {
+                guard !classes.contains(where: { $0 === value }) else { return }
+                classes.append(value)
+            }
+        }
+        func all() -> [AnyClass] { lock.withLock { classes } }
+    }
+
+    private static let box = Box()
+
+    public static func register(_ protocolClass: AnyClass) { box.add(protocolClass) }
+
+    static func apply(to configuration: URLSessionConfiguration) {
+        let extra = box.all()
+        guard !extra.isEmpty else { return }
+        configuration.protocolClasses = (configuration.protocolClasses ?? []) + extra
+    }
+}
+
 enum ReviewPageAddress {
     static let redirectOriginKey = "LegadoCommentPageRedirectOrigin"
 
@@ -256,6 +285,7 @@ public final class URLSessionHTTPTransport: ProxyHTTPTransport, StreamingHTTPTra
     public init(configuration: URLSessionConfiguration = .ephemeral, settingsStore: ApplicationSettingsStore = .shared) {
         self.configuration = configuration.copy() as! URLSessionConfiguration
         self.settingsStore = settingsStore
+        URLSessionProtocolRegistry.apply(to: self.configuration)
         self.configuration.httpCookieAcceptPolicy = .always
         self.configuration.httpShouldSetCookies = true
         self.configuration.httpCookieStorage = HTTPCookieStorage.shared

@@ -192,6 +192,7 @@ public final class SynchronousJavaScriptNetworkLoader: JavaScriptRedirectNetwork
             return try value?.get() ?? { throw HTTPClientError.nonHTTPResponse }()
         }
         let configuration = URLSessionConfiguration.ephemeral
+        URLSessionProtocolRegistry.apply(to: configuration)
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
         configuration.httpCookieStorage = .shared

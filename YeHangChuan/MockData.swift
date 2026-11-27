@@ -1,4 +1,5 @@
 import Foundation
+import LegadoCore
 
 enum MockData {
     // MARK: Books
@@ -113,35 +114,16 @@ enum MockData {
     // MARK: Sources
 
     static let sources: [BookSource] = [
+        // 完整、可校验的 Legado 3.0 规则；内容由 BuiltinDemoContent 在本机提供。
+        // 不连外网、不访问私网，所以默认启用也不会触碰隐私边界。
         BookSource(
-            id: "source-json",
-            name: "示例书源",
-            host: "demo.example.com",
+            id: "source-offline-demo",
+            name: "夜航船·离线示例源",
+            host: BuiltinDemoSource.baseURL,
             kind: .json,
-            enabled: false,
+            enabled: true,
             bookCount: 3,
-            rule: """
-            {
-              "search": "https://demo.example.com/search?q={kw}",
-              "detail": "https://demo.example.com/book/{id}",
-              "chapter": "https://demo.example.com/chapter/{id}"
-            }
-            """
-        ),
-        BookSource(
-            id: "source-js",
-            name: "自建脚本源",
-            host: "script.local",
-            kind: .js,
-            enabled: false,
-            bookCount: 6,
-            username: "demo-reader",
-            rule: """
-            {
-              "search": "https://script.local/search?q={kw}",
-              "chapter": "https://script.local/chapter/{id}"
-            }
-            """
+            rule: BuiltinDemoSource.ruleJSON
         )
     ]
 
