@@ -160,6 +160,11 @@ public final class LegadoUnsafeTrustDelegate: NSObject, URLSessionTaskDelegate, 
         newRequest request: URLRequest,
         completionHandler: @escaping @Sendable (URLRequest?) -> Void
     ) {
+        // 所有重定向都要逐跳重判私网，不限于书评页那一条同源规则。
+        if let host = request.url?.host, PrivateHostGate.shouldBlock(host) {
+            completionHandler(nil)
+            return
+        }
         guard ReviewPageAddress.permitsRedirect(for: task.originalRequest, to: request.url) else {
             completionHandler(nil)
             return
@@ -280,6 +285,9 @@ public final class URLSessionHTTPTransport: ProxyHTTPTransport, StreamingHTTPTra
         try Task.checkCancellation()
         let settings = settingsStore.settings
         let request = settings.configure(original)
+        // 首请求与递归进来的每一跳重定向都过同一道闸；
+        // 只靠 URLSession 的 delegate 拦不住自建 session 与 Hosts 分支。
+        try PrivateHostGate.check(request)
         let started = Date()
         do {
             let response: HTTPResponse

@@ -161,6 +161,9 @@ public final class SynchronousJavaScriptNetworkLoader: JavaScriptRedirectNetwork
     public func load(_ original: URLRequest, followRedirects: Bool) throws -> HTTPResponse {
         let settings = ApplicationSettingsStore.shared.settings
         let request = settings.configure(original)
+        // java.ajax/get/post 走这里。它既能落到共享 transport，也能自建
+        // URLSession，两条路径都必须在发起前过同一道私网闸。
+        try PrivateHostGate.check(request)
         let address = try ApplicationSettings.parseHosts(settings.hosts)[request.url?.host?.lowercased() ?? ""]
         if followRedirects || (settings.proxy.isEmpty && address != nil) {
             let semaphore = DispatchSemaphore(value: 0)

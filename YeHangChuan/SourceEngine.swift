@@ -19,9 +19,12 @@ final class SourceEngine {
     @ObservationIgnored private let switcher: BookSourceSwitchService
 
     init() {
-        // LegadoCore 本身不拦私网地址，而 App 在启用书源时承诺过「私网默认拒绝」。
-        // 请求最终都会走这个 transport，所以拦截放在这里才是真的拦得住，
-        // 包括书源 JS 里 java.ajax 发起的请求。
+        // 把 App 的私网判定注入 LegadoCore 的唯一闸门。JS 桥里的 java.ajax、
+        // 同步 loader 自建的 URLSession、以及重定向的每一跳都走这道闸，
+        // 不再只靠下面这层 transport 包装（那层只覆盖从 App 直接发起的请求）。
+        PrivateHostGate.configure { host in
+            URLHost.isPrivate(host) && !PrivateHostAllowList.shared.contains(host)
+        }
         let guarded = HostGuardedTransport(base: URLSessionHTTPTransport())
         transport = guarded
         search = BookSearchService(transport: guarded)
