@@ -12,7 +12,8 @@ import PackageDescription
 let package = Package(
     name: "LegadoCore",
     platforms: [
-        .iOS(.v15)
+        .iOS(.v15),
+        .macOS(.v13)
     ],
     products: [
         .library(name: "LegadoCore", targets: ["LegadoCore"])
@@ -35,6 +36,10 @@ let package = Package(
                 .linkedFramework("CryptoKit"),
                 .linkedLibrary("sqlite3")
             ]
+        ),
+        .testTarget(
+            name: "LegadoCoreTests",
+            dependencies: ["LegadoCore"]
         )
     ]
 )

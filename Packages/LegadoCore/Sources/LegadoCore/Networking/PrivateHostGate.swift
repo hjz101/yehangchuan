@@ -20,6 +20,10 @@ public enum PrivateHostGate {
         func current() -> (@Sendable (String) -> Bool)? {
             lock.withLock { predicate }
         }
+
+        func reset() {
+            lock.withLock { predicate = nil }
+        }
     }
 
     private static let storage = Storage()
@@ -28,6 +32,9 @@ public enum PrivateHostGate {
     public static func configure(_ check: @escaping @Sendable (String) -> Bool) {
         storage.configure(check)
     }
+
+    /// 仅供测试清空注入的判定，避免用例之间互相污染。
+    internal static func resetForTesting() { storage.reset() }
 
     /// 判定一个主机是否应被拦截。
     public static func shouldBlock(_ rawHost: String?) -> Bool {
