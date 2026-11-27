@@ -1,0 +1,19 @@
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    # 部署目标 iOS 27 / Xcode 27.2，runner 需提供对应版本。
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode 版本
+        run: xcodebuild -version
+
+      - name: 单测 + 构建
+        run: chmod +x Scripts/verify.sh && ./Scripts/verify.sh
