@@ -49,7 +49,7 @@
 
 ## 系统框架
 
-LegadoCore 另外链接 `JavaScriptCore`、`CryptoKit`、`sqlite3`、`Network`、`Security`、`Vision`、`ImageIO`、`CommonCrypto`，
+LegadoCore 另外链接 `JavaScriptCore`、`WebKit`、`CryptoKit`、`sqlite3`、`Network`、`Security`、`Vision`、`ImageIO`、`CommonCrypto`，App 另用 `CloudKit`、`CarPlay`，
 均为 Apple 系统框架，不涉及单独分发许可。
 
 ## 关于应用分发
