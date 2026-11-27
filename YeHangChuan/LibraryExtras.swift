@@ -313,27 +313,81 @@ struct SmartImportSheet: View {
 
     private func importLink() {
         guard let url = URL(string: linkText.trimmingCharacters(in: .whitespaces)),
-              url.scheme?.hasPrefix("http") == true else {
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
             message = "请输入有效的 http(s) 链接。"
             return
         }
         isParsing = true
+        message = nil
+        draft = nil
         Task { @MainActor in
-            let response = await store.backend.call("GET", url.absoluteString, base: 320)
+            let outcome = await Self.fetchLink(url)
             isParsing = false
-            guard response.ok else {
-                message = "链接读取失败：模拟网关离线。"
-                return
+            switch outcome {
+            case .draft(let box):
+                draft = box.makeDraft()
+            case .failure(let reason):
+                message = reason
             }
-            let name = url.deletingPathExtension().lastPathComponent.removingPercentEncoding ?? "网络书稿"
-            let chapters = Self.demoChapters(title: name, count: 5)
-            draft = ImportDraft(
-                title: name,
-                author: url.host() ?? "网络来源",
+        }
+    }
+
+    /// 链接导入的真实实现：直接下载，按内容类型与扩展名判断能否真的导入。
+    ///
+    /// 以前这里只打一次假网关，然后把 5 章演示正文当成「链接下载」塞进书架 ——
+    /// 用户点开才发现每个链接下到的都是同一本假书。现在只接 Text 与 EPUB：
+    /// 其余类型（音频、漫画压缩包）走本地文件导入，链接路径明确拒绝。
+    nonisolated static func fetchLink(_ url: URL) async -> LocalImportReader.Outcome {
+        do {
+            try PrivateHostGate.check(URLRequest(url: url))
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 30
+            request.setValue("text/plain, application/epub+zip, application/octet-stream;q=0.8, */*;q=0.1",
+                             forHTTPHeaderField: "Accept")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                return .failure("链接没有返回 HTTP 响应，可能不是网页或文件地址。")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                return .failure("下载失败：服务器返回 \(http.statusCode)。")
+            }
+            guard data.count <= 64 * 1_048_576 else {
+                return .failure("文件超过 64 MB，请先下载到本机再从文件导入。")
+            }
+            let contentType = (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
+            let ext = url.pathExtension.lowercased()
+
+            if contentType.contains("epub") || ext == "epub" {
+                return try LocalImportReader.readEPUBData(data, name: url.deletingPathExtension().lastPathComponent)
+            }
+            guard contentType.hasPrefix("text/")
+                    || contentType.contains("plain")
+                    || contentType.contains("octet-stream")
+                    || contentType.isEmpty
+                    || ["txt", "text", "md"].contains(ext) else {
+                return .failure("这个链接返回的是 \(contentType.isEmpty ? "未知类型" : contentType)，链接导入目前只支持 TXT 与 EPUB。音频、漫画压缩包请先下载到本机再从文件导入。")
+            }
+            let text = SmartImportSheet.decode(data)
+            guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return .failure("下载到的内容读不出文字，可能不是文本文件，或编码无法识别。")
+            }
+            let fallback = url.deletingPathExtension().lastPathComponent.removingPercentEncoding ?? "网络书稿"
+            let parsed = SmartImportSheet.parse(text: text, fallbackTitle: fallback)
+            guard !parsed.chapters.isEmpty else {
+                return .failure("链接里的文字没有可显示的正文。")
+            }
+            return .draft(LocalImportReader.ImportDraftBox(
+                title: parsed.title,
+                author: parsed.author,
                 kind: .novel,
-                detail: "链接下载 · \(response.milliseconds) ms · 演示解析",
-                chapters: chapters
-            )
+                detail: "链接下载 · \(SmartImportSheet.encodingName(data)) · \(parsed.chapters.count) 章",
+                chapters: parsed.chapters
+            ))
+        } catch let error as PrivateHostError {
+            return .failure(error.localizedDescription)
+        } catch {
+            return .failure("链接读取失败：\(error.localizedDescription)")
         }
     }
 
@@ -352,7 +406,7 @@ struct SmartImportSheet: View {
         )
     }
 
-    static func decode(_ data: Data) -> String? {
+    nonisolated static func decode(_ data: Data) -> String? {
         if let value = String(data: data, encoding: .utf8) { return value }
         let gb = String.Encoding(
             rawValue: UInt(
@@ -366,11 +420,11 @@ struct SmartImportSheet: View {
         return String(data: data, encoding: .isoLatin1)
     }
 
-    static func encodingName(_ data: Data) -> String {
+    nonisolated static func encodingName(_ data: Data) -> String {
         String(data: data, encoding: .utf8) != nil ? "UTF-8" : "GB18030 / UTF-16"
     }
 
-    static func parse(text: String, fallbackTitle: String) -> (title: String, author: String, chapters: [Chapter]) {
+    nonisolated static func parse(text: String, fallbackTitle: String) -> (title: String, author: String, chapters: [Chapter]) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let lines = trimmed.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
         let authorLine = lines.prefix(8).first { $0.contains("作者") }
@@ -461,18 +515,6 @@ struct SmartImportSheet: View {
         return (title, author?.isEmpty == false ? author! : "佚名", cleaned)
     }
 
-    static func demoChapters(title: String, count: Int) -> [Chapter] {
-        (1...max(count, 1)).map { index in
-            let source = MockData.genericChapters[(index - 1) % MockData.genericChapters.count]
-            return Chapter(
-                id: "\(title)-\(index)-\(UUID().uuidString.prefix(4))",
-                title: "第 \(index) 章 · \(source.title.components(separatedBy: " · ").last ?? "正文")",
-                paragraphs: source.paragraphs.map {
-                    Paragraph(id: UUID().uuidString, text: $0.text, comments: $0.comments)
-                }
-            )
-        }
-    }
 }
 
 // MARK: - Comic Reader
