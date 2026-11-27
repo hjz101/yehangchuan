@@ -1,5 +1,7 @@
 import AVFoundation
+import MediaPlayer
 import Observation
+import UIKit
 
 /// Real spoken playback for the demo: system voice reads the current chapter,
 /// while progress is driven by the synthesiser's spoken range.
@@ -23,10 +25,12 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
     @ObservationIgnored private var startedAt: Date?
     @ObservationIgnored private var accumulated: TimeInterval = 0
     @ObservationIgnored private var ticker: Task<Void, Never>?
+    @ObservationIgnored private lazy var artwork: MPMediaItemArtwork? = Self.makeArtwork()
 
     override init() {
         super.init()
         synthesizer.delegate = self
+        setupRemoteCommands()
     }
 
     var hasChapter: Bool { !text.isEmpty }
@@ -63,6 +67,7 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
         accumulated += startedAt.map { Date().timeIntervalSince($0) } ?? 0
         startedAt = nil
         ticker?.cancel()
+        updateNowPlaying()
     }
 
     func resume() {
@@ -73,6 +78,7 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
         isPaused = false
         startedAt = Date()
         startTicker()
+        updateNowPlaying()
     }
 
     func stop() {
@@ -82,6 +88,7 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
         ticker?.cancel()
         startedAt = nil
         deactivateSession()
+        updateNowPlaying()
     }
 
     func restart() {
@@ -133,6 +140,7 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
             stop()
             speak(from: offset)
         }
+        updateNowPlaying()
     }
 
     private func speak(from start: Int) {
@@ -153,6 +161,7 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
         startedAt = Date()
         synthesizer.speak(utterance)
         startTicker()
+        updateNowPlaying()
     }
 
     private func activateSession() {
@@ -191,6 +200,7 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
         if isPlaying {
             progress = min(max(spoken / Double(totalCharacters), 0), 0.999)
         }
+        updateNowPlaying()
     }
 
     nonisolated func speechSynthesizer(
@@ -203,6 +213,7 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
             let absolute = self.utteranceStart + characterRange.location
             self.progress = min(max(Double(absolute) / Double(self.totalCharacters), 0), 0.999)
             self.offset = absolute
+            self.updateNowPlaying()
         }
     }
 
@@ -224,7 +235,88 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
             self.elapsedLabel = Self.label(duration)
             self.remainingLabel = "-" + Self.label(0)
             self.deactivateSession()
+            self.updateNowPlaying()
         }
+    }
+
+    // MARK: - Lock screen & remote control
+
+    /// 系统语音是真实发声的，锁屏与车机理应能控制它。命令回调不在主actor上，
+    /// 统一派回主actor再改播放状态，避免和 AVSpeechSynthesizer 的 delegate 抢状态。
+    private func setupRemoteCommands() {
+        let center = MPRemoteCommandCenter.shared()
+        center.playCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.resume() }
+            return .success
+        }
+        center.pauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.pause() }
+            return .success
+        }
+        center.stopCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.stop() }
+            return .success
+        }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.toggle() }
+            return .success
+        }
+        center.nextTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.skip(400) }
+            return .success
+        }
+        center.previousTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.skip(-400) }
+            return .success
+        }
+        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            Task { @MainActor in
+                guard let self else { return }
+                let duration = Double(self.totalCharacters) * 0.22 / self.speed
+                guard duration > 0 else { return }
+                self.seek(to: event.positionTime / duration)
+            }
+            return .success
+        }
+    }
+
+    private func updateNowPlaying() {
+        let center = MPNowPlayingInfoCenter.default()
+        guard hasChapter else {
+            center.nowPlayingInfo = nil
+            return
+        }
+        let duration = Double(totalCharacters) * 0.22 / speed
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: chapterTitle.isEmpty ? title : chapterTitle,
+            MPMediaItemPropertyArtist: title,
+            MPMediaItemPropertyMediaType: MPMediaType.audioBook.rawValue,
+            MPMediaItemPropertyPlaybackDuration: duration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: min(max(progress * duration, 0), duration),
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? Double(speed) : 0
+        ]
+        if let artwork { info[MPMediaItemPropertyArtwork] = artwork }
+        center.nowPlayingInfo = info
+    }
+
+    private static func makeArtwork() -> MPMediaItemArtwork? {
+        let size = CGSize(width: 300, height: 300)
+        let image = UIGraphicsImageRenderer(size: size).image { context in
+            UIColor(red: 0.07, green: 0.12, blue: 0.19, alpha: 1).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIColor(red: 0.95, green: 0.74, blue: 0.42, alpha: 1).setFill()
+            UIBezierPath(
+                arcCenter: CGPoint(x: 150, y: 128), radius: 52,
+                startAngle: 0, endAngle: .pi * 2, clockwise: true
+            ).fill()
+            UIColor(red: 0.07, green: 0.12, blue: 0.19, alpha: 1).setFill()
+            UIBezierPath(
+                arcCenter: CGPoint(x: 178, y: 112), radius: 48,
+                startAngle: 0, endAngle: .pi * 2, clockwise: true
+            ).fill()
+        }
+        return MPMediaItemArtwork(boundsSize: size) { _ in image }
     }
 
     static func label(_ value: TimeInterval) -> String {
