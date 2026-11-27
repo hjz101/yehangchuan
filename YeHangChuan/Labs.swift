@@ -1009,13 +1009,28 @@ struct VoiceLabSheet: View {
     @State private var lockScreen = true
     @State private var carPlay = true
     @State private var cache = true
-    @State private var roles: [String: String] = [
-        "旁白": "温柔女声",
-        "年轻旅人": "清亮少年",
-        "卖布老人": "沉稳长者"
-    ]
+    @State private var preferences = SpeechRolePreferences.load()
 
-    private let voices = ["温柔女声", "清亮少年", "沉稳长者", "粤语女声"]
+    private var voices: [SpeechVoiceOption] { VoiceCatalog.availableVoices }
+
+    private func voiceLabel(for role: String) -> String {
+        guard let id = preferences.mapping[role] else { return "系统默认" }
+        return voices.first { $0.id == id }?.label ?? "系统默认"
+    }
+
+    private var demoSegments: [SpeechSegment] {
+        [
+            SpeechSegment(text: "夜航船靠岸的时候，雾还没有散。",
+                          role: VoiceCatalog.narrator,
+                          voiceIdentifier: preferences.mapping[VoiceCatalog.narrator]),
+            SpeechSegment(text: "船家，劳烦靠岸。",
+                          role: "卖布老人",
+                          voiceIdentifier: preferences.mapping["卖布老人"]),
+            SpeechSegment(text: "老人回头朝我点了点头，脚步声慢慢远去。",
+                          role: VoiceCatalog.narrator,
+                          voiceIdentifier: preferences.mapping[VoiceCatalog.narrator])
+        ]
+    }
 
     var body: some View {
         NavigationStack {
@@ -1052,11 +1067,11 @@ struct VoiceLabSheet: View {
             SectionHeading(text: "系统语音试听", trailing: store.speech.isPlaying ? "播放中" : "已暂停")
 
             Button {
-                if !store.speech.hasChapter {
+                if !store.speech.isPlaying && !store.speech.isPaused {
                     store.speech.load(
                         book: store.books.first ?? MockData.books[0],
                         chapterTitle: "声音实验室",
-                        text: "夜航船靠岸的时候，雾还没有散。卖布的老人先下了船，回头朝我点了点头。"
+                        segments: demoSegments
                     )
                     store.speech.setSpeed(speed)
                 }
@@ -1106,22 +1121,25 @@ struct VoiceLabSheet: View {
 
     private var roleCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeading(text: "角色与声音", trailing: "映射演示")
+            SectionHeading(text: "角色与声音", trailing: "\(voices.count) 种系统声线")
 
             VStack(spacing: 0) {
-                ForEach(Array(roles.keys.sorted()), id: \.self) { role in
+                ForEach(VoiceCatalog.roles, id: \.self) { role in
                     HStack {
                         Text(role)
                             .font(.system(size: 12.5))
                             .foregroundStyle(Palette.text)
                         Spacer()
                         Menu {
-                            ForEach(voices, id: \.self) { voice in
-                                Button(voice) { roles[role] = voice }
+                            ForEach(voices) { voice in
+                                Button(voice.label) {
+                                    preferences.mapping[role] = voice.id
+                                    preferences.save()
+                                }
                             }
                         } label: {
                             HStack(spacing: 5) {
-                                Text(roles[role] ?? "")
+                                Text(voiceLabel(for: role))
                                 Image(systemName: "chevron.up.chevron.down")
                                     .font(.system(size: 8, weight: .bold))
                             }
@@ -1135,7 +1153,7 @@ struct VoiceLabSheet: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
 
-                    if role != roles.keys.sorted().last {
+                    if role != VoiceCatalog.roles.last {
                         Rectangle()
                             .fill(Palette.hairline)
                             .frame(height: 0.6)
@@ -1165,7 +1183,7 @@ struct VoiceLabSheet: View {
     }
 
     private var boundaryNote: some View {
-        Text("当前使用系统语音真实播放；多角色、后台与 CarPlay 为演示配置。正式版需要音频会话、锁屏控制和合规音源。")
+        Text("系统语音真实发声，各角色切换系统已安装的真实声线，映射保存在本机；对话切分基于引号的启发式规则，不是语义分析。后台与 CarPlay 见下方配置。")
             .font(.system(size: 10))
             .foregroundStyle(Palette.tertiary)
     }

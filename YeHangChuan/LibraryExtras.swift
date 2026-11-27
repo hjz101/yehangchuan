@@ -1300,6 +1300,8 @@ struct ListenSheet: View {
     let book: Book
     let chapterTitle: String
     let text: String
+    /// 多角色朗读时传入按角色切好的段；不传则整段用默认声线。
+    var segments: [SpeechSegment]? = nil
 
     private var speech: SpeechPlayer { store.speech }
 
@@ -1326,7 +1328,11 @@ struct ListenSheet: View {
         }
         .onAppear {
             if speech.title != book.title || speech.chapterTitle != chapterTitle {
-                speech.load(book: book, chapterTitle: chapterTitle, text: text)
+                if let segments {
+                    speech.load(book: book, chapterTitle: chapterTitle, segments: segments)
+                } else {
+                    speech.load(book: book, chapterTitle: chapterTitle, text: text)
+                }
             }
         }
         .onDisappear {

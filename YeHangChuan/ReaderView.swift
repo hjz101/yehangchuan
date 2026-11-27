@@ -288,7 +288,11 @@ struct ReaderView: View {
             ListenSheet(
                 book: book,
                 chapterTitle: currentChapterTitle,
-                text: chapterText
+                text: chapterText,
+                segments: SpeechSegmenter.segments(
+                    from: chapterText,
+                    mapping: SpeechRolePreferences.load().mapping
+                )
             )
             .presentationDetents([.large])
             .presentationCornerRadius(38)

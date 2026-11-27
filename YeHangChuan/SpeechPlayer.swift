@@ -27,6 +27,17 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private lazy var artwork: MPMediaItemArtwork? = Self.makeArtwork()
 
+    private struct SpokenSegment {
+        let text: String
+        let voice: AVSpeechSynthesisVoice?
+        /// 在整章文本里的起始字符位置，用于跨段累计进度。
+        let start: Int
+    }
+    @ObservationIgnored private var spokenSegments: [SpokenSegment] = []
+    @ObservationIgnored private var currentSegment = 0
+    /// 自然念完一段后是否继续下一段；stop() 会清掉它。
+    @ObservationIgnored private var continueAfterFinish = false
+
     override init() {
         super.init()
         synthesizer.delegate = self
@@ -36,11 +47,34 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
     var hasChapter: Bool { !text.isEmpty }
 
     func load(book: Book, chapterTitle: String, text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        load(book: book, chapterTitle: chapterTitle, segments: [
+            SpeechSegment(text: trimmed, role: VoiceCatalog.narrator)
+        ])
+    }
+
+    /// 多角色朗读：每段可指定系统声线，段与段之间连续播，进度按整章字符数累计。
+    func load(book: Book, chapterTitle: String, segments: [SpeechSegment]) {
         stop()
         title = book.title
         self.chapterTitle = chapterTitle
-        self.text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        totalCharacters = max(self.text.count, 1)
+        let cleaned = segments
+            .map { SpeechSegment(text: $0.text.trimmingCharacters(in: .whitespacesAndNewlines),
+                                  role: $0.role, voiceIdentifier: $0.voiceIdentifier) }
+            .filter { !$0.text.isEmpty }
+        self.text = cleaned.map(\.text).joined(separator: "\n")
+        var cursor = 0
+        spokenSegments = cleaned.map { segment in
+            let item = SpokenSegment(
+                text: segment.text,
+                voice: VoiceCatalog.voice(identifier: segment.voiceIdentifier),
+                start: cursor
+            )
+            cursor += segment.text.count + 1 // 与 joined("\n") 的字符数对齐
+            return item
+        }
+        totalCharacters = max(cursor - 1, 1)
+        currentSegment = 0
         offset = 0
         progress = 0
         accumulated = 0
@@ -82,6 +116,7 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func stop() {
+        continueAfterFinish = false
         synthesizer.stopSpeaking(at: .immediate)
         isPlaying = false
         isPaused = false
@@ -144,15 +179,31 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     private func speak(from start: Int) {
-        let start = min(max(start, 0), max(text.count - 1, 0))
+        let start = min(max(start, 0), max(totalCharacters - 1, 0))
+        guard let index = spokenSegments.firstIndex(where: {
+                $0.start <= start && start < $0.start + $0.text.count
+              }) ?? spokenSegments.lastIndex(where: { $0.start <= start }) else {
+            finishAll()
+            return
+        }
+        let segment = spokenSegments[index]
+        let localStart = min(max(start - segment.start, 0), segment.text.count - 1)
+        let remaining = String(segment.text.dropFirst(localStart))
+        guard !remaining.isEmpty else {
+            if index + 1 < spokenSegments.count {
+                speak(from: spokenSegments[index + 1].start)
+            } else {
+                finishAll()
+            }
+            return
+        }
         offset = start
-        utteranceStart = start
-        let remaining = String(text.dropFirst(start))
-        guard !remaining.isEmpty else { return }
-
+        utteranceStart = segment.start
+        currentSegment = index
+        continueAfterFinish = true
         activateSession()
         let utterance = AVSpeechUtterance(string: remaining)
-        utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")
+        utterance.voice = segment.voice ?? AVSpeechSynthesisVoice(language: "zh-CN")
         utterance.rate = Float(min(max(0.5 * speed, 0.28), 0.92))
         utterance.pitchMultiplier = 0.96
         utterance.postUtteranceDelay = 0.08
@@ -161,6 +212,23 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
         startedAt = Date()
         synthesizer.speak(utterance)
         startTicker()
+        updateNowPlaying()
+    }
+
+    private func finishAll() {
+        continueAfterFinish = false
+        let duration = Double(totalCharacters) * 0.22 / speed
+        isPlaying = false
+        isPaused = false
+        progress = 1
+        offset = 0
+        accumulated = 0
+        startedAt = nil
+        ticker?.cancel()
+        ticker = nil
+        elapsedLabel = Self.label(duration)
+        remainingLabel = "-" + Self.label(0)
+        deactivateSession()
         updateNowPlaying()
     }
 
@@ -220,22 +288,14 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            // 念完后把计时与位置一起归零：否则 accumulated 会把上一轮时长
-            // 带进下一轮，进度条和时间标签一开播就顶到结尾。
-            // 界面停在「已念完」，用户再按播放即从头重听。
-            let duration = Double(self.totalCharacters) * 0.22 / self.speed
-            self.isPlaying = false
-            self.isPaused = false
-            self.progress = 1
-            self.offset = 0
-            self.accumulated = 0
-            self.startedAt = nil
-            self.ticker?.cancel()
-            self.ticker = nil
-            self.elapsedLabel = Self.label(duration)
-            self.remainingLabel = "-" + Self.label(0)
-            self.deactivateSession()
-            self.updateNowPlaying()
+            // 自然念完一段就接着念下一段（用各自的角色声线）；手动 stop 时
+            // continueAfterFinish 已被清掉，直接从最后一段收尾。
+            guard self.continueAfterFinish,
+                  self.spokenSegments.indices.contains(self.currentSegment + 1) else {
+                self.finishAll()
+                return
+            }
+            self.speak(from: self.spokenSegments[self.currentSegment + 1].start)
         }
     }
 
