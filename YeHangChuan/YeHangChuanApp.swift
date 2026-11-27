@@ -40,9 +40,13 @@ struct RootView: View {
                         .eyeCareFilter(store.eyeCare)
                 }
 
-                Tab("摘录", systemImage: "quote.opening", value: AppTab.excerpts) {
-                    ExcerptView()
-                        .eyeCareFilter(store.eyeCare)
+                // 摘录是低频入口：设置里可以关掉，关掉后这一格标签就不出现。
+                // 摘录数据本身不删，重新打开开关就能看到。
+                if store.showExcerptsTab {
+                    Tab("摘录", systemImage: "quote.opening", value: AppTab.excerpts) {
+                        ExcerptView()
+                            .eyeCareFilter(store.eyeCare)
+                    }
                 }
 
                 Tab("统计", systemImage: "chart.bar.xaxis", value: AppTab.stats) {
@@ -92,6 +96,11 @@ struct RootView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { store.flushSnapshot() }
+        }
+        // 关掉摘录标签时，如果用户当时正停在那一页，退回书架，
+        // 否则会留在一个已经不存在标签的页面上。
+        .onChange(of: store.showExcerptsTab) { _, visible in
+            if !visible && tab == .excerpts { tab = .shelf }
         }
         // 「用夜航船打开」/ 文件 App 里点开一个文件：直接把文件交给导入流程，
         // 不用再让用户从选择器里找一遍。

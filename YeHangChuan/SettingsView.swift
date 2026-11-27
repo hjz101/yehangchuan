@@ -73,6 +73,28 @@ struct SettingsView: View {
                                 }
                                 .buttonStyle(.plain)
 
+                                Toggle(isOn: Binding(
+                                    get: { store.showExcerptsTab },
+                                    set: { value in
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            store.showExcerptsTab = value
+                                        }
+                                        store.saveSnapshot()
+                                    }
+                                )) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("显示「摘录」标签")
+                                            .font(.system(size: 15))
+                                            .foregroundStyle(Palette.text)
+                                        Text("关掉后底部只留四个标签；摘录数据不会删除")
+                                            .font(.system(size: 10.5))
+                                            .foregroundStyle(Palette.tertiary)
+                                    }
+                                }
+                                .tint(Palette.accent)
+                                .padding(.horizontal, 15)
+                                .padding(.vertical, 10)
+
                                 Button {
                                     showEyeCare = true
                                 } label: {

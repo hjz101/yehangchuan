@@ -904,6 +904,10 @@ final class AppStore {
     var readRecords: [ReadRecord] = []
     var goalMinutes: Int = 60
     var appearance: AppAppearance = .dark
+    /// 底部标签栏是否显示「摘录」。
+    /// 摘录是低频入口，不是每个人都想要它占一格标签 —— 默认仍然显示，
+    /// 不擅自改变老用户已经习惯的布局。
+    var showExcerptsTab: Bool = true
     var player = AudioPlayer()
     var speech = SpeechPlayer()
     var backend = MockBackend()
@@ -1690,10 +1694,11 @@ final class AppStore {
         var groups: [String]
         var customChapters: [String: [Chapter]]
         var eyeCare: EyeCareSettings
+        var showExcerptsTab: Bool
 
         private enum CodingKeys: String, CodingKey {
             case books, sources, excerpts, settings, goalMinutes, appearance
-            case bookmarks, positions, groups, customChapters, eyeCare
+            case bookmarks, positions, groups, customChapters, eyeCare, showExcerptsTab
         }
 
         /// 逐分区兜底解码。整份快照是「用户书库的唯一副本」：
@@ -1712,6 +1717,7 @@ final class AppStore {
             groups = try c.decodeIfPresent([String].self, forKey: .groups) ?? []
             customChapters = try c.decodeIfPresent([String: [Chapter]].self, forKey: .customChapters) ?? [:]
             eyeCare = try c.decodeIfPresent(EyeCareSettings.self, forKey: .eyeCare) ?? EyeCareSettings()
+            showExcerptsTab = try c.decodeIfPresent(Bool.self, forKey: .showExcerptsTab) ?? true
         }
 
         init(
@@ -1725,7 +1731,8 @@ final class AppStore {
             positions: [String: ReadingPosition],
             groups: [String],
             customChapters: [String: [Chapter]],
-            eyeCare: EyeCareSettings
+            eyeCare: EyeCareSettings,
+            showExcerptsTab: Bool
         ) {
             self.books = books
             self.sources = sources
@@ -1738,6 +1745,7 @@ final class AppStore {
             self.groups = groups
             self.customChapters = customChapters
             self.eyeCare = eyeCare
+            self.showExcerptsTab = showExcerptsTab
         }
     }
 
@@ -1753,7 +1761,8 @@ final class AppStore {
             positions: positions,
             groups: groups,
             customChapters: customChapters,
-            eyeCare: eyeCare
+            eyeCare: eyeCare,
+            showExcerptsTab: showExcerptsTab
         )
     }
 
@@ -1922,6 +1931,7 @@ final class AppStore {
         goalMinutes = decode("goalMinutes", as: Int.self) ?? goalMinutes
         appearance = decode("appearance", as: AppAppearance.self) ?? appearance
         eyeCare = decode("eyeCare", as: EyeCareSettings.self) ?? eyeCare
+        showExcerptsTab = decode("showExcerptsTab", as: Bool.self) ?? showExcerptsTab
 
         if let readerSettings = decode("settings", as: ReaderSnapshot.self) {
             settings.apply(readerSettings)

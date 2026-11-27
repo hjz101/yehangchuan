@@ -18,6 +18,7 @@ struct LibrarySections: Encodable, Sendable {
     var positions: [String: ReadingPosition]
     var groups: [String]
     var eyeCare: EyeCareSettings
+    var showExcerptsTab: Bool
 
     init(_ snapshot: AppStore.Snapshot) {
         books = snapshot.books
@@ -30,6 +31,7 @@ struct LibrarySections: Encodable, Sendable {
         positions = snapshot.positions
         groups = snapshot.groups
         eyeCare = snapshot.eyeCare
+        showExcerptsTab = snapshot.showExcerptsTab
     }
 }
 
