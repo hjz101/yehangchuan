@@ -5,9 +5,12 @@ struct YeHangChuanApp: App {
     @State private var store = AppStore()
 
     init() {
+        #if DEBUG
         // 内置离线示例书源：引擎与规则都是真的，内容由本机提供，
         // 让没有网络时也能完整验证搜索 → 目录 → 正文。
+        // 仅 Debug 构建安装；分发包不注册 yhdemo 协议，也不激活任何示例内容。
         BuiltinDemoContent.install()
+        #endif
     }
 
     var body: some Scene {

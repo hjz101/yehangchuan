@@ -3,6 +3,9 @@ import LegadoCore
 
 /// 给 `BuiltinDemoSource` 提供本机内容，让示例书源在没有网络时也能走完
 /// 搜索 → 详情 → 目录 → 正文。内容取自 App 自带的演示数据，不发真实请求。
+/// 仅 Debug 构建编译；分发包不含离线示例内容与 `yhdemo://` 协议。
+#if DEBUG
+
 enum BuiltinDemoContent {
     static func install() {
         BuiltinDemoSource.register()
@@ -65,3 +68,5 @@ enum BuiltinDemoContent {
         return try? JSONSerialization.data(withJSONObject: object, options: [.fragmentsAllowed])
     }
 }
+
+#endif

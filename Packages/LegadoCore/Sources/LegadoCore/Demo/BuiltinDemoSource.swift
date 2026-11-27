@@ -1,5 +1,9 @@
 import Foundation
 
+// 离线示例书源与 `yhdemo://` 协议只在 Debug 构建里编译。分发包不注册
+// 该协议、也不含示例书源规则字符串；测试在 Debug 配置下照常可见。
+#if DEBUG
+
 /// 开箱即用的离线示例书源。
 ///
 /// 书源引擎、规则解析和分页都是真的，但外部站点不可控、也无法在离线环境验证。
@@ -100,3 +104,5 @@ final class BuiltinDemoURLProtocol: URLProtocol {
 
     override func stopLoading() {}
 }
+
+#endif

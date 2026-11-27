@@ -896,10 +896,17 @@ enum SpeedLabel {
 @MainActor
 @Observable
 final class AppStore {
+    #if DEBUG
     var books: [Book] = MockData.books
     var sources: [BookSource] = MockData.sources
-    var settings = ReaderSettings()
     var excerpts: [Excerpt] = MockData.excerpts
+    #else
+    // 分发包从零开始：不预装演示书、示例书源与假摘录。
+    var books: [Book] = []
+    var sources: [BookSource] = []
+    var excerpts: [Excerpt] = []
+    #endif
+    var settings = ReaderSettings()
     /// 真实阅读记录。统计页的每一项都从它派生，不再是写死的演示数组。
     var readRecords: [ReadRecord] = []
     var goalMinutes: Int = 60
@@ -1274,7 +1281,13 @@ final class AppStore {
 
     func chapters(for book: Book) -> [Chapter] {
         if let custom = customChapters[book.id], !custom.isEmpty { return custom }
+        #if DEBUG
         return MockData.chapters(for: book)
+        #else
+        // 分发包不提供演示正文；没有真实章节就如实返回空，由阅读页给出
+        // 「无正文」出口，绝不静默塞一段假内容。
+        return []
+        #endif
     }
 
     // MARK: 在线书源
@@ -2025,16 +2038,20 @@ final class AppStore {
         groups = snapshot.groups
         customChapters = snapshot.customChapters
         eyeCare = snapshot.eyeCare
+        #if DEBUG
         ensureBuiltinDemoSource()
+        #endif
         syncPrivateAllowList()
     }
 
     /// 老快照里只有两条没有解析规则的书源，搜不到书。补一条完整规则的
-    /// 离线示例源即可，不动用户自己已有的源。
+    /// 离线示例源即可，不动用户自己已有的源。仅 Debug 构建启用。
+    #if DEBUG
     private func ensureBuiltinDemoSource() {
         guard !sources.contains(where: { $0.id == "source-offline-demo" }) else { return }
         sources.append(contentsOf: MockData.sources)
     }
+    #endif
 
     // MARK: Backup
 

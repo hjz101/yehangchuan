@@ -1,6 +1,11 @@
 import Foundation
 import LegadoCore
 
+// 演示数据只在 Debug 构建里编译：分发包不应把假书、示例书源规则、
+// 假正文与假摘录的字符串带进二进制。Release 分支提供同名的空实现，
+// 让引用这些成员的 UI 代码照常编译（这些入口在 Release 下不会激活）。
+#if DEBUG
+
 enum MockData {
     // MARK: Books
 
@@ -434,6 +439,24 @@ enum MockData {
         )
     ]
 }
+
+#else
+
+// MARK: - Release 空实现（不含任何示例内容）
+
+enum MockData {
+    static let books: [Book] = []
+    static let sources: [BookSource] = []
+    static let searchResults: [Book] = []
+    static let excerpts: [Excerpt] = []
+    static var dayStats: [DayStat] { [] }
+    static func chapters(for book: Book) -> [Chapter] { [] }
+    static func audioScript(for book: Book) -> String { "" }
+    static let nightBoatChapters: [Chapter] = []
+    static let genericChapters: [Chapter] = []
+}
+
+#endif
 
 extension ISO8601DateFormatter {
     static let dayFormatter: DateFormatter = {
