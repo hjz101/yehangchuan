@@ -35,7 +35,13 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<true/>
 		<key>UISceneConfigurations</key>
-		<dict/>
+		<dict>
+			<key>CPTemplateApplicationSceneSessionRoleApplication</key>
+			<dict>
+				<key>UISceneDelegateClassName</key>
+				<string>$(PRODUCT_MODULE_NAME).CarPlaySceneDelegate</string>
+			</dict>
+		</dict>
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>

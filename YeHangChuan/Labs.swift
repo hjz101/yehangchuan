@@ -1099,7 +1099,7 @@ struct VoiceLabSheet: View {
     @State private var speed = 1.0
     @State private var background = true
     @State private var lockScreen = true
-    @State private var carPlay = true
+    @State private var carPlay = CarPlaySupport.enabled
     @State private var cache = true
     @State private var preferences = SpeechRolePreferences.load()
 
@@ -1264,7 +1264,8 @@ struct VoiceLabSheet: View {
             VStack(alignment: .leading, spacing: 10) {
                 Toggle("后台播放", isOn: $background)
                 Toggle("锁屏播放信息", isOn: $lockScreen)
-                Toggle("CarPlay 模拟", isOn: $carPlay)
+                Toggle("CarPlay", isOn: $carPlay)
+                    .onChange(of: carPlay) { _, newValue in CarPlaySupport.enabled = newValue }
                 Toggle("音频缓存", isOn: $cache)
             }
             .font(.system(size: 12.5))
@@ -1275,7 +1276,7 @@ struct VoiceLabSheet: View {
     }
 
     private var boundaryNote: some View {
-        Text("系统语音真实发声，各角色切换系统已安装的真实声线，映射保存在本机；对话切分基于引号的启发式规则，不是语义分析。后台与 CarPlay 见下方配置。")
+        Text("系统语音真实发声，各角色切换系统已安装的真实声线，映射保存在本机；对话切分基于引号的启发式规则，不是语义分析。CarPlay 开关控制真实场景是否挂载；车机显示依赖设备已配对且工程开启 CarPlay capability。")
             .font(.system(size: 10))
             .foregroundStyle(Palette.tertiary)
     }

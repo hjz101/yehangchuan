@@ -71,7 +71,10 @@ struct RootView: View {
                 AudioPlayerView(book: book)
             }
         }
-        .onAppear(perform: handleLaunchArguments)
+        .onAppear {
+            CarPlaySupport.store = store
+            handleLaunchArguments()
+        }
         .onChange(of: store.settings.snapshot) { _, _ in store.saveSnapshot() }
         .onChange(of: store.eyeCare) { _, _ in store.saveSnapshot() }
         .onChange(of: store.appearance) { _, _ in store.saveSnapshot() }
