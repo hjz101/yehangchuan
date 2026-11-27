@@ -220,8 +220,9 @@ struct AIStudioSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var provider = "自定义兼容服务"
+    @State private var endpoint = "https://api.openai.com/v1"
     @State private var model = "demo-model"
-    @State private var key = ""
+    @State private var key = CredentialSettings.shared.keychain.read("ai:default") ?? ""
     @State private var showKey = false
     @State private var summary = ""
     @State private var coverIdeas: [AICoverIdea] = []
@@ -233,6 +234,34 @@ struct AIStudioSheet: View {
         let id = UUID()
         let name: String
         let colors: (Color, Color)
+    }
+
+    private static let coverPalette: [(Color, Color)] = [
+        (Color(hex: 0x8C4A32), Color(hex: 0x2A1711)),
+        (Color(hex: 0x4F7890), Color(hex: 0x132430)),
+        (Color(hex: 0x3D5663), Color(hex: 0xE0CEAA)),
+        (Color(hex: 0x6A5B86), Color(hex: 0x1C1830))
+    ]
+
+    private var configuration: AIConfiguration {
+        AIConfiguration(
+            baseURL: URL(string: endpoint.trimmingCharacters(in: .whitespaces)) ?? URL(string: "https://api.invalid")!,
+            apiKey: key.trimmingCharacters(in: .whitespaces),
+            model: model.trimmingCharacters(in: .whitespaces)
+        )
+    }
+
+    /// 只上传当前书正文的前 4000 字，避免把整库塞给第三方服务。
+    private var sourceExcerpt: String {
+        guard let book = store.books.first else {
+            return "夜航船靠岸时，雾还没有散。"
+        }
+        let text = store.chapters(for: book).flatMap(\.paragraphs).map(\.text).joined(separator: "\n")
+        return String(text.prefix(4000)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func persistKey() {
+        CredentialSettings.shared.keychain.write("ai:default", key)
     }
 
     var body: some View {
@@ -274,13 +303,34 @@ struct AIStudioSheet: View {
 
     private var configCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeading(text: "服务配置", trailing: "Key 仅本机")
+            SectionHeading(text: "服务配置", trailing: "Key 存入 Keychain")
 
             GlassSegmented(
                 items: ["自定义兼容服务", "本地服务"],
                 title: { $0 },
                 selection: $provider
             )
+            .onChange(of: provider) { _, newValue in
+                endpoint = newValue == "本地服务"
+                    ? "http://127.0.0.1:11434/v1"
+                    : "https://api.openai.com/v1"
+            }
+
+            TextField("兼容服务地址（含 /v1）", text: $endpoint)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .glassSurface(cornerRadius: 14)
+
+            if provider == "本地服务" {
+                Button("放行本机地址（仅本次会话）") {
+                    PrivateHostAllowList.shared.update(["127.0.0.1", "localhost"])
+                    message = "已放行本机地址；私网其他地址仍需单独放行"
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.jade)
+            }
 
             HStack(spacing: 9) {
                 TextField("模型", text: $model)
@@ -303,13 +353,14 @@ struct AIStudioSheet: View {
 
             Group {
                 if showKey {
-                    TextField("API Key（占位，不写入 Keychain）", text: $key)
+                    TextField("API Key（写入系统 Keychain）", text: $key)
                 } else {
-                    SecureField("API Key（占位，不写入 Keychain）", text: $key)
+                    SecureField("API Key（写入系统 Keychain）", text: $key)
                 }
             }
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
+            .onChange(of: key) { _, _ in persistKey() }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .glassSurface(cornerRadius: 14)
@@ -320,7 +371,7 @@ struct AIStudioSheet: View {
 
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeading(text: "AI 摘要", trailing: "本地模拟")
+            SectionHeading(text: "AI 摘要", trailing: "真实请求")
 
             if summary.isEmpty {
                 Text("选择一个片段，生成 3 句话的阅读摘要与人物关系提示。")
@@ -340,15 +391,7 @@ struct AIStudioSheet: View {
             }
 
             Button {
-                isBusy = true
-                Task { @MainActor in
-                    let response = await store.backend.testAI(provider: provider, model: model)
-                    summary = response.ok
-                        ? "《夜航船》以一夜水路串起三个陌生人的片段。主人公在灯下读书，也在读同船人的沉默。抵达不是终点，书与夜航仍在继续。"
-                        : "服务不可用：模拟网络离线。"
-                    message = response.ok ? "摘要已生成" : "连接失败"
-                    isBusy = false
-                }
+                Task { @MainActor in await generateSummary() }
             } label: {
                 actionLabel("生成摘要", symbol: "sparkles", tint: Palette.accentSolid)
             }
@@ -384,11 +427,7 @@ struct AIStudioSheet: View {
             }
 
             Button {
-                coverIdeas = [
-                    AICoverIdea(name: "暮色船坞", colors: (Color(hex: 0x8C4A32), Color(hex: 0x2A1711))),
-                    AICoverIdea(name: "雾蓝水面", colors: (Color(hex: 0x4F7890), Color(hex: 0x132430))),
-                    AICoverIdea(name: "旧纸靛蓝", colors: (Color(hex: 0x3D5663), Color(hex: 0xE0CEAA)))
-                ]
+                Task { @MainActor in await generateCovers() }
             } label: {
                 actionLabel("生成封面", symbol: "photo.on.rectangle", tint: Palette.jade)
             }
@@ -424,9 +463,53 @@ struct AIStudioSheet: View {
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(Palette.jade)
             }
-            Text("演示边界：不发起真实 AI 请求，不保存真实 Key，不读取正文上传。正式版 Key 需要存入 Keychain，并由用户自付服务费用。")
+            Text("摘要与封面会向自配的兼容服务发起真实 HTTP 请求，并只上传当前书正文前 4000 字；Key 存系统 Keychain、费用自付。私网地址默认被拦截，需显式放行。试听仍用系统语音，不调用 AI TTS。")
                 .font(.system(size: 10))
                 .foregroundStyle(Palette.tertiary)
+        }
+    }
+
+    private func generateSummary() async {
+        guard !key.trimmingCharacters(in: .whitespaces).isEmpty else {
+            message = "请先填写 API Key"
+            return
+        }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let prompt = "请用三句话概括下面这段小说的情节与人物关系，只输出概括正文：\n\(sourceExcerpt)"
+            summary = try await AIService().chat(prompt, configuration: configuration)
+            message = "摘要由 \(configuration.model) 真实生成"
+        } catch {
+            message = "请求失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func generateCovers() async {
+        guard !key.trimmingCharacters(in: .whitespaces).isEmpty else {
+            message = "请先填写 API Key"
+            return
+        }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let title = store.books.first?.title ?? "夜航船"
+            let prompt = "为小说《\(title)》给出三个竖版封面方案名称，每行一个，不要编号与解释：\n\(sourceExcerpt)"
+            let text = try await AIService().chat(prompt, configuration: configuration)
+            let names = text.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "-·•1234567890. ")) }
+                .filter { !$0.isEmpty }
+                .prefix(3)
+            guard !names.isEmpty else {
+                message = "服务没有返回可用的封面方案"
+                return
+            }
+            coverIdeas = names.enumerated().map { index, name in
+                AICoverIdea(name: String(name), colors: Self.coverPalette[index % Self.coverPalette.count])
+            }
+            message = "封面方案由 \(configuration.model) 真实生成"
+        } catch {
+            message = "请求失败：\(error.localizedDescription)"
         }
     }
 
