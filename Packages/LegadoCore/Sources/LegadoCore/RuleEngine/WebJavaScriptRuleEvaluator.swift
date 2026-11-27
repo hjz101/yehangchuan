@@ -70,26 +70,83 @@ public final class WebJavaScriptRuleEvaluator: NSObject, WKScriptMessageHandler 
             throw RuleEngineError.resourceLimit(rule: "webjs", detail: "WKWebView 脚本超过 64 KB")
         }
         try await documentReady?.value
-        let inputJSON = Self.jsonLiteral(result.foundationObject)
-        try await webView.evaluateJavaScript("window.__legadoInput = \(inputJSON); window.result = window.__legadoInput;")
-        let program = "(async function(){ const result = window.__legadoInput; return await (\(script)); })()"
-        let value = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<JSONValue, Error>) in
-            pending["main"] = continuation
-            webView.evaluateJavaScript(program) { [weak self] value, error in
-                guard let self else { return }
-                self.resolve("main", value: value, error: error)
-            }
-            timeoutTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(Self.timeoutSeconds * 1_000_000_000))
-                self?.resolve("main", value: nil, error: WebJavaScriptError.timeout)
-            }
-        }
-        let bridged = value
-        let text = bridged.stringValue
+        let value = try await run(script: script, result: result.foundationObject)
+        let text = value.stringValue
         guard text.utf8.count <= 2 * 1_024 * 1_024 else {
             throw RuleEngineError.resourceLimit(rule: "webjs", detail: "WKWebView 脚本结果超过 2 MB")
         }
-        return JavaScriptRuleResult(value: bridged, variables: executionContext.variables, rssArticle: executionContext.rssArticle)
+        return JavaScriptRuleResult(value: value, variables: executionContext.variables, rssArticle: executionContext.rssArticle)
+    }
+
+    /// 在页面里执行一段 `<webjs>`，返回它 `return` 出来的值。
+    ///
+    /// 必须用 `callAsyncJavaScript`，不能用 `evaluateJavaScript`：
+    /// - `evaluateJavaScript` 只认同步结果。脚本返回 Promise（任何 `await`
+    ///   都会变成 Promise）时，WebKit 报的是「返回结果的类型不受支持」，
+    ///   等于每个真正的 webjs 规则都失败；
+    /// - `callAsyncJavaScript` 会支持 `await`、能直接接收参数、也能拿到
+    ///   `document`/`window`，正好对上 `<webjs>` 的语义。
+    ///
+    /// `result` 以参数形式传入，不再拼进脚本文本，省掉一整轮转义。
+    private func run(script: String, result: Any) async throws -> JSONValue {
+        // 尾部分号在书源里很常见（`<webjs>document.body.innerText;</webjs>`），
+        // 直接塞进 `return await (…)` 会变成语法错误，先摘掉。
+        var expression = script.trimmingCharacters(in: .whitespacesAndNewlines)
+        while expression.hasSuffix(";") {
+            expression.removeLast()
+            expression = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if !expression.isEmpty {
+            let wrapped = "window.result = result; return await (\(expression));"
+            do {
+                return try await call(body: wrapped, arguments: ["result": result])
+            } catch let error as WebJavaScriptError {
+                throw error
+            } catch {
+                // 只有「自带顶层 return 的整段函数体」才值得再试一次；
+                // 其它语法错误原样抛出，别把真正的原因盖掉。
+                guard expression.range(of: #"\breturn\b"#, options: .regularExpression) != nil else { throw error }
+            }
+        }
+        return try await call(body: "window.result = result; \(script)", arguments: ["result": result])
+    }
+
+    private func call(body: String, arguments: [String: Any]) async throws -> JSONValue {
+        // 桥接的 Promise 可能永远不落地（远端不响应），所以这里必须有自己的
+        // 上限，不能无限等 `callAsyncJavaScript`。两类结果都交给 `resolve`，
+        // 由它对 `pending` 做一次性的取走，先到的那个说了算。
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<JSONValue, Error>) in
+            pending["main"] = continuation
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let value = try await self.webView.callAsyncJavaScript(
+                        body, arguments: arguments, in: nil, contentWorld: .page
+                    )
+                    self.resolve("main", value: value, error: nil)
+                } catch {
+                    self.resolve("main", value: nil, error: error)
+                }
+            }
+            timeoutTask = Task { [weak self] in
+                // 被取消时 `Task.sleep` 会立刻抛错。必须在这里退出，
+                // 否则会顺着往下走，把「上一次尝试」的超时记到下一次的头上。
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(Self.timeoutSeconds * 1_000_000_000))
+                } catch {
+                    return
+                }
+                self?.resolve("main", value: nil, error: WebJavaScriptError.timeout)
+            }
+        }
+    }
+
+    private func resolve(_ id: String, value: Any?, error: Error?) {
+        guard let continuation = pending.removeValue(forKey: id) else { return }
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        if let error { continuation.resume(throwing: error) }
+        else { continuation.resume(returning: JSONValue.bridge(value)) }
     }
 
     // MARK: - 沙箱页面
@@ -227,16 +284,14 @@ public final class WebJavaScriptRuleEvaluator: NSObject, WKScriptMessageHandler 
         webView.evaluateJavaScript("window.__legadoResolve(\(Self.jsonLiteral(id)), \(ok), \(literal));")
     }
 
-    private func resolve(_ id: String, value: Any?, error: Error?) {
-        guard let continuation = pending.removeValue(forKey: id) else { return }
-        timeoutTask?.cancel()
-        timeoutTask = nil
-        if let error { continuation.resume(throwing: error) }
-        else { continuation.resume(returning: JSONValue.bridge(value)) }
-    }
-
+    /// 把值写成可以拼进脚本的 JS 字面量。
+    ///
+    /// 这里**不能**用 `JSONSerialization.data(withJSONObject:)`：它对顶层片段
+    /// （字符串、数字、null）抛的是 ObjC 异常，`try?` 拦不住，进程直接 abort。
+    /// 而 `<webjs>` 的输入几乎总是正文 HTML 这种**字符串**，第一句赋值就会踩中。
+    /// 走 `JSONValue` + `JSONEncoder` 就没有这个限制，JSON 又能直接当 JS 字面量用。
     private static func jsonLiteral(_ value: Any) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: value),
+        guard let data = try? JSONEncoder().encode(JSONValue.bridge(value)),
               let text = String(data: data, encoding: .utf8) else { return "null" }
         return text
     }

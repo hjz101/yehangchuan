@@ -395,28 +395,53 @@ public final class WebViewSourcePageExecutor: NSObject, SourceWebViewRequestExec
         guard script.utf8.count <= 64 * 1_024 else {
             throw RuleEngineError.resourceLimit(rule: "webJs", detail: "WebView 注入脚本超过 64 KB")
         }
-        let body = """
-        const result = html;
-        return await (\(script));
-        """
+        // 书源的 webJs 写法有两种：单个表达式（`document.body.innerText`），
+        // 和自带顶层 `return` 的整段函数体。前者要包一层 `return await (…)`，
+        // 后者原样跑；尾部分号在两种写法里都常见，包进括号前必须摘掉，
+        // 否则是语法错误。
+        var expression = script.trimmingCharacters(in: .whitespacesAndNewlines)
+        while expression.hasSuffix(";") {
+            expression.removeLast()
+            expression = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let attempts = expression.isEmpty
+            ? []
+            : ["return await (\(expression));"]
         do {
-            let value = try await webView.callAsyncJavaScript(
-                body,
-                arguments: ["html": html],
-                in: nil,
-                contentWorld: .page
+            return try await executeScript(
+                attempts.first ?? script,
+                html: html,
+                webView: webView
             )
-            let text = (value as? String) ?? ""
-            guard text.utf8.count <= Self.maximumScriptResultBytes else {
-                throw RuleEngineError.resourceLimit(rule: "webJs", detail: "WebView 脚本结果超过 2 MB")
-            }
-            // 脚本只是观察到没有可交回的东西时，页面本身就是结果。
-            return text.isEmpty ? html : text
         } catch let error as RuleEngineError {
             throw error
         } catch {
-            throw WebViewPageError.scriptFailed(error.localizedDescription)
+            guard expression.range(of: #"\breturn\b"#, options: .regularExpression) != nil else {
+                throw WebViewPageError.scriptFailed(error.localizedDescription)
+            }
+            do {
+                return try await executeScript(script, html: html, webView: webView)
+            } catch let inner as RuleEngineError {
+                throw inner
+            } catch {
+                throw WebViewPageError.scriptFailed(error.localizedDescription)
+            }
         }
+    }
+
+    private func executeScript(_ body: String, html: String, webView: WKWebView) async throws -> String {
+        let value = try await webView.callAsyncJavaScript(
+            "const result = html;\n\(body)",
+            arguments: ["html": html],
+            in: nil,
+            contentWorld: .page
+        )
+        let text = (value as? String) ?? ""
+        guard text.utf8.count <= Self.maximumScriptResultBytes else {
+            throw RuleEngineError.resourceLimit(rule: "webJs", detail: "WebView 脚本结果超过 2 MB")
+        }
+        // 脚本只是观察到没有可交回的东西时，页面本身就是结果。
+        return text.isEmpty ? html : text
     }
 
     // MARK: - 私网子资源拦截
