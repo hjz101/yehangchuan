@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
 import CoreFoundation
+import AVFoundation
 import LegadoCore
 
 // MARK: - Import
@@ -336,12 +337,40 @@ struct SmartImportSheet: View {
                 message = "EPUB 解析失败：\(error.localizedDescription)"
             }
         } else if ["mp3", "m4a", "m4b"].contains(ext) {
+            // 文件选择权限是一次性的，真要长期播放必须复制进自己的沙箱。
+            var storedName: String?
+            var realDuration: String?
+            if let base = LibraryStore.shared.directory {
+                let folder = base.appendingPathComponent("AudioBooks", isDirectory: true)
+                let fileName = "\(UUID().uuidString).\(ext)"
+                let target = folder.appendingPathComponent(fileName)
+                do {
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    try FileManager.default.copyItem(at: url, to: target)
+                    storedName = fileName
+                    let seconds = CMTimeGetSeconds(AVAsset(url: target).duration)
+                    if seconds.isFinite, seconds > 0 { realDuration = AudioPlayer.label(seconds) }
+                } catch {
+                    storedName = nil
+                }
+            }
+            let chapters = storedName == nil
+                ? Self.demoChapters(title: name, count: 2)
+                : [Chapter(
+                    id: "\(name)-audio",
+                    title: "完整音频",
+                    paragraphs: [Paragraph(id: "\(name)-audio-note", text: "本机音频文件，请用播放器收听。")]
+                )]
             draft = ImportDraft(
                 title: name,
-                author: "本地音频",
+                author: storedName == nil ? "本地音频" : "本机音频文件",
                 kind: .audio,
-                detail: "\(ext.uppercased()) · 未解析音频内容，使用演示音轨",
-                chapters: Self.demoChapters(title: name, count: 2)
+                detail: storedName == nil
+                    ? "\(ext.uppercased()) · 未能保存文件，使用演示音轨"
+                    : "\(ext.uppercased()) · 真实音频 · \(realDuration ?? "时长待读取")",
+                chapters: chapters,
+                audioFileName: storedName,
+                durationLabel: realDuration
             )
         } else {
             let kind: BookKind = ext == "zip" || ext == "cbz" ? .comic : .novel

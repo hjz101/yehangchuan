@@ -1,5 +1,7 @@
 import SwiftUI
 import Observation
+import AVFoundation
+import MediaPlayer
 import LegadoCore
 import YeHangCore
 
@@ -48,6 +50,9 @@ struct Book: Identifiable, Hashable, Codable, Sendable {
     /// 这两个字段是重新进入阅读页后还能继续拉正文的前提，所以必须持久化。
     var networkBookURL: String? = nil
     var networkTocURL: String? = nil
+    /// 本地音频文件名（相对 LibraryStore 的 AudioBooks 目录）。
+    /// Optional 且有默认值，旧快照缺这个键时合成解码会容错为 nil。
+    var audioFileName: String? = nil
 
     var unitLabel: String { kind == .comic ? "话" : "章" }
 
@@ -595,6 +600,10 @@ struct ImportDraft: Identifiable {
     var kind: BookKind
     var detail: String
     var chapters: [Chapter]
+    /// 音频导入时复制进沙箱的文件名；非音频书为 nil。
+    var audioFileName: String? = nil
+    /// 从音频文件读到的真实时长文案；读不到时为 nil。
+    var durationLabel: String? = nil
 }
 
 // MARK: - Stats
@@ -622,7 +631,6 @@ final class AudioPlayer {
     var isPlaying = false
     var elapsed: Double = 0
     var duration: Double = 340
-    var speed: Double = 1
     var showFullPlayer = false
     /// 有声书的章节列表。书架只传书时为空，播放器会显式补上。
     var chapters: [Chapter] = []
@@ -632,6 +640,18 @@ final class AudioPlayer {
 
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var sleepTask: Task<Void, Never>?
+    @ObservationIgnored private var avPlayer: AVPlayer?
+    @ObservationIgnored private var timeObserver: Any?
+    @ObservationIgnored private var endObserver: NSObjectProtocol?
+
+    /// 有真实音频文件时走 AVPlayer，否则是演示计时器。
+    var usesRealAudio: Bool { avPlayer != nil }
+    var speed: Double = 1 {
+        didSet {
+            if let avPlayer, isPlaying { avPlayer.rate = Float(speed) }
+            updateNowPlaying()
+        }
+    }
 
     var currentChapter: Chapter? {
         chapters.indices.contains(chapterIndex) ? chapters[chapterIndex] : nil
@@ -651,23 +671,37 @@ final class AudioPlayer {
             if autoplay && !isPlaying { resume() }
             return
         }
+        teardownRealAudio()
+        sleepTask?.cancel()
+        sleepMinutes = 0
         self.book = book
         self.chapters = chapters
         chapterIndex = 0
+
+        if let file = Self.audioFileURL(for: book) {
+            setupRealAudio(url: file, autoplay: autoplay)
+            return
+        }
         duration = chapters.first.map(Self.chapterDuration) ?? (Self.seconds(book.duration) ?? 340)
         elapsed = min(duration * 0.22, max(duration - 8, 0))
         isPlaying = autoplay
         if autoplay { startTicking() } else { ticker?.cancel() }
+        updateNowPlaying()
     }
 
-    /// 切到指定章节。演示音轨没有真实音频文件，时长按正文体量估算，
-    /// 但「当前章 / 进度 / 计时」的状态切换是真实的。
+    /// 切到指定章节。真实音频是单文件，按章节数均分到对应时间点；
+    /// 演示音轨则按正文体量估算时长并从零开始。
     func selectChapter(_ index: Int) {
         guard chapters.indices.contains(index) else { return }
         chapterIndex = index
+        if usesRealAudio {
+            seek(to: duration * Double(index) / Double(max(chapters.count, 1)))
+            return
+        }
         duration = Self.chapterDuration(chapters[index])
         elapsed = 0
         if isPlaying { startTicking() }
+        updateNowPlaying()
     }
 
     func setSleepTimer(_ minutes: Int) {
@@ -698,30 +732,111 @@ final class AudioPlayer {
     func resume() {
         guard book != nil else { return }
         isPlaying = true
-        startTicking()
+        if let avPlayer {
+            avPlayer.rate = Float(speed)
+        } else {
+            startTicking()
+        }
+        updateNowPlaying()
     }
 
     func pause() {
         isPlaying = false
+        avPlayer?.pause()
         ticker?.cancel()
+        updateNowPlaying()
     }
 
     func seek(to value: Double) {
-        elapsed = min(max(value, 0), duration)
+        let target = min(max(value, 0), duration)
+        elapsed = target
+        if let avPlayer {
+            avPlayer.seek(to: CMTime(value: Int64(target * 1_000), timescale: 1_000))
+        }
+        updateNowPlaying()
     }
 
     func skip(_ seconds: Double) {
-        elapsed = min(max(elapsed + seconds, 0), duration)
+        seek(to: elapsed + seconds)
     }
 
     func stop() {
         pause()
+        teardownRealAudio()
         sleepTask?.cancel()
         sleepMinutes = 0
         book = nil
         chapters = []
         chapterIndex = 0
         elapsed = 0
+        updateNowPlaying()
+    }
+
+    // MARK: Real audio
+
+    private static func audioFileURL(for book: Book) -> URL? {
+        guard let name = book.audioFileName,
+              let base = LibraryStore.shared.directory else { return nil }
+        let url = base.appendingPathComponent("AudioBooks", isDirectory: true)
+            .appendingPathComponent(name)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    private func setupRealAudio(url: URL, autoplay: Bool) {
+        let player = AVPlayer(url: url)
+        avPlayer = player
+        let seconds = CMTimeGetSeconds(player.currentItem?.duration ?? .zero)
+        duration = seconds.isFinite && seconds > 0 ? seconds : (Self.seconds(book?.duration) ?? 340)
+        elapsed = 0
+        let interval = CMTime(value: 1, timescale: 4)
+        timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            let value = CMTimeGetSeconds(time)
+            Task { @MainActor in
+                guard let self, self.avPlayer === player else { return }
+                self.elapsed = value
+                self.updateNowPlaying()
+            }
+        }
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: player.currentItem,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.isPlaying = false
+                self.elapsed = 0
+                self.updateNowPlaying()
+            }
+        }
+        isPlaying = autoplay
+        player.rate = autoplay ? Float(speed) : 0
+        updateNowPlaying()
+    }
+
+    private func teardownRealAudio() {
+        if let timeObserver, let avPlayer { avPlayer.removeTimeObserver(timeObserver) }
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        avPlayer?.pause()
+        avPlayer = nil
+        timeObserver = nil
+        endObserver = nil
+    }
+
+    private func updateNowPlaying() {
+        let center = MPNowPlayingInfoCenter.default()
+        // 不主动清空：听书（SpeechPlayer）也在写同一块 NowPlayingInfo，
+        // 这里清空会把正在朗读的锁屏信息抹掉。
+        guard let book, duration > 0 else { return }
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: currentChapter?.title ?? book.title,
+            MPMediaItemPropertyArtist: book.author,
+            MPMediaItemPropertyMediaType: MPMediaType.audioBook.rawValue,
+            MPMediaItemPropertyPlaybackDuration: duration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? Double(speed) : 0
+        ]
+        center.nowPlayingInfo = info
     }
 
     private func startTicking() {
@@ -1235,10 +1350,11 @@ final class AppStore {
             progress: 0,
             lastPosition: "未开始",
             pageCount: draft.kind == .comic ? max(draft.chapters.count * 8, 20) : nil,
-            duration: draft.kind == .audio ? "12:30" : nil,
+            duration: draft.kind == .audio ? (draft.durationLabel ?? "12:30") : nil,
             isFinished: false,
             group: groups.first,
-            sourceID: "local"
+            sourceID: "local",
+            audioFileName: draft.audioFileName
         )
         customChapters[book.id] = draft.chapters
         books.insert(book, at: 0)
