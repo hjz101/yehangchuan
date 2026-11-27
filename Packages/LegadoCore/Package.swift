@@ -33,6 +33,7 @@ let package = Package(
             ],
             linkerSettings: [
                 .linkedFramework("JavaScriptCore"),
+                .linkedFramework("WebKit"),
                 .linkedFramework("CryptoKit"),
                 .linkedLibrary("sqlite3")
             ]

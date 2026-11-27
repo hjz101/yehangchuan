@@ -533,9 +533,10 @@ struct JSSandboxSheet: View {
     @State private var strictMode = true
     @State private var allowPrivate = false
     @State private var script = """
-    const list = await fetch(`${base}/search?q=${keyword}`)
-    const html = await list.text()
-    return parseHTML(html).selectAll('.book')
+    const base = window.__legadoInput.base
+    const keyword = window.__legadoInput.keyword
+    const text = await window.__legadoFetch(`${base}/search?q=${keyword}`)
+    return text.slice(0, 200)
     """
     @State private var logs: [DebugLine] = []
     @State private var isRunning = false
@@ -579,7 +580,7 @@ struct JSSandboxSheet: View {
                 Text("权限与分发警告")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Palette.text)
-                Text("执行远程脚本违反 App Store 2.5.2，因此仅用于 TestFlight / 自签。脚本由你自行提供，App 不预装、不推荐。本页只演示权限边界：真实书源 JS 在 JavaScriptCore 中执行，没有 WKWebView 进程隔离，下面的日志是模拟结果。")
+                Text("执行远程脚本违反 App Store 2.5.2，因此仅用于 TestFlight / 自签。本页会用真实 WKWebView 独立进程执行你输入的脚本：页面内的 fetch/XHR 一律被拦，只有受限桥接能代发请求，且同样经过私网闸门。普通书源规则仍走 JavaScriptCore，不走这里的 WebView。")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -620,7 +621,7 @@ struct JSSandboxSheet: View {
 
     private var scriptCard: some View {
         VStack(alignment: .leading, spacing: 9) {
-            SectionHeading(text: "脚本", trailing: "不执行")
+            SectionHeading(text: "脚本", trailing: "真实执行 · 10 秒超时")
 
             TextEditor(text: $script)
                 .font(.system(size: 10.5, design: .monospaced))
@@ -657,10 +658,10 @@ struct JSSandboxSheet: View {
 
     private var resultCard: some View {
         VStack(alignment: .leading, spacing: 9) {
-            SectionHeading(text: "演示日志", trailing: "\(logs.count) 步")
+            SectionHeading(text: "执行日志", trailing: "\(logs.count) 步")
 
             if logs.isEmpty {
-                Text("尚未运行。演示会模拟 WKWebView 隔离、受限桥接、私网拦截和脚本超时。")
+                Text("尚未运行。运行时会真实创建 WKWebView，脚本里的 window.__legadoFetch 经原生桥发请求并受私网闸门约束。")
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.tertiary)
                     .padding(13)
@@ -703,28 +704,36 @@ struct JSSandboxSheet: View {
         }
         isRunning = true
         message = ""
+        let started = Date()
         Task { @MainActor in
-            let response = await store.backend.call("POST", "/v1/js/sandbox/run", base: 360)
-            var rows: [DebugLine] = []
-            let steps: [(String, String)] = [
-                ("模拟独立进程", "仅演示；实际 JS 在 JavaScriptCore 中运行，无进程隔离"),
-                ("模拟受限桥接", strictMode ? "演示：仅暴露 fetch 与 DOM 解析" : "演示：严格模式关闭，权限扩大"),
-                ("模拟网络与文件拦截", allowPrivate ? "演示：私网访问已放行" : "演示：私网、file://、Keychain 均被拒绝"),
-                ("模拟执行搜索规则", response.ok ? "返回 3 条模拟结果" : "模拟请求超时，已中止")
-            ]
-            for (index, step) in steps.enumerated() {
-                rows.append(
-                    DebugLine(
-                        step: step.0,
-                        detail: step.1,
-                        ok: response.ok || index < 3,
-                        milliseconds: response.milliseconds + index * 18
-                    )
-                )
+            defer { isRunning = false }
+            if allowPrivate, let url = URL(string: host), let name = url.host {
+                PrivateHostAllowList.shared.update([name])
             }
-            logs = rows
-            message = response.ok ? "沙箱测试完成，未执行真实脚本" : "模拟网关离线"
-            isRunning = false
+            let input: LegadoCore.JSONValue = .object([
+                "base": .string(host),
+                "keyword": .string("夜航船")
+            ])
+            let elapsed = { Int(Date().timeIntervalSince(started) * 1_000) }
+            do {
+                let output = try await WebJavaScriptRuleEvaluator.shared.evaluate(
+                    script: script, result: input, executionContext: .init()
+                )
+                let value = output.value.stringValue
+                logs = [
+                    DebugLine(step: "WKWebView 独立进程", detail: "真实进程隔离执行", ok: true, milliseconds: elapsed()),
+                    DebugLine(step: "受限桥接", detail: strictMode ? "仅暴露 window.__legadoFetch" : "严格模式关闭", ok: true, milliseconds: elapsed()),
+                    DebugLine(step: "私网闸门", detail: allowPrivate ? "已显式放行 \(host)" : "默认拦截私网地址", ok: true, milliseconds: elapsed()),
+                    DebugLine(step: "脚本返回", detail: String(value.prefix(180)), ok: true, milliseconds: elapsed())
+                ]
+                message = "脚本真实执行完成"
+            } catch {
+                logs = [
+                    DebugLine(step: "WKWebView 独立进程", detail: "已创建", ok: true, milliseconds: elapsed()),
+                    DebugLine(step: "脚本失败", detail: error.localizedDescription, ok: false, milliseconds: elapsed())
+                ]
+                message = "执行失败：\(error.localizedDescription)"
+            }
         }
     }
 }

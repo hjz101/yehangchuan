@@ -21,11 +21,36 @@ public struct RuleEngine: Sendable {
         self.javaScript = javaScript
     }
 
+    /// `<webjs>` 必须在主线程驱动 WebView，不能丢进同步 worker；
+    /// 在 async 入口先拦下来，其余规则仍走原有的线程池。
+    private static func webScript(_ rule: String) -> String? {
+        let lower = rule.lowercased()
+        guard lower.hasPrefix("<webjs>"), lower.hasSuffix("</webjs>") else { return nil }
+        return String(rule.dropFirst(7).dropLast(8))
+    }
+
+    private func webEvaluation(_ script: String, result: JSONValue, context: RuleExecutionContext) async -> RuleEvaluation {
+        do {
+            let output = try await WebJavaScriptRuleEvaluator.shared.evaluate(
+                script: script, result: result, executionContext: context
+            )
+            return RuleEvaluation(values: [output.value], variables: output.variables, rssArticle: output.rssArticle)
+        } catch let error as RuleEngineError {
+            return RuleEvaluation(diagnostics: [error.diagnostic], variables: context.variables, rssArticle: context.rssArticle)
+        } catch {
+            return RuleEvaluation(diagnostics: [.init(severity: .error, code: "rule.webjs", message: error.localizedDescription, rule: script)],
+                                  variables: context.variables, rssArticle: context.rssArticle)
+        }
+    }
+
     /// One worker owns an entire evaluation. Nested java.getString calls use
     /// the synchronous core on that same thread, without blocking another task.
     public func evaluate(
         _ rule: String, in input: JSONValue, listMode: Bool = false, context: RuleExecutionContext = .init()
     ) async -> RuleEvaluation {
+        if let script = Self.webScript(rule) {
+            return await webEvaluation(script, result: input, context: context)
+        }
         let cancellation = context.cancellation ?? RuleExecutionCancellation()
         var execution = context
         execution.cancellation = cancellation
@@ -45,6 +70,9 @@ public struct RuleEngine: Sendable {
     public func evaluate(
         _ rule: String, inText input: String, baseURL: String = "", listMode: Bool = false, context: RuleExecutionContext = .init()
     ) async -> RuleEvaluation {
+        if let script = Self.webScript(rule) {
+            return await webEvaluation(script, result: .string(input), context: context)
+        }
         let cancellation = context.cancellation ?? RuleExecutionCancellation()
         var execution = context
         execution.cancellation = cancellation
