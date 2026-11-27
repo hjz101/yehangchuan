@@ -91,12 +91,15 @@ enum Palette {
 
 // MARK: - Ambient Backdrop
 
-/// 夜色水面：网格渐变 + 缓慢漂移的光斑，为液态玻璃提供可折射的内容
+/// 夜色水面：网格渐变 + 两团柔和的光斑，为液态玻璃提供可折射的内容。
+///
+/// 这里刻意**不做动画**。背景是每个页面、每个弹层都会挂一层的东西
+/// （全工程 30 多处），一旦它带 `repeatForever` 的漂移，应用就永远不会有
+/// 静止帧：切页、弹面板、滚动都在和它抢同一帧的预算，卡顿就是这么来的。
+/// 网格渐变与两团径向渐变本身就是静态的，去掉动画后外观几乎无差别，
+/// 但整机功耗与切换手感完全是两回事。
 struct AppBackdrop: View {
     @Environment(\.colorScheme) private var scheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    @State private var drift = false
 
     var body: some View {
         // 用 Color.clear 作为尺寸基准，避免固定尺寸的光斑把父级 ZStack 撑大
@@ -110,12 +113,6 @@ struct AppBackdrop: View {
             .clipped()
             .allowsHitTesting(false)
             .ignoresSafeArea()
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 18).repeatForever(autoreverses: true)) {
-                    drift = true
-                }
-            }
     }
 
     private var mesh: some View {
@@ -167,8 +164,9 @@ struct AppBackdrop: View {
                     )
                 )
                 .frame(width: 460, height: 460)
-                .blur(radius: 70)
-                .offset(x: drift ? -120 : -70, y: drift ? 300 : 350)
+                // 径向渐变本身已经淡到透明，大半径 blur 只是额外的一次离屏绘制。
+                .blur(radius: 24)
+                .offset(x: -70, y: 350)
 
             Circle()
                 .fill(
@@ -180,8 +178,8 @@ struct AppBackdrop: View {
                     )
                 )
                 .frame(width: 420, height: 420)
-                .blur(radius: 80)
-                .offset(x: drift ? 150 : 110, y: drift ? -270 : -320)
+                .blur(radius: 28)
+                .offset(x: 110, y: -320)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }

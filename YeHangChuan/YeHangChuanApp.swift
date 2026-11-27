@@ -69,6 +69,17 @@ struct RootView: View {
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: store.toast)
         .preferredColorScheme(store.appearance.colorScheme)
+        .background {
+            // 自动保存的观察点单独放在这个零尺寸视图里。
+            //
+            // 原来这几条 onChange 直接挂在 RootView 上：天窗里读到的
+            // `settings.snapshot` 等于是把 14 个阅读设置全观察了一遍，
+            // 阅读页拖一下字号滑块，整个 TabView（含所有已挂载的标签页）
+            // 就跟着重建一次 —— 手感就是「调字号一格一顿」。
+            SnapshotAutosaver()
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
+        }
         .fullScreenCover(isPresented: $player.showFullPlayer) {
             if let book = player.book {
                 AudioPlayerView(book: book)
@@ -79,10 +90,6 @@ struct RootView: View {
             CarPlaySupport.store = store
             handleLaunchArguments()
         }
-        .onChange(of: store.settings.snapshot) { _, _ in store.saveSnapshot() }
-        .onChange(of: store.eyeCare) { _, _ in store.saveSnapshot() }
-        .onChange(of: store.appearance) { _, _ in store.saveSnapshot() }
-        .onChange(of: store.goalMinutes) { _, _ in store.saveSnapshot() }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { store.flushSnapshot() }
         }
@@ -151,6 +158,24 @@ enum AppTab: Hashable {
 struct DroppedFile: Identifiable {
     let id = UUID()
     let url: URL
+}
+
+/// 只负责「设置变了就落盘」这一个副作用。
+///
+/// 单独抽出来是因为：`onChange(of: store.settings.snapshot)` 挂在哪个视图上，
+/// 哪个视图就会因为**任意一个**阅读设置变化而重算 body。挂在 RootView 上时，
+/// 阅读页里拖一次字号滑块等于重建整个标签栏；放在这个零尺寸的叶子里，
+/// 变化只影响它自己。
+struct SnapshotAutosaver: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        Color.clear
+            .onChange(of: store.settings.snapshot) { _, _ in store.saveSnapshot() }
+            .onChange(of: store.eyeCare) { _, _ in store.saveSnapshot() }
+            .onChange(of: store.appearance) { _, _ in store.saveSnapshot() }
+            .onChange(of: store.goalMinutes) { _, _ in store.saveSnapshot() }
+    }
 }
 
 /// 标签栏上方的玻璃配件：优先显示听书播放条，否则显示继续阅读

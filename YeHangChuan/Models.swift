@@ -1164,21 +1164,38 @@ final class AppStore {
 
     /// 近 91 天的真实阅读分钟，按 `ReadRecord.dailyReadTimes` 汇总。
     /// 没有任何记录时整条曲线都是 0 —— 这是如实反映，而不是拿演示数据充数。
+    ///
+    /// 结果会缓存：统计页一次渲染要读它十几次（连续天数、本周、日均、
+    /// 热力图、洞察卡…），每次都重算 91 次 `Calendar` 运算，切到统计页
+    /// 会明显顿一下。缓存键带上「今天」，跨零点后自然失效。
     var days: [DayStat] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
+        let key = ReadingActivityService.dayKey(for: today, calendar: calendar)
+        // 先把逐日累计算出来（只是遍历几条记录，很便宜），
+        // 再用它判断缓存是否还能用 —— 只看条数会在「同一本书同一天多读了
+        // 几分钟」时漏掉更新。
         var totals: [String: Int64] = [:]
         for record in readRecords {
             for (day, milliseconds) in record.dailyReadTimes where milliseconds > 0 {
                 totals[day, default: 0] += milliseconds
             }
         }
-        return (0..<91).reversed().map { offset in
-            let date = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
-            let key = ReadingActivityService.dayKey(for: date, calendar: calendar)
-            return DayStat(id: key, date: date, minutes: Int((totals[key] ?? 0) / 60_000))
+        if let cache = daysCache, cache.key == key, cache.totals == totals {
+            return cache.value
         }
+        let value = (0..<91).reversed().map { offset in
+            let date = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
+            let dayKey = ReadingActivityService.dayKey(for: date, calendar: calendar)
+            return DayStat(id: dayKey, date: date, minutes: Int((totals[dayKey] ?? 0) / 60_000))
+        }
+        daysCache = (key, totals, value)
+        return value
     }
+
+    /// `days` 的缓存。只在逐日累计或「今天」变化时重算。
+    @ObservationIgnored
+    private var daysCache: (key: String, totals: [String: Int64], value: [DayStat])?
 
     /// 阅读页在翻页 / 离开时把停留时间交回来。只有 >= 1 秒的停留才计入，
     /// 避免连续拖动滑块式翻页刷出无意义的毫秒数。

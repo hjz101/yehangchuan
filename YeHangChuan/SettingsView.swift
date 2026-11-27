@@ -4,10 +4,12 @@ import UIKit
 struct SettingsView: View {
     @Environment(AppStore.self) private var store
 
-    /// 缓存与空间：章节 / 音频是演示估算值，图片缓存读磁盘真实占用。
-    static func storageLabel(store: AppStore) -> String {
-        let imageMB = Double(ImageCacheStore.totalBytes()) / 1_048_576
-        let total = store.backend.cacheChapterMB + imageMB + store.backend.cacheAudioMB
+    /// 缓存与空间：图片缓存要数一遍磁盘目录。
+    /// 这个数**不能在 body 里现算**：一次 body 求值就枚举上百个文件，
+    /// 切到设置页时会明显顿一下。改成进页面后异步算一次，算完再显示。
+    static func storageLabel(chapterMB: Double, audioMB: Double, imageBytes: Int?) -> String {
+        let imageMB = Double(imageBytes ?? 0) / 1_048_576
+        let total = chapterMB + imageMB + audioMB
         return String(format: "%.1f MB", total)
     }
 
@@ -34,6 +36,9 @@ struct SettingsView: View {
     @State private var showCompliance = false
     @State private var showEyeCare = false
     @State private var showAlert: SettingsAlert?
+    /// 图片缓存的真实占用，进页面后异步统计一次。
+    /// nil 表示还没算出来，这时候显示「计算中」而不是显示一个假的 0。
+    @State private var imageCacheBytes: Int?
 
     var body: some View {
         NavigationStack {
@@ -42,7 +47,7 @@ struct SettingsView: View {
 
                 ScrollViewReader { proxy in
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 18) {
+                        LazyVStack(alignment: .leading, spacing: 18) {
                             profileCard
 
                             group("阅读") {
@@ -112,7 +117,13 @@ struct SettingsView: View {
                                 } label: {
                                     SettingsRow(
                                         title: "缓存与空间",
-                                        value: Self.storageLabel(store: store),
+                                        value: imageCacheBytes == nil
+                                            ? "计算中…"
+                                            : Self.storageLabel(
+                                                chapterMB: store.backend.cacheChapterMB,
+                                                audioMB: store.backend.cacheAudioMB,
+                                                imageBytes: imageCacheBytes
+                                            ),
                                         systemImage: "internaldrive"
                                     )
                                 }
@@ -235,6 +246,13 @@ struct SettingsView: View {
                         .padding(.bottom, 40)
                     }
                     .scrollIndicators(.hidden)
+                    .task {
+                        // 只在第一次进设置页时算一次；后面再进来沿用结果。
+                        guard imageCacheBytes == nil else { return }
+                        imageCacheBytes = await Task.detached(priority: .utility) {
+                            ImageCacheStore.totalBytes()
+                        }.value
+                    }
                     .onAppear {
                         #if DEBUG
                         // 用来截图核对页面底部，正常使用不会触发。

@@ -46,7 +46,7 @@ struct ShelfView: View {
                 AppBackdrop()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
+                    LazyVStack(alignment: .leading, spacing: 22) {
                         if let book = store.continueBook, query.isEmpty {
                             hero(book)
                         }

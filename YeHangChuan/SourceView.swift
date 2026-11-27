@@ -23,7 +23,7 @@ struct SourceView: View {
                 AppBackdrop()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
+                    LazyVStack(alignment: .leading, spacing: 20) {
                         summaryCard
                         searchEntry
                         sourceSection

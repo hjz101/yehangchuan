@@ -11,7 +11,7 @@ struct StatsView: View {
                 AppBackdrop()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
+                    LazyVStack(alignment: .leading, spacing: 18) {
                         goalCard
                         weekCard
                         heatCard
