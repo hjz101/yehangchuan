@@ -32,12 +32,10 @@ struct RootView: View {
             TabView(selection: $tab) {
                 Tab("书架", systemImage: "books.vertical.fill", value: AppTab.shelf) {
                     ShelfView()
-                        .eyeCareFilter(store.eyeCare)
                 }
 
                 Tab("书源", systemImage: "antenna.radiowaves.left.and.right", value: AppTab.source) {
                     SourceView()
-                        .eyeCareFilter(store.eyeCare)
                 }
 
                 // 摘录是低频入口：设置里可以关掉，关掉后这一格标签就不出现。
@@ -45,18 +43,15 @@ struct RootView: View {
                 if store.showExcerptsTab {
                     Tab("摘录", systemImage: "quote.opening", value: AppTab.excerpts) {
                         ExcerptView()
-                            .eyeCareFilter(store.eyeCare)
                     }
                 }
 
                 Tab("统计", systemImage: "chart.bar.xaxis", value: AppTab.stats) {
                     StatsView()
-                        .eyeCareFilter(store.eyeCare)
                 }
 
                 Tab("设置", systemImage: "slider.horizontal.3", value: AppTab.settings) {
                     SettingsView()
-                        .eyeCareFilter(store.eyeCare)
                 }
             }
             .tabBarMinimizeBehavior(.onScrollDown)
@@ -73,6 +68,9 @@ struct RootView: View {
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: store.toast)
         .preferredColorScheme(store.appearance.colorScheme)
+        .overlay {
+            EyeCareLayer(settings: store.eyeCare)
+        }
         .background {
             // 自动保存的观察点单独放在这个零尺寸视图里。
             //

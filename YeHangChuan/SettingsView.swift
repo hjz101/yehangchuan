@@ -294,16 +294,20 @@ struct SettingsView: View {
             EyeCareSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                // sheet 是独立宿主，根视图的护眼层盖不进来；它自己也要跟随明暗。
+                .appChrome(store)
         }
         .sheet(isPresented: $showReaderSettings) {
             ReaderSettingsSheet(settings: store.settings)
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showDistribution) {
             DistributionSheet()
                 .presentationDetents([.medium])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showGoal) {
             GoalSheet(minutes: store.goalMinutes) { value in
@@ -313,61 +317,73 @@ struct SettingsView: View {
             }
             .presentationDetents([.height(320)])
             .presentationCornerRadius(38)
+            .appChrome(store)
         }
         .sheet(isPresented: $showImport) {
             SmartImportSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showSync) {
             SyncCenterSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showBackup) {
             BackupSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showCache) {
             CacheSheet()
                 .presentationDetents([.medium, .large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showNetworkLogs) {
             NetworkLogSheet()
                 .presentationDetents([.medium, .large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showExport) {
             DataExportSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showAI) {
             AIStudioSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showSandbox) {
             JSSandboxSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showDiscover) {
             DiscoverSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showVoice) {
             VoiceLabSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showCompliance) {
             ComplianceSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .alert(item: $showAlert) { alert in
             Alert(
@@ -638,9 +654,17 @@ struct EyeCareSheet: View {
             // sheet 是独立宿主：根视图上的护眼层盖不住它，明暗偏好也不会自动
             // 传进来。这两句都得写在这里，否则一边拖暖度/亮度、
             // 一边切深浅，当前这张卡片本身毫无变化。
-            .preferredColorScheme(store.appearance.colorScheme)
-            .eyeCareFilter(store.eyeCare)
+            .appChrome(store)
             .onDisappear { store.saveSnapshot() }
+            .task {
+                #if DEBUG
+                // 截图核对用：在这个弹层打开的状态下切一次明暗，验证明暗会即时生效。
+                if ProcessInfo.processInfo.arguments.contains("-cycleAppearance") {
+                    try? await Task.sleep(for: .seconds(5))
+                    store.appearance = store.appearance == .dark ? .light : .dark
+                }
+                #endif
+            }
         }
     }
 

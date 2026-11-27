@@ -206,10 +206,17 @@ struct EyeCareLayer: View {
 extension View {
     /// 给一个页面叠上护眼层。
     ///
-    /// sheet / fullScreenCover 都是独立宿主，根视图上叠的滤镜盖不住它们，
-    /// 所以每个需要跟着变色的页面各自挂一层。
+    /// sheet / fullScreenCover 都是独立的展示宿主，根视图上挂的护眼层
+    /// 盖不住它们；明暗偏好也不能只靠根部 `.preferredColorScheme` 传下去，
+    /// 所以每个弹层都要自己接这份外观。
     func eyeCareFilter(_ settings: EyeCareSettings) -> some View {
         overlay { EyeCareLayer(settings: settings) }
+    }
+
+    /// 弹层的统一外观：跟随 App 的明暗偏好，并叠上护眼层。
+    func appChrome(_ store: AppStore) -> some View {
+        preferredColorScheme(store.appearance.colorScheme)
+            .eyeCareFilter(store.eyeCare)
     }
 }
 

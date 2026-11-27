@@ -69,26 +69,31 @@ struct SourceView: View {
             AddSourceSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showSearch) {
             SourceSearchSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showImportExport) {
             SourceImportExportSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(isPresented: $showLogs) {
             NetworkLogSheet()
                 .presentationDetents([.medium, .large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .sheet(item: $detailSource) { source in
             SourceDetailSheet(source: source)
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
+                .appChrome(store)
         }
         .alert(item: $enablePrompt) { prompt in
             switch prompt {
