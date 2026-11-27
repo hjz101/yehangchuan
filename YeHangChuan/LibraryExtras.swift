@@ -26,6 +26,9 @@ struct SmartImportSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
+    /// 由「用夜航船打开」传进来的文件：面板一打开就直接解析，不用再点一次。
+    var initialFile: URL? = nil
+
     @State private var method: ImportMethod = .file
     @State private var showPicker = false
     @State private var draft: ImportDraft?
@@ -33,20 +36,12 @@ struct SmartImportSheet: View {
     @State private var isParsing = false
     @State private var linkText = "https://books.example/夜航船.txt"
 
-    private var allowedTypes: [UTType] {
-        [
-            UTType.plainText,
-            UTType.zip,
-            UTType(filenameExtension: "cbz"),
-            UTType(filenameExtension: "cbr"),
-            UTType(filenameExtension: "rar"),
-            UTType(filenameExtension: "7z"),
-            UTType(filenameExtension: "epub"),
-            UTType(filenameExtension: "mp3"),
-            UTType(filenameExtension: "m4a"),
-            UTType(filenameExtension: "m4b")
-        ].compactMap { $0 }
-    }
+    /// 选择器接受「任何文件」，格式判断放到 `LocalImportReader` 里按扩展名做。
+    ///
+    /// 原先逐个扩展名去要 UTType，遇到 cbz / cbr 这种系统没声明的格式会退化成
+    /// `dyn.*`：文件提供方把它们标成 zip 或 data 之后，选择器里整片变灰 ——
+    /// 文件明明在眼前却点不了，用户看到的就是「无法从本地文件夹导入」。
+    private var allowedTypes: [UTType] { [.item] }
 
     var body: some View {
         NavigationStack {
@@ -63,9 +58,16 @@ struct SmartImportSheet: View {
 
                         sourcePanel
 
-                        if let draft {
+                        if isParsing {
+                            parsingPanel
+                        } else if let draft {
                             draftPreview(draft)
-                        } else if let message {
+                        }
+
+                        // 失败原因与草稿并存显示：漫画解包失败时曾同时留着一份
+                        // 演示草稿，于是「解包失败」这句永远被草稿挡住，用户只
+                        // 看到一本假漫画。
+                        if let message, !isParsing {
                             messagePanel(message)
                         }
 
@@ -83,18 +85,37 @@ struct SmartImportSheet: View {
                 }
             }
         }
-        .fileImporter(
-            isPresented: $showPicker,
-            allowedContentTypes: allowedTypes,
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first { importFile(url) }
-            case .failure(let error):
-                message = "文件选择失败：\(error.localizedDescription)"
+        // 用 UIKit 的文档选择器，而不是 `.fileImporter`：后者装在 sheet 内部时
+        // 系统 presentation 会撞车，弹出即消失且不回报错误。
+        // 用全屏呈现：iPhone 上系统文件选择器本来就是全屏的，
+        // 也避开了「sheet 里再弹带 detent 的 sheet」这一层。
+        .fullScreenCover(isPresented: $showPicker) {
+            DocumentPicker(contentTypes: allowedTypes) { urls in
+                showPicker = false
+                guard let url = urls.first else {
+                    message = "没有选到文件。"
+                    return
+                }
+                startImport(url)
+            } onCancel: {
+                showPicker = false
             }
         }
+        .task {
+            if let initialFile { startImport(initialFile) }
+        }
+    }
+
+    private var parsingPanel: some View {
+        HStack(spacing: 9) {
+            ProgressView()
+            Text("正在识别编码与章节…")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.secondary)
+        }
+        .padding(13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassSurface(cornerRadius: 18)
     }
 
     private var sourcePanel: some View {
@@ -106,8 +127,8 @@ struct SmartImportSheet: View {
                 } label: {
                     actionTile(
                         symbol: "doc.badge.plus",
-                        title: "选择 TXT / EPUB / ZIP / 音频",
-                        detail: "TXT 会真实解析编码与章节，其它格式读取元数据后模拟导入"
+                        title: "选择 TXT / EPUB / 漫画压缩包 / 音频",
+                        detail: "都按真实文件解析；读不出来会直接说明原因，不会塞演示内容"
                     )
                 }
                 .buttonStyle(PressableStyle(scale: 0.985))
@@ -138,15 +159,6 @@ struct SmartImportSheet: View {
                 .buttonStyle(PressableStyle(scale: 0.985))
             }
 
-            if isParsing {
-                HStack(spacing: 9) {
-                    ProgressView()
-                    Text("正在识别编码与章节…")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.secondary)
-                }
-                .padding(.horizontal, 4)
-            }
         }
         .padding(14)
         .glassSurface(cornerRadius: 24)
@@ -277,169 +289,26 @@ struct SmartImportSheet: View {
 
     // MARK: Parsing
 
-    private func importFile(_ url: URL) {
-        isParsing = true
+    /// 先让出一帧，再在后台解析。
+    ///
+    /// 以前整段解析是同步跑在主线程上的：一本 200 章的 EPUB 要把 zip 逐章重开，
+    /// 界面在整个过程中不动，「正在识别」的转圈一次也画不出来 —— 用户看到的就是
+    /// 点了没反应。现在先置 `isParsing`，让转圈先上屏，再把活丢到后台。
+    private func startImport(_ url: URL) {
+        guard !isParsing else { return }
+        draft = nil
         message = nil
-        let accessed = url.startAccessingSecurityScopedResource()
-        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-
-        let ext = url.pathExtension.lowercased()
-        let name = url.deletingPathExtension().lastPathComponent
-
-        if ext == "txt", let data = try? Data(contentsOf: url), let text = Self.decode(data) {
-            let parsed = Self.parse(text: text, fallbackTitle: name)
-            draft = ImportDraft(
-                title: parsed.title,
-                author: parsed.author,
-                kind: .novel,
-                detail: "本机 TXT · \(Self.encodingName(data)) · \(parsed.chapters.count) 章",
-                chapters: parsed.chapters
-            )
-        } else if ext == "epub" {
-            // EPUB 的真实解析能力已在 LegadoCore 里：按需从 ZIP 内读章节标题与正文，
-            // 不向磁盘解包。导入时把正文一并取出来塞进草稿，阅读页无需改动。
-            do {
-                let service = LocalBookService.live()
-                let report = try service.openFile(at: url)
-                var failures = 0
-                let chapters = report.chapters.enumerated().map { index, source in
-                    let chapterID = "epub-\(index)"
-                    let paragraphs: [Paragraph]
-                    do {
-                        let text = try service.loadContent(book: report.book, chapter: source).content
-                        paragraphs = TextSegmenter.paragraphs(from: text, chapterID: chapterID)
-                        if paragraphs.isEmpty { failures += 1 }
-                    } catch {
-                        failures += 1
-                        paragraphs = []
-                    }
-                    // 不能静默塞空正文：那会让阅读页永远停在转圈。
-                    // 单章失败放一段明确的说明，让用户知道是解析问题而不是书没内容。
-                    let finalParagraphs = paragraphs.isEmpty
-                        ? [Paragraph(id: "\(chapterID)-error", text: "本章正文解析失败，可能是 EPUB 内该文件损坏或格式不受支持。")]
-                        : paragraphs
-                    return Chapter(
-                        id: "epub-\(index)-\(source.title.prefix(12))",
-                        title: source.title,
-                        paragraphs: finalParagraphs
-                    )
-                }
-                guard failures < chapters.count || chapters.isEmpty else {
-                    isParsing = false
-                    message = "EPUB 正文解析失败：所有章节都读不出内容，请换一个文件。"
-                    return
-                }
-                let note = failures > 0 ? " · \(failures) 章解析失败" : ""
-                draft = ImportDraft(
-                    title: report.book.name.isEmpty ? name : report.book.name,
-                    author: report.book.author.isEmpty ? "本地 EPUB" : report.book.author,
-                    kind: .novel,
-                    detail: "本机 EPUB · 真实解析 · \(chapters.count) 章\(note)",
-                    chapters: chapters
-                )
-            } catch {
-                message = "EPUB 解析失败：\(error.localizedDescription)"
+        isParsing = true
+        Task { @MainActor in
+            let outcome = await LocalImportReader.read(url)
+            isParsing = false
+            switch outcome {
+            case .draft(let value):
+                draft = value.makeDraft()
+            case .failure(let reason):
+                message = reason
             }
-        } else if ["mp3", "m4a", "m4b"].contains(ext) {
-            // 文件选择权限是一次性的，真要长期播放必须复制进自己的沙箱。
-            var storedName: String?
-            var realDuration: String?
-            if let base = LibraryStore.shared.directory {
-                let folder = base.appendingPathComponent("AudioBooks", isDirectory: true)
-                let fileName = "\(UUID().uuidString).\(ext)"
-                let target = folder.appendingPathComponent(fileName)
-                do {
-                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                    try FileManager.default.copyItem(at: url, to: target)
-                    storedName = fileName
-                    let seconds = CMTimeGetSeconds(AVAsset(url: target).duration)
-                    if seconds.isFinite, seconds > 0 { realDuration = AudioPlayer.label(seconds) }
-                } catch {
-                    storedName = nil
-                }
-            }
-            let chapters = storedName == nil
-                ? Self.demoChapters(title: name, count: 2)
-                : [Chapter(
-                    id: "\(name)-audio",
-                    title: "完整音频",
-                    paragraphs: [Paragraph(id: "\(name)-audio-note", text: "本机音频文件，请用播放器收听。")]
-                )]
-            draft = ImportDraft(
-                title: name,
-                author: storedName == nil ? "本地音频" : "本机音频文件",
-                kind: .audio,
-                detail: storedName == nil
-                    ? "\(ext.uppercased()) · 未能保存文件，使用演示音轨"
-                    : "\(ext.uppercased()) · 真实音频 · \(realDuration ?? "时长待读取")",
-                chapters: chapters,
-                audioFileName: storedName,
-                durationLabel: realDuration
-            )
-        } else if ["zip", "cbz", "rar", "cbr", "7z"].contains(ext) {
-            // 漫画压缩包真实解包。fileImporter 授权是一次性的，先复制进自己的沙箱，
-            // 再由 LegadoCore 建立页索引，拿真实页数与按文件夹归纳的「话」。
-            var storedName: String?
-            var report: ComicBookReport?
-            if let base = LibraryStore.shared.directory {
-                let folder = base.appendingPathComponent("Comics", isDirectory: true)
-                let fileName = "\(UUID().uuidString).\(ext)"
-                let target = folder.appendingPathComponent(fileName)
-                do {
-                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                    try FileManager.default.copyItem(at: url, to: target)
-                    report = try LocalBookService.live().inspectComic(at: target)
-                    storedName = fileName
-                } catch {
-                    try? FileManager.default.removeItem(at: target)
-                    storedName = nil
-                    report = nil
-                    message = "漫画解包失败：\(error.localizedDescription)"
-                }
-            }
-            if let report, let storedName {
-                let chapters = report.chapterTitles.map { title in
-                    let count = report.pages.filter { $0.chapter == title }.count
-                    return Chapter(
-                        id: "comic-\(title.prefix(16))",
-                        title: title,
-                        paragraphs: [Paragraph(
-                            id: "comic-\(title)-note",
-                            text: "\(title) · \(count) 页，请在漫画阅读器中查看。"
-                        )]
-                    )
-                }
-                draft = ImportDraft(
-                    title: name,
-                    author: "本机漫画",
-                    kind: .comic,
-                    detail: "\(ext.uppercased()) · 真实解包 · \(report.pageCount) 页 · \(chapters.count) 话",
-                    chapters: chapters,
-                    pageCount: report.pageCount,
-                    comicFileName: storedName
-                )
-            } else {
-                // 复制或解包都失败时保留可用的演示章节，不让用户卡在空结果。
-                draft = ImportDraft(
-                    title: name,
-                    author: "本地文件",
-                    kind: .comic,
-                    detail: "\(ext.uppercased()) · 未能解析，使用演示章节",
-                    chapters: Self.demoChapters(title: name, count: 6)
-                )
-            }
-        } else {
-            let chapters = Self.demoChapters(title: name, count: 4)
-            draft = ImportDraft(
-                title: name,
-                author: "本地文件",
-                kind: .novel,
-                detail: "\(ext.uppercased()) · 未解析文件内容，使用演示章节",
-                chapters: chapters
-            )
         }
-
-        isParsing = false
     }
 
     private func importLink() {

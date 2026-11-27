@@ -23,6 +23,7 @@ struct RootView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab: AppTab = .shelf
+    @State private var pendingImportFile: DroppedFile?
 
     var body: some View {
         @Bindable var player = store.player
@@ -85,6 +86,17 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { store.flushSnapshot() }
         }
+        // 「用夜航船打开」/ 文件 App 里点开一个文件：直接把文件交给导入流程，
+        // 不用再让用户从选择器里找一遍。
+        .onOpenURL { url in
+            guard url.isFileURL else { return }
+            pendingImportFile = DroppedFile(url: url)
+        }
+        .sheet(item: $pendingImportFile) { file in
+            SmartImportSheet(initialFile: file.url)
+                .presentationDetents([.large])
+                .presentationCornerRadius(38)
+        }
     }
 
     private func handleLaunchArguments() {
@@ -132,6 +144,13 @@ enum AppTab: Hashable {
     case excerpts
     case stats
     case settings
+}
+
+/// 从「用夜航船打开」收到的一个文件。`URL` 本身不满足 `Identifiable`，
+/// 而且同名文件可能被多次打开，所以带一个一次性 ID。
+struct DroppedFile: Identifiable {
+    let id = UUID()
+    let url: URL
 }
 
 /// 标签栏上方的玻璃配件：优先显示听书播放条，否则显示继续阅读

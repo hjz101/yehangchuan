@@ -258,6 +258,34 @@ public struct LocalBookService: Sendable {
         return .init(book: book, chapters: chapters)
     }
 
+    /// 批量读正文。
+    ///
+    /// EPUB 的 `loadContent` 每次都会重新打开压缩包、重建条目表；逐章调用等于
+    /// 把整本书扫 N 遍，几百章的书光扫目录就要好几秒。这里只开一次包，逐章取正文。
+    /// 单章失败不抛错，而是把原因写进那一章的 `diagnostics` —— 调用方需要
+    /// 知道「哪一章坏了」，而不是整本导入失败。
+    public func loadContents(book: Book, chapters: [BookChapter]) throws -> [ChapterContentReport] {
+        guard let url = URL(string: book.bookUrl), url.isFileURL,
+              url.pathExtension.lowercased() == "epub" else {
+            return try chapters.map { try loadContent(book: book, chapter: $0) }
+        }
+        try validateFile(url)
+        let epub = try EPUBBook(url: url)
+        return chapters.map { chapter in
+            do {
+                return try epub.content(chapter: chapter)
+            } catch {
+                let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                return ChapterContentReport(
+                    title: chapter.title,
+                    content: "",
+                    diagnostics: [.init(severity: .error, code: "local.epub", message: message, rule: chapter.url)],
+                    pagesVisited: 0
+                )
+            }
+        }
+    }
+
     public func loadChapters(book: Book) throws -> ChapterListReport {
         if let url = URL(string: book.bookUrl), url.isFileURL, url.pathExtension.lowercased() == "epub" {
             try validateFile(url)

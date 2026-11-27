@@ -24,6 +24,30 @@
 	<string>public.app-category.books</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- 本地书导入：让「文件」App 能把书交给夜航船打开，
+	     也让用户可以直接把书拖进 App 的 Documents 目录。 -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>本地书</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.plain-text</string>
+				<string>org.idpf.epub-container</string>
+				<string>public.zip-archive</string>
+				<string>com.rarlab.rar-archive</string>
+				<string>org.7-zip.7-zip-archive</string>
+				<string>public.audio</string>
+			</array>
+		</dict>
+	</array>
 	<key>MinimumOSVersion</key>
 	<string>27.0</string>
 	<key>UIApplicationSceneManifest</key>

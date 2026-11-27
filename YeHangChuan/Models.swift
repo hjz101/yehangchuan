@@ -1346,7 +1346,14 @@ final class AppStore {
         return result.paragraphs
     }
 
-    func importBook(_ draft: ImportDraft) {
+    /// 把导入草稿加入书架。返回是否真的成功：
+    /// 没有章节的草稿直接拒绝，界面才不会一边提示「已导入」一边给一本空书。
+    @discardableResult
+    func importBook(_ draft: ImportDraft) -> Bool {
+        guard !draft.chapters.isEmpty else {
+            showToast("导入失败：这本书没有任何章节")
+            return false
+        }
         let book = Book(
             id: "import-\(UUID().uuidString.prefix(8))",
             title: draft.title,
@@ -1357,7 +1364,8 @@ final class AppStore {
             progress: 0,
             lastPosition: "未开始",
             pageCount: draft.kind == .comic ? (draft.pageCount ?? max(draft.chapters.count * 8, 20)) : nil,
-            duration: draft.kind == .audio ? (draft.durationLabel ?? "12:30") : nil,
+            // 时长读不出来就留空，界面会写「时长待读取」；不编造一个 "12:30"。
+            duration: draft.kind == .audio ? draft.durationLabel : nil,
             isFinished: false,
             group: groups.first,
             sourceID: "local",
@@ -1366,8 +1374,10 @@ final class AppStore {
         )
         customChapters[book.id] = draft.chapters
         books.insert(book, at: 0)
-        showToast("已导入《\(book.title)》· \(draft.chapters.count) 章")
+        let unit = book.kind == .comic ? "话" : "章"
+        showToast("已导入《\(book.title)》· \(draft.chapters.count) \(unit)")
         saveSnapshot()
+        return true
     }
 
     func setGroup(_ group: String?, for bookID: String) {
