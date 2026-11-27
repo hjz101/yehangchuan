@@ -127,12 +127,12 @@ final class PaginatedBook {
     /// 书 ID → 该章的页数。页眉要显示「本章第几页」，不能每次都数一遍。
     let chapterPageCounts: [String: Int]
 
-    private var layouts: [String: ChapterLayout] = [:]
+    private var layouts = PageCache<ChapterLayout>()
     /// 页 id → 段落位置 / 页正文。翻一页只涉及两三页，但 `TabView` 会同时
     /// 挂住左右邻页，反复重建 `CTFramesetter` 是纯浪费。
-    private var boxCache: [String: [PageParagraphBox]] = [:]
-    private var textCache: [String: NSAttributedString] = [:]
-    private let indexByID: [String: Int]
+    private var boxCache = PageCache<[PageParagraphBox]>()
+    private var textCache = PageCache<NSAttributedString>()
+    private let index: PageIndex
 
     init(
         chapters: [Chapter],
@@ -146,24 +146,18 @@ final class PaginatedBook {
         self.size = size
         self.pages = pages
         self.hasComments = hasComments
-        indexByID = Dictionary(
-            chapters.enumerated().map { ($0.element.id, $0.offset) },
-            uniquingKeysWith: { first, _ in first }
-        )
-
-        var counts: [String: Int] = [:]
-        for page in pages { counts[page.chapterID, default: 0] += 1 }
-        chapterPageCounts = counts
+        index = PageIndex(pages: pages, chapterIDs: chapters.map(\.id))
+        chapterPageCounts = index.chapterPageCounts
     }
 
     var isEmpty: Bool { pages.isEmpty }
 
-    func page(at index: Int) -> ReadingPage? {
-        pages.indices.contains(index) ? pages[index] : nil
+    func page(at position: Int) -> ReadingPage? {
+        index.page(at: position)
     }
 
     func chapter(withID id: String) -> Chapter? {
-        indexByID[id].map { chapters[$0] }
+        index.chapterIndex(for: id).map { chapters[$0] }
     }
 
     /// 这一页所属章节的排版对象。按需构建并缓存。
@@ -172,10 +166,10 @@ final class PaginatedBook {
     }
 
     func layout(chapterID: String) -> ChapterLayout {
-        if let cached = layouts[chapterID] { return cached }
+        if let cached = layouts.value(for: chapterID) { return cached }
         let paragraphs = chapter(withID: chapterID)?.paragraphs.map(\.text) ?? []
         let layout = ChapterLayout(chapterID: chapterID, paragraphs: paragraphs, style: typeface.style())
-        layouts[chapterID] = layout
+        layouts.store(layout, for: chapterID)
         return layout
     }
 
@@ -196,17 +190,17 @@ final class PaginatedBook {
     /// 直接按 `chapterRange` 从整章里切，而不是拿段落片段重新拼一遍 ——
     /// 拼出来的那份和测量时用的那份一旦有一个字的差别，结果就是文字被裁。
     func text(for page: ReadingPage) -> NSAttributedString {
-        if let cached = textCache[page.id] { return cached }
+        if let cached = textCache.value(for: page.id) { return cached }
         let text = layout(for: page).attributedString(for: pageRange(for: page))
-        trim(&textCache, adding: page.id, value: text)
+        textCache.store(text, for: page.id)
         return text
     }
 
     /// 本页每个段落占据的位置（首行用于摆段评胶囊）。
     func paragraphBoxes(for page: ReadingPage) -> [PageParagraphBox] {
-        if let cached = boxCache[page.id] { return cached }
+        if let cached = boxCache.value(for: page.id) { return cached }
         let boxes = layout(for: page).paragraphBoxes(in: pageRange(for: page), size: size)
-        trim(&boxCache, adding: page.id, value: boxes)
+        boxCache.store(boxes, for: page.id)
         return boxes
     }
 
@@ -222,12 +216,6 @@ final class PaginatedBook {
         return chapter.paragraphs[index]
     }
 
-    /// 缓存放满就整体清掉，而不是逐条淘汰：条目数量本来就少，
-    /// 清空后重建一两页的代价可以忽略，也不必维护访问顺序。
-    private func trim<T>(_ cache: inout [String: T], adding key: String, value: T) {
-        if cache.count >= 24 { cache.removeAll(keepingCapacity: true) }
-        cache[key] = value
-    }
 }
 
 // MARK: - 绘制

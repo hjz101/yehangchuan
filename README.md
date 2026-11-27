@@ -21,7 +21,7 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 ./Scripts/verify.sh
 ```
 
-一条命令跑完全部门禁：YeHangCore（86 项）+ LegadoCore（5 项）单测与 App 构建。PR 由 `.github/workflows/ci.yml` 自动跑同一套门禁（需 Xcode 27.2 的 macOS runner）。脚本会识别 Rosetta shell 并以原生 arm64 跑 `swift test`，避免「0 tests passed 但退出码为 0」的假通过。
+一条命令跑完全部门禁：YeHangCore（91 项）+ LegadoCore（5 项）单测与 App 构建。PR 由 `.github/workflows/ci.yml` 自动跑同一套门禁（需 Xcode 27.2 的 macOS runner）。脚本会识别 Rosetta shell 并以原生 arm64 跑 `swift test`，避免「0 tests passed 但退出码为 0」的假通过。
 
 ## 设计系统
 
