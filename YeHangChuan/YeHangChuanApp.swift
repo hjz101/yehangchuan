@@ -260,6 +260,11 @@ struct AudioPlayerView: View {
 
     let book: Book
 
+    @State private var showChapterList = false
+    @State private var showSleepTimer = false
+    @State private var showComments = false
+    @State private var exportFile: ExportedTextFile?
+
     var body: some View {
         @Bindable var player = store.player
 
@@ -287,6 +292,19 @@ struct AudioPlayerView: View {
             }
             .padding(.horizontal, 26)
             .padding(.bottom, 24)
+        }
+        .sheet(isPresented: $showChapterList) { chapterListSheet }
+        .sheet(isPresented: $showSleepTimer) { sleepTimerSheet }
+        .sheet(isPresented: $showComments) { commentsSheet }
+        .sheet(item: $exportFile) { file in
+            ExportSheet(file: file, bookTitle: book.title)
+                .presentationDetents([.fraction(0.42)])
+                .presentationCornerRadius(32)
+        }
+        .onAppear {
+            // 书架只塞了书，没有章节；这里补上，章节列表与切章才有真实数据。
+            // autoplay 传 false：已经在播的别被打断，只补状态。
+            store.player.load(book, chapters: store.chapters(for: book), autoplay: false)
         }
     }
 
@@ -415,17 +433,17 @@ struct AudioPlayerView: View {
 
     private var extras: some View {
         HStack(spacing: 10) {
-            glassPill("list.bullet", "章节")
-            glassPill("moon.zzz", "定时")
-            glassPill("text.bubble", "段评")
-            glassPill("square.and.arrow.up", "分享")
+            glassPill("list.bullet", "章节") { showChapterList = true }
+            glassPill("moon.zzz", store.player.sleepMinutes > 0 ? "定时 \(store.player.sleepMinutes)′" : "定时") {
+                showSleepTimer = true
+            }
+            glassPill("text.bubble", "段评") { showComments = true }
+            glassPill("square.and.arrow.up", "分享") { exportFile = exportAudioBook() }
         }
     }
 
-    private func glassPill(_ symbol: String, _ title: String) -> some View {
-        Button {
-            store.showToast("\(title)将在正式版接入")
-        } label: {
+    private func glassPill(_ symbol: String, _ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             VStack(spacing: 5) {
                 Image(systemName: symbol)
                     .font(.system(size: 15, weight: .medium))
@@ -438,5 +456,167 @@ struct AudioPlayerView: View {
             .glassSurface(cornerRadius: 18, interactive: true)
         }
         .buttonStyle(PressableStyle())
+    }
+
+    // MARK: - Player actions
+
+    private var chapterListSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(store.player.chapters.indices, id: \.self) { index in
+                        let chapter = store.player.chapters[index]
+                        Button {
+                            store.player.selectChapter(index)
+                            showChapterList = false
+                            store.showToast("已切到\(chapter.title)")
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: index == store.player.chapterIndex ? "play.circle.fill" : "play.circle")
+                                    .foregroundStyle(index == store.player.chapterIndex ? Palette.accent : Palette.tertiary)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(chapter.title)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(Palette.text)
+                                    Text("\(chapter.paragraphs.count) 段")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Palette.tertiary)
+                                }
+                                Spacer()
+                            }
+                            .padding(14)
+                            .glassSurface(cornerRadius: 16, interactive: true)
+                        }
+                        .buttonStyle(PressableStyle())
+                    }
+                }
+                .padding(18)
+            }
+            .navigationTitle("章节")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { showChapterList = false }.fontWeight(.semibold)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationCornerRadius(32)
+    }
+
+    private var sleepTimerSheet: some View {
+        NavigationStack {
+            VStack(spacing: 10) {
+                ForEach([0, 5, 15, 30, 60], id: \.self) { minutes in
+                    Button {
+                        store.player.setSleepTimer(minutes)
+                        showSleepTimer = false
+                        store.showToast(minutes == 0 ? "已关闭睡眠定时" : "\(minutes) 分钟后停止播放")
+                    } label: {
+                        HStack {
+                            Text(minutes == 0 ? "不开启" : "\(minutes) 分钟")
+                                .font(.system(size: 13))
+                            Spacer()
+                            if store.player.sleepMinutes == minutes {
+                                Image(systemName: "checkmark").foregroundStyle(Palette.accent)
+                            }
+                        }
+                        .foregroundStyle(Palette.text)
+                        .padding(14)
+                        .glassSurface(cornerRadius: 16, interactive: true)
+                    }
+                    .buttonStyle(PressableStyle())
+                }
+            }
+            .padding(18)
+            .navigationTitle("睡眠定时")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { showSleepTimer = false }.fontWeight(.semibold)
+                }
+            }
+        }
+        .presentationDetents([.fraction(0.45)])
+        .presentationCornerRadius(32)
+    }
+
+    private var commentsSheet: some View {
+        let comments = store.player.currentChapter?.paragraphs.flatMap(\.comments) ?? []
+        return NavigationStack {
+            Group {
+                if comments.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "text.bubble")
+                            .font(.system(size: 34, weight: .light))
+                            .foregroundStyle(Palette.tertiary)
+                        Text("本章暂无段评")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Palette.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 10) {
+                            ForEach(comments) { comment in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack {
+                                        Text(comment.author)
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundStyle(Palette.accent)
+                                        Spacer()
+                                        Text("\(comment.likes) 赞")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Palette.tertiary)
+                                    }
+                                    Text(comment.text)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(Palette.text)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(14)
+                                .glassSurface(cornerRadius: 16)
+                            }
+                        }
+                        .padding(18)
+                    }
+                }
+            }
+            .navigationTitle("段评")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { showComments = false }.fontWeight(.semibold)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationCornerRadius(32)
+    }
+
+    /// 把这本书的章节正文导出成 TXT，交给 ShareLink 面板分享。
+    private func exportAudioBook() -> ExportedTextFile? {
+        let all = store.chapters(for: book)
+        guard !all.isEmpty else { return nil }
+        var text = book.title + "\n"
+        if !book.author.isEmpty { text += "作者：\(book.author)\n" }
+        text += "\n"
+        for chapter in all {
+            text += chapter.title + "\n\n"
+            let body = chapter.paragraphs.map(\.text).joined(separator: "\n")
+            text += (body.isEmpty ? "【演示音轨，无正文】" : body) + "\n\n"
+        }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YeHangExports", isDirectory: true)
+        let folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let file = folder.appendingPathComponent("\(book.title).txt")
+            try text.write(to: file, atomically: true, encoding: .utf8)
+            return ExportedTextFile(url: file, chapterCount: all.count, emptyChapters: 0)
+        } catch {
+            store.showToast("导出失败：\(error.localizedDescription)")
+            return nil
+        }
     }
 }

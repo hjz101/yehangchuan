@@ -624,8 +624,18 @@ final class AudioPlayer {
     var duration: Double = 340
     var speed: Double = 1
     var showFullPlayer = false
+    /// 有声书的章节列表。书架只传书时为空，播放器会显式补上。
+    var chapters: [Chapter] = []
+    var chapterIndex = 0
+    /// 睡眠定时（分钟），0 表示关闭。
+    var sleepMinutes = 0
 
     @ObservationIgnored private var ticker: Task<Void, Never>?
+    @ObservationIgnored private var sleepTask: Task<Void, Never>?
+
+    var currentChapter: Chapter? {
+        chapters.indices.contains(chapterIndex) ? chapters[chapterIndex] : nil
+    }
 
     var progress: Double {
         duration <= 0 ? 0 : min(max(elapsed / duration, 0), 1)
@@ -635,16 +645,50 @@ final class AudioPlayer {
     var durationLabel: String { Self.label(duration) }
     var remainingLabel: String { "-" + Self.label(max(duration - elapsed, 0)) }
 
-    func load(_ book: Book, autoplay: Bool = true) {
+    func load(_ book: Book, chapters: [Chapter] = [], autoplay: Bool = true) {
         if self.book?.id == book.id {
+            if !chapters.isEmpty { self.chapters = chapters }
             if autoplay && !isPlaying { resume() }
             return
         }
         self.book = book
-        duration = Self.seconds(book.duration) ?? 340
-        elapsed = min(duration * 0.22, duration - 8)
+        self.chapters = chapters
+        chapterIndex = 0
+        duration = chapters.first.map(Self.chapterDuration) ?? (Self.seconds(book.duration) ?? 340)
+        elapsed = min(duration * 0.22, max(duration - 8, 0))
         isPlaying = autoplay
         if autoplay { startTicking() } else { ticker?.cancel() }
+    }
+
+    /// 切到指定章节。演示音轨没有真实音频文件，时长按正文体量估算，
+    /// 但「当前章 / 进度 / 计时」的状态切换是真实的。
+    func selectChapter(_ index: Int) {
+        guard chapters.indices.contains(index) else { return }
+        chapterIndex = index
+        duration = Self.chapterDuration(chapters[index])
+        elapsed = 0
+        if isPlaying { startTicking() }
+    }
+
+    func setSleepTimer(_ minutes: Int) {
+        sleepTask?.cancel()
+        sleepMinutes = max(minutes, 0)
+        guard sleepMinutes > 0 else { return }
+        sleepTask = Task { [weak self] in
+            for _ in 0..<minutes {
+                try? await Task.sleep(for: .seconds(60))
+                if Task.isCancelled { return }
+            }
+            await MainActor.run { [weak self] in
+                self?.pause()
+                self?.sleepMinutes = 0
+            }
+        }
+    }
+
+    private static func chapterDuration(_ chapter: Chapter) -> Double {
+        let characters = chapter.paragraphs.map(\.text.count).reduce(0, +)
+        return max(Double(characters) * 0.22, 60)
     }
 
     func toggle() {
@@ -672,7 +716,11 @@ final class AudioPlayer {
 
     func stop() {
         pause()
+        sleepTask?.cancel()
+        sleepMinutes = 0
         book = nil
+        chapters = []
+        chapterIndex = 0
         elapsed = 0
     }
 
