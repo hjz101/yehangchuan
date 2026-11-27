@@ -643,21 +643,9 @@ struct MediaDetailView: View {
         VStack(alignment: .leading, spacing: 11) {
             SectionHeading(text: "页面预览", trailing: "单页模式")
 
-            HStack(spacing: 8) {
-                ForEach(0..<3, id: \.self) { index in
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(index == 0 ? Color(hex: 0x2C3A48) : Palette.faint)
+            ComicCoverStrip(book: book)
 
-                        Image(systemName: index == 0 ? "cloud.moon" : "photo")
-                            .font(.system(size: 17, weight: .light))
-                            .foregroundStyle(Palette.tertiary)
-                    }
-                    .frame(height: 96)
-                }
-            }
-
-            Text("第 12 页 / \(book.pageCount ?? 0) 页")
+            Text("共 \(book.pageCount ?? 0) 页")
                 .font(.system(size: 11))
                 .foregroundStyle(Palette.tertiary)
         }

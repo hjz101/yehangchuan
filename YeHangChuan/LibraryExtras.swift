@@ -37,6 +37,7 @@ struct SmartImportSheet: View {
         [
             UTType.plainText,
             UTType.zip,
+            UTType(filenameExtension: "cbz"),
             UTType(filenameExtension: "epub"),
             UTType(filenameExtension: "mp3"),
             UTType(filenameExtension: "m4a"),
@@ -265,7 +266,7 @@ struct SmartImportSheet: View {
     }
 
     private var formatNote: some View {
-        Text("TXT 与 EPUB 为真实解析；漫画压缩包与音频会在读取文件信息后以演示章节进入书架。所有内容只留在这台设备。")
+        Text("TXT、EPUB 与 CBZ/ZIP 漫画为真实解析；音频会复制进沙箱按真实时长播放。所有内容只留在这台设备。")
             .font(.system(size: 10.5))
             .foregroundStyle(Palette.tertiary)
             .padding(.horizontal, 2)
@@ -372,13 +373,64 @@ struct SmartImportSheet: View {
                 audioFileName: storedName,
                 durationLabel: realDuration
             )
+        } else if ["zip", "cbz"].contains(ext) {
+            // 漫画压缩包真实解包。fileImporter 授权是一次性的，先复制进自己的沙箱，
+            // 再由 LegadoCore 建立页索引，拿真实页数与按文件夹归纳的「话」。
+            var storedName: String?
+            var report: ComicBookReport?
+            if let base = LibraryStore.shared.directory {
+                let folder = base.appendingPathComponent("Comics", isDirectory: true)
+                let fileName = "\(UUID().uuidString).\(ext)"
+                let target = folder.appendingPathComponent(fileName)
+                do {
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    try FileManager.default.copyItem(at: url, to: target)
+                    report = try LocalBookService.live().inspectComic(at: target)
+                    storedName = fileName
+                } catch {
+                    try? FileManager.default.removeItem(at: target)
+                    storedName = nil
+                    report = nil
+                    message = "漫画解包失败：\(error.localizedDescription)"
+                }
+            }
+            if let report, let storedName {
+                let chapters = report.chapterTitles.map { title in
+                    let count = report.pages.filter { $0.chapter == title }.count
+                    return Chapter(
+                        id: "comic-\(title.prefix(16))",
+                        title: title,
+                        paragraphs: [Paragraph(
+                            id: "comic-\(title)-note",
+                            text: "\(title) · \(count) 页，请在漫画阅读器中查看。"
+                        )]
+                    )
+                }
+                draft = ImportDraft(
+                    title: name,
+                    author: "本机漫画",
+                    kind: .comic,
+                    detail: "\(ext.uppercased()) · 真实解包 · \(report.pageCount) 页 · \(chapters.count) 话",
+                    chapters: chapters,
+                    pageCount: report.pageCount,
+                    comicFileName: storedName
+                )
+            } else {
+                // 复制或解包都失败时保留可用的演示章节，不让用户卡在空结果。
+                draft = ImportDraft(
+                    title: name,
+                    author: "本地文件",
+                    kind: .comic,
+                    detail: "\(ext.uppercased()) · 未能解析，使用演示章节",
+                    chapters: Self.demoChapters(title: name, count: 6)
+                )
+            }
         } else {
-            let kind: BookKind = ext == "zip" || ext == "cbz" ? .comic : .novel
-            let chapters = Self.demoChapters(title: name, count: kind == .comic ? 6 : 4)
+            let chapters = Self.demoChapters(title: name, count: 4)
             draft = ImportDraft(
                 title: name,
                 author: "本地文件",
-                kind: kind,
+                kind: .novel,
                 detail: "\(ext.uppercased()) · 未解析文件内容，使用演示章节",
                 chapters: chapters
             )
@@ -553,6 +605,66 @@ struct SmartImportSheet: View {
 
 // MARK: - Comic Reader
 
+/// 漫画页的按需加载器：压缩包留在沙箱里，只在翻到某页时读那一页并降采样。
+/// 解包索引是 Sendable 的，重活放到 detached task，避免拖动进度条时卡主线程。
+@Observable
+@MainActor
+final class ComicReaderModel {
+    var report: ComicBookReport?
+    var loadError: String?
+    var images: [Int: UIImage] = [:]
+    var failedPages: Set<Int> = []
+    /// 书里记着漫画文件名却读不出来（比如备份恢复后沙箱文件没带回来）。
+    /// 这时绝不能静默回落到演示画面，必须让用户知道需要重新导入。
+    var isBroken = false
+    private var loading: Set<Int> = []
+    private var comicURL: URL?
+
+    var hasRealComic: Bool { report != nil }
+
+    func configure(url: URL?, expectsComic: Bool) {
+        comicURL = url
+        report = nil
+        loadError = nil
+        isBroken = false
+        images = [:]
+        failedPages = []
+        loading = []
+        guard let url else {
+            isBroken = expectsComic
+            return
+        }
+        do {
+            report = try LocalBookService.live().inspectComic(at: url)
+        } catch {
+            loadError = error.localizedDescription
+            isBroken = expectsComic
+        }
+    }
+
+    func loadImage(for index: Int) async {
+        guard images[index] == nil, !failedPages.contains(index), !loading.contains(index),
+              let comicURL, let report, index < report.pages.count else { return }
+        loading.insert(index)
+        defer { loading.remove(index) }
+        let service = LocalBookService.live()
+        let url = comicURL
+        let path = report.pages[index].path
+        do {
+            let data = try await Task.detached(priority: .userInitiated) {
+                try service.loadComicThumbnail(at: url, path: path)
+            }.value
+            guard let image = UIImage(data: data) else {
+                failedPages.insert(index)
+                return
+            }
+            images[index] = image
+        } catch {
+            failedPages.insert(index)
+        }
+    }
+}
+
 struct ComicReaderView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -563,6 +675,7 @@ struct ComicReaderView: View {
     @State private var mode: ComicMode = .page
     @State private var showChrome = true
     @State private var cached = false
+    @State private var model = ComicReaderModel()
 
     enum ComicMode: String, CaseIterable, Identifiable {
         case page = "页漫"
@@ -570,8 +683,15 @@ struct ComicReaderView: View {
         var id: String { rawValue }
     }
 
+    /// 老快照里的演示漫画没有 comicFileName，保留假画面作为回落。
+    private var comicURL: URL? {
+        guard let name = book.comicFileName, let base = LibraryStore.shared.directory else { return nil }
+        return base.appendingPathComponent("Comics", isDirectory: true).appendingPathComponent(name)
+    }
+
     private var pageCount: Int {
-        max(book.pageCount ?? book.chapterCount * 8, 8)
+        if let count = model.report?.pageCount, count > 0 { return count }
+        return max(book.pageCount ?? book.chapterCount * 8, 8)
     }
 
     var body: some View {
@@ -581,11 +701,12 @@ struct ComicReaderView: View {
             if mode == .page {
                 TabView(selection: $page) {
                     ForEach(0..<pageCount, id: \.self) { index in
-                        ComicPageArt(book: book, page: index, total: pageCount)
+                        ComicPageView(book: book, page: index, total: pageCount, model: model)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 74)
                             .tag(index)
                             .onTapGesture { toggleChrome() }
+                            .onAppear { Task { await model.loadImage(for: index) } }
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -593,9 +714,10 @@ struct ComicReaderView: View {
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(0..<pageCount, id: \.self) { index in
-                            ComicPageArt(book: book, page: index, total: pageCount)
+                            ComicPageView(book: book, page: index, total: pageCount, model: model)
                                 .padding(.horizontal, 14)
                                 .onTapGesture { toggleChrome() }
+                                .onAppear { Task { await model.loadImage(for: index) } }
                         }
                     }
                     .padding(.vertical, 74)
@@ -614,7 +736,10 @@ struct ComicReaderView: View {
         .statusBarHidden(!showChrome)
         .persistentSystemOverlays(.hidden)
         .onAppear {
-            page = min(max(Int((book.progress * Double(pageCount - 1)).rounded()), 0), pageCount - 1)
+            model.configure(url: comicURL, expectsComic: book.comicFileName != nil)
+            if let error = model.loadError { store.showToast("漫画读取失败：\(error)") }
+            let count = pageCount
+            page = min(max(Int((book.progress * Double(count - 1)).rounded()), 0), count - 1)
             // 图片缓存是真实文件，重新进入时按磁盘状态显示图标。
             cached = ImageCacheStore.isCached(bookID: book.id)
             syncProgress()
@@ -659,9 +784,9 @@ struct ComicReaderView: View {
                         ImageCacheStore.remove(bookID: book.id)
                         cached = false
                         store.showToast("已清除 \(book.title) 的图片缓存")
-                    } else if let bytes = ImageCacheStore.store(bookID: book.id, title: book.title, pages: pageCount) {
+                    } else if let bytes = cachePages() {
                         cached = true
-                        store.showToast("已缓存 \(pageCount) 页图片 · \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))")
+                        store.showToast("已缓存 · \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))")
                     } else {
                         store.showToast("缓存写入失败，请检查存储空间")
                     }
@@ -760,6 +885,19 @@ struct ComicReaderView: View {
         .contentShape(Rectangle())
     }
 
+    /// 真漫画把降采样后的页图落盘；老演示书沿用清单文件，界面行为一致。
+    private func cachePages() -> Int? {
+        guard let report = model.report, let comicURL else {
+            return ImageCacheStore.store(bookID: book.id, title: book.title, pages: pageCount)
+        }
+        return ImageCacheStore.storeImages(bookID: book.id, title: book.title, pages: pageCount) { index in
+            guard index < report.pages.count else { return nil }
+            return try? LocalBookService.live().loadComicThumbnail(
+                at: comicURL, path: report.pages[index].path, maxPixelSize: 1200
+            )
+        }
+    }
+
     private func toggleChrome() {
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             showChrome.toggle()
@@ -772,6 +910,148 @@ struct ComicReaderView: View {
             progress: Double(page + 1) / Double(pageCount),
             position: "第 \(page + 1) 页 / \(pageCount)"
         )
+    }
+}
+
+/// 书架详情页的三页缩略。真漫画从沙箱压缩包取前三页，老演示书回落到占位图。
+struct ComicCoverStrip: View {
+    let book: Book
+    @State private var images: [Int: UIImage] = [:]
+    @State private var didLoad = false
+
+    private var comicURL: URL? {
+        guard let name = book.comicFileName, let base = LibraryStore.shared.directory else { return nil }
+        return base.appendingPathComponent("Comics", isDirectory: true).appendingPathComponent(name)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(0..<3, id: \.self) { index in
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(index == 0 ? Color(hex: 0x2C3A48) : Palette.faint)
+                    if let image = images[index] {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Image(systemName: index == 0 ? "cloud.moon" : "photo")
+                            .font(.system(size: 17, weight: .light))
+                            .foregroundStyle(Palette.tertiary)
+                    }
+                }
+                .frame(height: 96)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
+        .onAppear { Task { await load() } }
+    }
+
+    private func load() async {
+        guard !didLoad, let comicURL else { return }
+        didLoad = true
+        do {
+            let report = try await Task.detached { try LocalBookService.live().inspectComic(at: comicURL) }.value
+            for page in report.pages.prefix(3) {
+                let url = comicURL
+                let path = page.path
+                let index = page.index
+                let data = try await Task.detached {
+                    try LocalBookService.live().loadComicThumbnail(at: url, path: path, maxPixelSize: 320)
+                }.value
+                if let image = UIImage(data: data) { images[index] = image }
+            }
+        } catch {
+            // 拿不到真缩略图就保留占位图，不打断书架浏览。
+        }
+    }
+}
+
+/// 有真压缩包就展示真实页图；老快照没有文件时回落到原来的演示画面。
+struct ComicPageView: View {
+    let book: Book
+    let page: Int
+    let total: Int
+    let model: ComicReaderModel
+
+    private var image: UIImage? { model.images[page] }
+
+    private var chapterLabel: String {
+        guard let report = model.report, page < report.pages.count else { return "" }
+        return report.pages[page].chapter
+    }
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(alignment: .bottomLeading) {
+                        if !chapterLabel.isEmpty {
+                            Text(chapterLabel)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(.black.opacity(0.45), in: Capsule())
+                                .padding(12)
+                        }
+                    }
+                    .shadow(color: .black.opacity(0.5), radius: 18, y: 10)
+            } else if model.isBroken {
+                brokenPlaceholder
+            } else if model.hasRealComic {
+                placeholder
+            } else {
+                ComicPageArt(book: book, page: page, total: total)
+            }
+        }
+    }
+
+    private var brokenPlaceholder: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(hex: 0x121923))
+            VStack(spacing: 12) {
+                Image(systemName: "doc.badge.exclamationmark")
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundStyle(.white.opacity(0.55))
+                Text("漫画文件已丢失或损坏")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.75))
+                Text("请从书架重新导入原压缩包")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.45))
+            }
+        }
+        .aspectRatio(0.68, contentMode: .fit)
+    }
+
+    private var placeholder: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(hex: 0x121923))
+            VStack(spacing: 10) {
+                if model.failedPages.contains(page) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 26, weight: .light))
+                        .foregroundStyle(.white.opacity(0.5))
+                    Text("这一页读取失败")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.5))
+                } else {
+                    ProgressView()
+                        .tint(.white.opacity(0.7))
+                    Text("正在解包第 \(page + 1) 页")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+            }
+        }
+        .aspectRatio(0.68, contentMode: .fit)
     }
 }
 

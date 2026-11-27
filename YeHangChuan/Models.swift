@@ -53,6 +53,9 @@ struct Book: Identifiable, Hashable, Codable, Sendable {
     /// 本地音频文件名（相对 LibraryStore 的 AudioBooks 目录）。
     /// Optional 且有默认值，旧快照缺这个键时合成解码会容错为 nil。
     var audioFileName: String? = nil
+    /// 本地漫画压缩包文件名（相对 LibraryStore 的 Comics 目录）。
+    /// Optional 且有默认值，旧快照缺这个键时合成解码会容错为 nil。
+    var comicFileName: String? = nil
 
     var unitLabel: String { kind == .comic ? "话" : "章" }
 
@@ -604,6 +607,10 @@ struct ImportDraft: Identifiable {
     var audioFileName: String? = nil
     /// 从音频文件读到的真实时长文案；读不到时为 nil。
     var durationLabel: String? = nil
+    /// 漫画解包后的真实页数；非漫画书为 nil。
+    var pageCount: Int? = nil
+    /// 漫画导入时复制进沙箱的压缩包文件名；非漫画书为 nil。
+    var comicFileName: String? = nil
 }
 
 // MARK: - Stats
@@ -1349,12 +1356,13 @@ final class AppStore {
             chapterCount: draft.chapters.count,
             progress: 0,
             lastPosition: "未开始",
-            pageCount: draft.kind == .comic ? max(draft.chapters.count * 8, 20) : nil,
+            pageCount: draft.kind == .comic ? (draft.pageCount ?? max(draft.chapters.count * 8, 20)) : nil,
             duration: draft.kind == .audio ? (draft.durationLabel ?? "12:30") : nil,
             isFinished: false,
             group: groups.first,
             sourceID: "local",
-            audioFileName: draft.audioFileName
+            audioFileName: draft.audioFileName,
+            comicFileName: draft.comicFileName
         )
         customChapters[book.id] = draft.chapters
         books.insert(book, at: 0)

@@ -90,7 +90,7 @@ struct SettingsView: View {
                                 } label: {
                                     SettingsRow(
                                         title: "导入本地书",
-                                        value: "TXT / EPUB / PDF / ZIP",
+                                        value: "TXT / EPUB / CBZ / ZIP",
                                         systemImage: "square.and.arrow.down"
                                     )
                                 }
@@ -1308,7 +1308,7 @@ struct CacheSheet: View {
                         }
                         .buttonStyle(PressableStyle(scale: 0.97))
 
-                        Text("章节与音频为演示数据估算值；图片缓存是漫画页清单，真实写在 Application Support 下。")
+                        Text("章节与音频为演示数据估算值；漫画图片缓存是降采样后的真实页图，写在 Application Support 下。")
                             .font(.system(size: 10))
                             .foregroundStyle(Palette.tertiary)
 
