@@ -38,6 +38,9 @@ struct SmartImportSheet: View {
             UTType.plainText,
             UTType.zip,
             UTType(filenameExtension: "cbz"),
+            UTType(filenameExtension: "cbr"),
+            UTType(filenameExtension: "rar"),
+            UTType(filenameExtension: "7z"),
             UTType(filenameExtension: "epub"),
             UTType(filenameExtension: "mp3"),
             UTType(filenameExtension: "m4a"),
@@ -373,7 +376,7 @@ struct SmartImportSheet: View {
                 audioFileName: storedName,
                 durationLabel: realDuration
             )
-        } else if ["zip", "cbz"].contains(ext) {
+        } else if ["zip", "cbz", "rar", "cbr", "7z"].contains(ext) {
             // 漫画压缩包真实解包。fileImporter 授权是一次性的，先复制进自己的沙箱，
             // 再由 LegadoCore 建立页索引，拿真实页数与按文件夹归纳的「话」。
             var storedName: String?

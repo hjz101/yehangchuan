@@ -1,5 +1,5 @@
 {
-  "originHash" : "20bb221ed652b541c807c364f4103186c6addbe44d2e8d3df6e659c44cae6dd9",
+  "originHash" : "b784ecd662185378275c3f0788e04e379a737b84bf9b2eae2b80adbc9cd2564d",
   "pins" : [
     {
       "identity" : "kanna",
@@ -8,6 +8,24 @@
       "state" : {
         "revision" : "3c73af6d3859d9240db60aef233941a715387744",
         "version" : "6.1.0"
+      }
+    },
+    {
+      "identity" : "swcompression",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tsolomko/SWCompression.git",
+      "state" : {
+        "revision" : "36f068e4ffa929f23aec8dde065a9b365fbf0688",
+        "version" : "4.0.0"
+      }
+    },
+    {
+      "identity" : "swiftrar",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/polderpijplijn/SwiftRAR.git",
+      "state" : {
+        "revision" : "d9b78aada23b92c2e97ee72f67dae1be8c97b2d1",
+        "version" : "0.2.0"
       }
     },
     {

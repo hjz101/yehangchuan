@@ -60,9 +60,9 @@ public struct ComicArchive {
     private let report: ComicBookReport
 
     /// 单页上限。比 EPUB 正文宽松，但仍能挡住 zip bomb 式的一页超大图。
-    private static let pageLimit = 64 * 1_024 * 1_024
+    static let pageLimit = 64 * 1_024 * 1_024
     private static let maximumEntries = 50_000
-    private static let imageExtensions: Set<String> = [
+    static let imageExtensions: Set<String> = [
         "png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "avif", "tif", "tiff"
     ]
 
@@ -162,7 +162,7 @@ public struct ComicArchive {
         return result
     }
 
-    private static func downsample(_ data: Data, maxPixelSize: Int) -> Data? {
+    static func downsample(_ data: Data, maxPixelSize: Int) -> Data? {
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -176,7 +176,7 @@ public struct ComicArchive {
         return output as Data
     }
 
-    private static func isImage(_ path: String) -> Bool {
+    static func isImage(_ path: String) -> Bool {
         let name = (path as NSString).lastPathComponent
         guard !name.hasPrefix("."), name.lowercased() != "thumbs.db" else { return false }
         // macOS 打包压缩包时附带的资源分叉目录不是漫画页。
@@ -184,18 +184,18 @@ public struct ComicArchive {
         return imageExtensions.contains((name as NSString).pathExtension.lowercased())
     }
 
-    private static func cleanChapterName(_ folder: String) -> String {
+    static func cleanChapterName(_ folder: String) -> String {
         let name = (folder as NSString).lastPathComponent
         return name.isEmpty ? "全本" : name
     }
 
-    private static func safePath(_ path: String) -> Bool {
+    static func safePath(_ path: String) -> Bool {
         !path.isEmpty && !path.hasPrefix("/") && !path.contains("\\") && !path.contains("\0")
             && !path.split(separator: "/").contains("..")
     }
 
     /// 逐段比较，数字段按数值而非字典序 —— 保证 page-2 排在 page-10 前面。
-    private static func naturalLess(_ lhs: String, _ rhs: String) -> Bool {
+    static func naturalLess(_ lhs: String, _ rhs: String) -> Bool {
         let left = lhs.split(separator: "/").map(String.init)
         let right = rhs.split(separator: "/").map(String.init)
         for (a, b) in zip(left, right) where a != b {
@@ -204,7 +204,7 @@ public struct ComicArchive {
         return left.count < right.count
     }
 
-    private static func naturalSegmentLess(_ a: String, _ b: String) -> Bool {
+    static func naturalSegmentLess(_ a: String, _ b: String) -> Bool {
         let an = Array(a)
         let bn = Array(b)
         var i = 0

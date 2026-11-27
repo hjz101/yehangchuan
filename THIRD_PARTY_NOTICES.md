@@ -32,6 +32,21 @@
 - 用途：EPUB ZIP 容器读取（LegadoCore 的 LocalBook 模块使用）
 - 许可：MIT，完整版权及许可见 [LICENSES/ZIPFoundation-LICENSE.txt](LICENSES/ZIPFoundation-LICENSE.txt)
 
+## SwiftRAR
+
+- 项目：<https://github.com/polderpijplijn/SwiftRAR>，固定版本 `0.2.0`
+- 用途：CBR / RAR4 / RAR5 漫画压缩包只读解析（LegadoCore 的漫画模块使用）
+- 许可：SwiftRAR 自身代码为 MIT，见 [LICENSES/SwiftRAR-LICENSE.txt](LICENSES/SwiftRAR-LICENSE.txt)；
+  其链接的 RARDecode 是 RARLAB UnRAR 解压代码的 Swift 移植，适用 unRAR 许可，
+  声明段落见 [LICENSES/SwiftRAR-NOTICE.txt](LICENSES/SwiftRAR-NOTICE.txt)。
+  该许可允许免费读取 RAR，但禁止用它实现 RAR 压缩器；本项目只做只读解包。
+
+## SWCompression
+
+- 项目：<https://github.com/tsolomko/SWCompression>，固定版本 `4.0.0`
+- 用途：7z 漫画压缩包只读解析
+- 许可：MIT，完整版权及许可见 [LICENSES/SWCompression-LICENSE.txt](LICENSES/SWCompression-LICENSE.txt)
+
 ## 系统框架
 
 LegadoCore 另外链接 `JavaScriptCore`、`CryptoKit`、`sqlite3`、`Network`、`Security`、`Vision`、`ImageIO`、`CommonCrypto`，

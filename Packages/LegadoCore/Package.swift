@@ -12,7 +12,7 @@ import PackageDescription
 let package = Package(
     name: "LegadoCore",
     platforms: [
-        .iOS(.v15),
+        .iOS(.v16),
         .macOS(.v13)
     ],
     products: [
@@ -21,7 +21,9 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", exact: "2.13.5"),
         .package(url: "https://github.com/tid-kijyun/Kanna.git", exact: "6.1.0"),
-        .package(url: "https://github.com/weichsel/ZIPFoundation.git", exact: "0.9.20")
+        .package(url: "https://github.com/weichsel/ZIPFoundation.git", exact: "0.9.20"),
+        .package(url: "https://github.com/polderpijplijn/SwiftRAR.git", exact: "0.2.0"),
+        .package(url: "https://github.com/tsolomko/SWCompression.git", exact: "4.0.0")
     ],
     targets: [
         .target(
@@ -29,7 +31,9 @@ let package = Package(
             dependencies: [
                 .product(name: "SwiftSoup", package: "SwiftSoup"),
                 .product(name: "Kanna", package: "Kanna"),
-                .product(name: "ZIPFoundation", package: "ZIPFoundation")
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
+                .product(name: "SwiftRAR", package: "SwiftRAR"),
+                .product(name: "SWCompression", package: "SWCompression")
             ],
             linkerSettings: [
                 .linkedFramework("JavaScriptCore"),
@@ -43,7 +47,8 @@ let package = Package(
             dependencies: [
                 "LegadoCore",
                 .product(name: "ZIPFoundation", package: "ZIPFoundation")
-            ]
+            ],
+            resources: [.copy("Fixtures")]
         )
     ]
 )
