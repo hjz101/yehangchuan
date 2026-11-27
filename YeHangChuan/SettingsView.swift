@@ -35,7 +35,6 @@ struct SettingsView: View {
     @State private var showVoice = false
     @State private var showCompliance = false
     @State private var showEyeCare = false
-    @State private var showAlert: SettingsAlert?
     @State private var readerForFrameAdjust: Book?
     /// 图片缓存的真实占用，进页面后异步统计一次。
     /// nil 表示还没算出来，这时候显示「计算中」而不是显示一个假的 0。
@@ -242,24 +241,9 @@ struct SettingsView: View {
                                 )
                             }
 
-                            HStack(spacing: 10) {
-                                Text("夜航船 · 本地优先的阅读器")
-                                    .font(.system(size: 10.5, design: .serif))
-                                    .foregroundStyle(Palette.tertiary)
-
-                                Text("·")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(Palette.tertiary.opacity(0.6))
-
-                                Button {
-                                    showAlert = .support
-                                } label: {
-                                    Text("支持开发者")
-                                        .font(.system(size: 10.5, weight: .medium))
-                                        .foregroundStyle(Palette.accent)
-                                }
-                                .buttonStyle(PressableStyle())
-                            }
+                            Text("夜航船 · 本地优先的阅读器")
+                                .font(.system(size: 10.5, design: .serif))
+                                .foregroundStyle(Palette.tertiary)
                             .frame(maxWidth: .infinity)
                             .padding(.top, 4)
                             .id("settingsFooter")
@@ -397,13 +381,6 @@ struct SettingsView: View {
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
                 .appChrome(store)
-        }
-        .alert(item: $showAlert) { alert in
-            Alert(
-                title: Text(alert.title),
-                message: Text(alert.message),
-                dismissButton: .default(Text("好"))
-            )
         }
         .task {
             #if DEBUG
@@ -727,32 +704,6 @@ struct EyeCareSheet: View {
     }
 }
 
-enum SettingsAlert: Identifiable {
-    case export
-    case support
-
-    var id: String {
-        switch self {
-        case .export: "export"
-        case .support: "support"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .export: "导出数据"
-        case .support: "支持开发者"
-        }
-    }
-
-    var message: String {
-        switch self {
-        case .export: "演示版本暂未实现导出，这里用于确认入口位置。"
-        case .support: "演示版本不接入支付，仅保留站外支持入口。"
-        }
-    }
-}
-
 struct GoalSheet: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -873,11 +824,23 @@ struct DistributionSheet: View {
 
                     VStack(spacing: 0) {
                         infoRow("安装方式", "TestFlight", isLast: false)
-                        infoRow("构建有效期", "2027-05-24", isLast: false)
+                        infoRow("构建有效期", "约 90 天（自签 / TestFlight 由 Apple 决定）", isLast: false)
                         infoRow("更新渠道", "GitHub Releases", isLast: false)
                         infoRow("价格", "免费", isLast: true)
                     }
                     .glassSurface(cornerRadius: 22)
+
+                    Button {
+                        UIApplication.shared.open(URL(string: "https://github.com/hjz101/yehangchuan/releases")!)
+                    } label: {
+                        Label("打开发布页", systemImage: "arrow.up.right.square")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Palette.onAccent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(Palette.accentSolid, in: Capsule())
+                    }
+                    .buttonStyle(PressableStyle(scale: 0.97))
 
                     Spacer()
                 }
