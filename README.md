@@ -84,7 +84,7 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 | AI 封面 / 摘要 / TTS（v1.2） | 用户自配 Key 占位、摘要 / 封面方案 / 系统语音试听（模拟请求） |
 | 在线发现与缓存（v1.3） | 分类从已启用书源的 `exploreUrl` 解析，书目真实抓取；订阅与章节缓存为模拟 |
 | 听书与多角色（v2.0–v2.1） | 系统语音真实播放；后台、锁屏、CarPlay、多角色映射模拟 |
-| 隐私 / 内容来源 / 分发 | 首次与设置常驻说明，TestFlight / 自签，无内购 |
+| 隐私 / 内容来源 / 分发 | 首次与设置常驻说明，自签安装（Sign to Run Locally），无内购 |
 
 ## 护眼
 
@@ -120,6 +120,6 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 
 - CBZ / RAR / 7z 解包，真实 mp3/m4a/m4b 文件播放（EPUB 已能真实按需读取章节与正文）。
 - CloudKit、WKWebView 执行 JS（规则 JS 走的是 JavaScriptCore）、真实 AI 请求与本机 ZIP 打包。
-- App Store 分发与内购；当前为 TestFlight / 自签定位。
+- App Store 分发与内购；当前为自签安装定位，`DEVELOPMENT_TEAM` 留空，Xcode 选 **Sign to Run Locally**。已提供 AppIcon、隐私清单（`PrivacyInfo.xcprivacy`）与后台音频声明，真机安装前在 Xcode 的 Devices 里选好目标设备即可。
 
 标着「模拟」的入口（AI、TTS、iCloud 同步、漫画与音频解析）不会发出真实网络请求。**书源链路例外：启用书源后，搜索、目录、正文、发现、段评与换源都会真的联网**，请求地址可在「设置 → 网络日志」里查看（需要先打开记录开关）。
