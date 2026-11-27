@@ -321,12 +321,19 @@ public final class WebViewSourcePageExecutor: NSObject, SourceWebViewRequestExec
         } catch {
             throw RuleEngineError.malformedRule(rule: "ruleContent.sourceRegex", detail: "资源正则无效：\(error.localizedDescription)")
         }
+        // `evaluateJavaScript` 是把脚本当**脚本**跑，不是当函数体：
+        // 顶层的 `return` 是语法错误（"Return statements are only valid inside
+        // functions"），整条 WebView 请求会直接失败。带资源正则的书源都会
+        // 走到这里，所以必须包一层 IIFE —— 之前这条路径没有测试，一直没被
+        // 发现，等于所有声明了 `sourceRegex` 的书源都读不了。
         let script = """
-        const seen = new Set(window.__legadoResourceURLs || []);
-        try {
-          performance.getEntriesByType('resource').forEach(function (e) { seen.add(e.name); });
-        } catch (e) {}
-        return Array.from(seen);
+        (function () {
+          const seen = new Set(window.__legadoResourceURLs || []);
+          try {
+            performance.getEntriesByType('resource').forEach(function (e) { seen.add(e.name); });
+          } catch (e) {}
+          return Array.from(seen);
+        })();
         """
         let raw = try await webView.evaluateJavaScript(script) as? [String] ?? []
         return raw.first { candidate in
