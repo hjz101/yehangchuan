@@ -301,7 +301,7 @@ final class SourceEngine {
             milliseconds: elapsed()
         ))
 
-        let tracesBefore = WebViewSourcePageExecutor.shared.recentTraces.count
+        let traceSnapshot = WebViewSourcePageExecutor.shared.traceSnapshot()
         do {
             let response = try await SourceNetworkPolicy.shared.execute(
                 request,
@@ -311,9 +311,7 @@ final class SourceEngine {
                 webViewExecutor: WebViewSourcePageExecutor.shared
             )
             let text = response.decodedText
-            let newTraces = Array(WebViewSourcePageExecutor.shared.recentTraces.prefix(
-                max(WebViewSourcePageExecutor.shared.recentTraces.count - tracesBefore, 0)
-            ))
+            let newTraces = WebViewSourcePageExecutor.shared.traces(since: traceSnapshot)
             if let trace = newTraces.first(where: { $0.url == prepared.url.absoluteString }) {
                 lines.append(DebugLine(
                     step: trace.mode.title,

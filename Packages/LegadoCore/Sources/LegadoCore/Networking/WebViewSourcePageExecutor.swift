@@ -307,6 +307,18 @@ public final class WebViewSourcePageExecutor: NSObject, SourceWebViewRequestExec
         )
     }
 
+    /// 执行前拍下当前轨迹的 id 快照，配合 `traces(since:)` 只取这一次新增的部分。
+    public func traceSnapshot() -> Set<UUID> {
+        Set(recentTraces.map(\.id))
+    }
+
+    /// 返回 `snapshot` 之后新记录的轨迹，最新在前。
+    /// `recentTraces` 是有上限的环形缓存：跑之前若已存满 20 条，新增一条后
+    /// 总数仍是 20，用 `count` 差值会得到 0 —— 必须用 id 识别，不能数个数。
+    public func traces(since snapshot: Set<UUID>) -> [WebViewTraceEntry] {
+        recentTraces.filter { !snapshot.contains($0.id) }
+    }
+
     /// 在页面已加载的资源地址里找第一个命中 `sourceRegex` 的。
     ///
     /// 地址来源是页面自己报告的 `performance.getEntriesByType('resource')`

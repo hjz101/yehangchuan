@@ -225,4 +225,26 @@ final class WebViewSourcePageExecutorTests: XCTestCase {
             }
         }
     }
+
+    /// 调试界面用「执行前的快照 → 执行后的差集」显示这一次留下的轨迹。
+    /// `recentTraces` 是有上限的环形缓存，存满后 `count` 不再随新增变化，
+    /// 用个数差会算成 0，界面就误以为这一步没走 WebView。用 id 取差集才对。
+    func testTraceDiffStillWorksWhenBufferIsFull() async throws {
+        let html = "<!doctype html><html><body><p>轨迹</p></body></html>"
+        // 先把环形缓存填到上限（每条 WebView 请求留一条轨迹）。
+        for _ in 0..<20 {
+            _ = try await executor.execute(prepared(html: html), source: source, timeout: 10)
+        }
+        XCTAssertEqual(executor.recentTraces.count, 20)
+        let snapshot = executor.traceSnapshot()
+        XCTAssertEqual(snapshot.count, 20)
+
+        _ = try await executor.execute(prepared(html: html), source: source, timeout: 10)
+        let newTraces = executor.traces(since: snapshot)
+        XCTAssertEqual(newTraces.count, 1, "缓存已满时仍应识别出这一次新增的轨迹")
+        XCTAssertEqual(newTraces.first?.sourceName, source.bookSourceName)
+        if let added = newTraces.first {
+            XCTAssertFalse(snapshot.contains(added.id), "新增轨迹的 id 不该在旧快照里")
+        }
+    }
 }
