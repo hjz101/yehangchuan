@@ -81,6 +81,12 @@ public enum LibraryDocumentWriter {
         )
         try storage.saveIndex(index)
 
+        // 索引已经是提交点，此刻回收才安全：即使回收中途崩溃，索引仍指向完整
+        // 数据，最多少几个孤儿对象占空间；反过来的话崩溃会让索引指向已被删的正文。
+        for bookID in plan.booksWithChapters {
+            try storage.collectGarbage(bookID: bookID)
+        }
+
         for bookID in plan.removedBooks {
             try storage.removeBook(bookID)
         }

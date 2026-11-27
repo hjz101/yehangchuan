@@ -89,6 +89,26 @@ final class LibraryDocumentTests: XCTestCase {
         XCTAssertEqual(try storage.chapters(bookID: "b1").map(\.id), ["new0"])
     }
 
+    /// 换源替换正文后，旧章节对象应被写入器回收，不该一直占着磁盘。
+    func testWriterReclaimsOrphanObjectsAfterReplace() throws {
+        try libraryWrite(
+            chapters: ["b1": [chapter("old", order: 0, texts: ["旧内容"])]],
+            replace: ["b1"]
+        )
+        let objects = storage.bookDirectory("b1").appendingPathComponent("objects", isDirectory: true)
+        func objectCount() throws -> Int {
+            try FileManager.default.contentsOfDirectory(atPath: objects.path).count
+        }
+        XCTAssertEqual(try objectCount(), 1)
+
+        try libraryWrite(
+            chapters: ["b1": [chapter("new", order: 0, texts: ["全新内容"])]],
+            replace: ["b1"]
+        )
+        XCTAssertEqual(try objectCount(), 1, "旧对象应被回收，只留新内容那一个")
+        XCTAssertEqual(try storage.chapters(bookID: "b1").map(\.id), ["new"])
+    }
+
     /// 增量写不该悄悄删掉没提到的章节：它是「补充」，不是「替换」。
     func testSavingChaptersKeepsChaptersNotMentioned() throws {
         try storage.saveChapters(
