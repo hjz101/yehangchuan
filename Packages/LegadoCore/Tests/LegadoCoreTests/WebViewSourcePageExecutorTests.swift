@@ -226,25 +226,35 @@ final class WebViewSourcePageExecutorTests: XCTestCase {
         }
     }
 
-    /// 调试界面用「执行前的快照 → 执行后的差集」显示这一次留下的轨迹。
-    /// `recentTraces` 是有上限的环形缓存，存满后 `count` 不再随新增变化，
-    /// 用个数差会算成 0，界面就误以为这一步没走 WebView。用 id 取差集才对。
-    func testTraceDiffStillWorksWhenBufferIsFull() async throws {
+    /// 调试界面只显示「这一次执行」留下的轨迹。作用域用 TaskLocal 传递：
+    /// 环形缓存存满后 `count` 不再变化（数个数会算成 0），且阅读时别的
+    /// 书源并发产生的请求不能串进来。跑满 20 条也自然冲掉别处留下的数据，
+    /// 所以本用例不依赖单例的初始状态。
+    func testTraceScopeOnlyReturnsThisExecution() async throws {
         let html = "<!doctype html><html><body><p>轨迹</p></body></html>"
-        // 先把环形缓存填到上限（每条 WebView 请求留一条轨迹）。
+        let scopeA = UUID()
+        let scopeB = UUID()
+
+        // 用 A 把环形缓存填满（20 条），同时冲掉别处留下的旧轨迹。
         for _ in 0..<20 {
-            _ = try await executor.execute(prepared(html: html), source: source, timeout: 10)
+            _ = try await WebViewTraceScope.$current.withValue(scopeA) {
+                try await executor.execute(prepared(html: html), source: source, timeout: 10)
+            }
         }
         XCTAssertEqual(executor.recentTraces.count, 20)
-        let snapshot = executor.traceSnapshot()
-        XCTAssertEqual(snapshot.count, 20)
+        XCTAssertEqual(executor.traces(in: scopeA).count, 20)
 
+        // 无作用域的请求（模拟阅读时别的书源）不该算进任何一次执行。
         _ = try await executor.execute(prepared(html: html), source: source, timeout: 10)
-        let newTraces = executor.traces(since: snapshot)
-        XCTAssertEqual(newTraces.count, 1, "缓存已满时仍应识别出这一次新增的轨迹")
-        XCTAssertEqual(newTraces.first?.sourceName, source.bookSourceName)
-        if let added = newTraces.first {
-            XCTAssertFalse(snapshot.contains(added.id), "新增轨迹的 id 不该在旧快照里")
+        XCTAssertNil(executor.recentTraces.first?.scopeID)
+
+        // 缓存已满时，B 仍能精确取到本次这一条。
+        _ = try await WebViewTraceScope.$current.withValue(scopeB) {
+            try await executor.execute(prepared(html: html), source: source, timeout: 10)
         }
+        let bTraces = executor.traces(in: scopeB)
+        XCTAssertEqual(bTraces.count, 1, "缓存已满时仍应识别出本次作用域的轨迹")
+        XCTAssertEqual(bTraces.first?.sourceName, source.bookSourceName)
+        XCTAssertEqual(bTraces.first?.scopeID, scopeB)
     }
 }

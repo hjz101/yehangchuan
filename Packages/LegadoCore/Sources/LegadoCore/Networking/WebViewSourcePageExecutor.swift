@@ -55,6 +55,17 @@ public struct WebViewTraceEntry: Identifiable, Sendable {
     public var delayMilliseconds: Int
     public var matchedSourceRegex: String?
     public var error: String?
+    /// 记录这条轨迹时所在的执行作用域；用于只挑出某一次执行留下的轨迹。
+    public var scopeID: UUID?
+}
+
+/// 一次 WebView 执行的作用域标识。
+///
+/// 用 `@TaskLocal` 而不是参数层层传递：同一 Task 调用链上的所有请求
+/// （包括跨 actor 切换）都会自动带上作用域，别的 Task 的并发请求带不上。
+/// 这样调试页不会把阅读时别的书源的请求显示成「这一步经过」。
+public enum WebViewTraceScope {
+    @TaskLocal public static var current: UUID?
 }
 
 /// 阅读 3.0 书源里 `webView:true` 请求的真实执行器。
@@ -296,6 +307,8 @@ public final class WebViewSourcePageExecutor: NSObject, SourceWebViewRequestExec
     public private(set) var recentTraces: [WebViewTraceEntry] = []
 
     private func record(_ entry: WebViewTraceEntry) {
+        var entry = entry
+        entry.scopeID = WebViewTraceScope.current
         recentTraces.insert(entry, at: 0)
         if recentTraces.count > 20 { recentTraces.removeLast(recentTraces.count - 20) }
         DiagnosticLog.shared.record(
@@ -307,16 +320,11 @@ public final class WebViewSourcePageExecutor: NSObject, SourceWebViewRequestExec
         )
     }
 
-    /// 执行前拍下当前轨迹的 id 快照，配合 `traces(since:)` 只取这一次新增的部分。
-    public func traceSnapshot() -> Set<UUID> {
-        Set(recentTraces.map(\.id))
-    }
-
-    /// 返回 `snapshot` 之后新记录的轨迹，最新在前。
-    /// `recentTraces` 是有上限的环形缓存：跑之前若已存满 20 条，新增一条后
-    /// 总数仍是 20，用 `count` 差值会得到 0 —— 必须用 id 识别，不能数个数。
-    public func traces(since snapshot: Set<UUID>) -> [WebViewTraceEntry] {
-        recentTraces.filter { !snapshot.contains($0.id) }
+    /// 只取 `scope` 这一次执行留下的轨迹，最新在前。
+    /// 按作用域识别而不是按 `count` 差值：环形缓存存满后总数不变，
+    /// 且全局快照会把并发的别的请求也算进来。
+    public func traces(in scope: UUID) -> [WebViewTraceEntry] {
+        recentTraces.filter { $0.scopeID == scope }
     }
 
     /// 在页面已加载的资源地址里找第一个命中 `sourceRegex` 的。

@@ -260,14 +260,14 @@ final class SourceEngine {
         urlRule: String,
         keyword: String,
         overrideScript: String?
-    ) async -> (lines: [DebugLine], preview: String) {
+    ) async -> (lines: [DebugLine], preview: String, traces: [WebViewTraceEntry]) {
         let started = ProcessInfo.processInfo.systemUptime
         func elapsed() -> Int { Int((ProcessInfo.processInfo.systemUptime - started) * 1_000) }
         var lines: [DebugLine] = []
 
         let trimmedRule = urlRule.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedRule.isEmpty else {
-            return ([DebugLine(step: "地址规则", detail: "没有可执行的地址规则", ok: false, milliseconds: 0)], "")
+            return ([DebugLine(step: "地址规则", detail: "没有可执行的地址规则", ok: false, milliseconds: 0)], "", [])
         }
 
         let prepared: PreparedRequest
@@ -280,7 +280,7 @@ final class SourceEngine {
                 defaultHeaders: headers
             )
         } catch {
-            return ([DebugLine(step: "规则解析", detail: error.localizedDescription, ok: false, milliseconds: elapsed())], "")
+            return ([DebugLine(step: "规则解析", detail: error.localizedDescription, ok: false, milliseconds: elapsed())], "", [])
         }
 
         var request = prepared
@@ -290,7 +290,7 @@ final class SourceEngine {
             request.webJavaScript = overrideScript
             #else
             // 分发版本不允许把任意脚本注入远程页面（App Store 2.5.2）。
-            return ([DebugLine(step: "脚本", detail: "分发版本不允许自定义注入脚本", ok: false, milliseconds: elapsed())], "")
+            return ([DebugLine(step: "脚本", detail: "分发版本不允许自定义注入脚本", ok: false, milliseconds: elapsed())], "", [])
             #endif
         }
 
@@ -301,17 +301,29 @@ final class SourceEngine {
             milliseconds: elapsed()
         ))
 
-        let traceSnapshot = WebViewSourcePageExecutor.shared.traceSnapshot()
+        // 作用域随 TaskLocal 传遍调用链：阅读时别的书源并发产生的轨迹不带
+        // 这个 scope，不会被算成「这一步经过」；失败时也要把轨迹带回去。
+        let scope = UUID()
+        let outcome: Result<HTTPResponse, any Error>
         do {
-            let response = try await SourceNetworkPolicy.shared.execute(
-                request,
-                source: source,
-                transport: transport,
-                timeout: 30,
-                webViewExecutor: WebViewSourcePageExecutor.shared
-            )
+            let response = try await WebViewTraceScope.$current.withValue(scope) {
+                try await SourceNetworkPolicy.shared.execute(
+                    request,
+                    source: source,
+                    transport: transport,
+                    timeout: 30,
+                    webViewExecutor: WebViewSourcePageExecutor.shared
+                )
+            }
+            outcome = .success(response)
+        } catch {
+            outcome = .failure(error)
+        }
+        let newTraces = WebViewSourcePageExecutor.shared.traces(in: scope)
+
+        switch outcome {
+        case .success(let response):
             let text = response.decodedText
-            let newTraces = WebViewSourcePageExecutor.shared.traces(since: traceSnapshot)
             if let trace = newTraces.first(where: { $0.url == prepared.url.absoluteString }) {
                 lines.append(DebugLine(
                     step: trace.mode.title,
@@ -338,15 +350,15 @@ final class SourceEngine {
                 ok: text.count > 0,
                 milliseconds: elapsed()
             ))
-            return (lines, String(text.prefix(600)))
-        } catch {
+            return (lines, String(text.prefix(600)), newTraces)
+        case .failure(let error):
             lines.append(DebugLine(
                 step: "请求失败",
                 detail: error.localizedDescription,
                 ok: false,
                 milliseconds: elapsed()
             ))
-            return (lines, "")
+            return (lines, "", newTraces)
         }
     }
 

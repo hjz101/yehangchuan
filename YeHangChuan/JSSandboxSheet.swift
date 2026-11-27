@@ -404,20 +404,16 @@ struct JSSandboxSheet: View {
         let script = useOverrideScript ? overrideScript : nil
         let keyword = keyword
         Task { @MainActor in
-            // 只展示**这一次**留下的轨迹。`recentTraces` 是全局最近 20 条，
-            // 直接取前 3 条会把上一次、甚至阅读时别的书源的记录显示成
-            // 「这一步经过」—— 没走 WebView 时会看到一张根本不存在的轨迹。
-            // 用 id 快照取差集：环形缓存存满后 count 不再变化，数个数会漏。
-            let executor = WebViewSourcePageExecutor.shared
-            let snapshot = executor.traceSnapshot()
+            // 轨迹由 sandbox 按执行作用域筛好返回：只含这一次留下的，
+            // 不会把上一次、阅读时别的书源的请求显示成「这一步经过」。
+            defer { isRunning = false }
             let result = await store.engine.sandbox(
                 source: selection.engine,
                 urlRule: rule,
                 keyword: keyword,
                 overrideScript: script
             )
-            traces = executor.traces(since: snapshot)
-            isRunning = false
+            traces = result.traces
             logs = result.lines
             preview = result.preview
             message = result.lines.contains { !$0.ok } ? "这一步没有跑通，原因见下" : "这一步真实执行完成"
