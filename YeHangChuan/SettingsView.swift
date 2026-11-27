@@ -595,6 +595,11 @@ struct EyeCareSheet: View {
                         .fontWeight(.semibold)
                 }
             }
+            // sheet 是独立宿主：根视图上的护眼层盖不住它，明暗偏好也不会自动
+            // 传进来。这两句都得写在这里，否则一边拖暖度/亮度、
+            // 一边切深浅，当前这张卡片本身毫无变化。
+            .preferredColorScheme(store.appearance.colorScheme)
+            .eyeCareFilter(store.eyeCare)
             .onDisappear { store.saveSnapshot() }
         }
     }

@@ -31,22 +31,27 @@ struct RootView: View {
             TabView(selection: $tab) {
                 Tab("书架", systemImage: "books.vertical.fill", value: AppTab.shelf) {
                     ShelfView()
+                        .eyeCareFilter(store.eyeCare)
                 }
 
                 Tab("书源", systemImage: "antenna.radiowaves.left.and.right", value: AppTab.source) {
                     SourceView()
+                        .eyeCareFilter(store.eyeCare)
                 }
 
                 Tab("摘录", systemImage: "quote.opening", value: AppTab.excerpts) {
                     ExcerptView()
+                        .eyeCareFilter(store.eyeCare)
                 }
 
                 Tab("统计", systemImage: "chart.bar.xaxis", value: AppTab.stats) {
                     StatsView()
+                        .eyeCareFilter(store.eyeCare)
                 }
 
                 Tab("设置", systemImage: "slider.horizontal.3", value: AppTab.settings) {
                     SettingsView()
+                        .eyeCareFilter(store.eyeCare)
                 }
             }
             .tabBarMinimizeBehavior(.onScrollDown)
@@ -63,12 +68,10 @@ struct RootView: View {
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: store.toast)
         .preferredColorScheme(store.appearance.colorScheme)
-        .overlay {
-            EyeCareLayer(settings: store.eyeCare)
-        }
         .fullScreenCover(isPresented: $player.showFullPlayer) {
             if let book = player.book {
                 AudioPlayerView(book: book)
+                    .eyeCareFilter(store.eyeCare)
             }
         }
         .onAppear {

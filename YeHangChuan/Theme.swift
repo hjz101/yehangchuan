@@ -195,13 +195,23 @@ struct EyeCareLayer: View {
         if settings.enabled {
             ZStack {
                 Color(hex: 0xFF9E4A)
-                    .opacity(settings.warmth * 0.13)
+                    .opacity(settings.warmth * 0.3)
                 Color.black
-                    .opacity(settings.dim)
+                    .opacity(settings.dim * 1.5)
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
         }
+    }
+}
+
+extension View {
+    /// 给一个页面叠上护眼层。
+    ///
+    /// sheet / fullScreenCover 都是独立宿主，根视图上叠的滤镜盖不住它们，
+    /// 所以每个需要跟着变色的页面各自挂一层。
+    func eyeCareFilter(_ settings: EyeCareSettings) -> some View {
+        overlay { EyeCareLayer(settings: settings) }
     }
 }
 
