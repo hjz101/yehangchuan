@@ -2,6 +2,27 @@ import SwiftUI
 import UIKit
 import LegadoCore
 
+extension Book {
+    /// 实验室功能（AI 试听、声音实验室）没有真实书籍时使用的占位书。
+    /// Release 构建不带演示数据，空书架时没有书可用；直接下标取演示书会越界。
+    /// 这里只提供显示用的书名，不会插入书架。
+    static var labSample: Book {
+        Book(
+            id: "lab-sample",
+            title: "夜航船",
+            author: "试听",
+            kind: .novel,
+            coverStyle: 0,
+            chapterCount: 0,
+            progress: 0,
+            lastPosition: "未开始",
+            pageCount: nil,
+            duration: nil,
+            isFinished: false
+        )
+    }
+}
+
 // MARK: - Export
 
 struct DataExportSheet: View {
@@ -291,7 +312,7 @@ struct AIStudioSheet: View {
             }
             .sheet(isPresented: $showTTS) {
                 ListenSheet(
-                    book: store.books.first ?? MockData.books[0],
+                    book: store.books.first ?? .labSample,
                     chapterTitle: "AI 摘要试听",
                     text: summary.isEmpty ? "夜航船在水面上缓慢前行，灯影落在书页上。" : summary
                 )
@@ -947,7 +968,7 @@ struct VoiceLabSheet: View {
             Button {
                 if !store.speech.isPlaying && !store.speech.isPaused {
                     store.speech.load(
-                        book: store.books.first ?? MockData.books[0],
+                        book: store.books.first ?? .labSample,
                         chapterTitle: "声音实验室",
                         segments: demoSegments
                     )
