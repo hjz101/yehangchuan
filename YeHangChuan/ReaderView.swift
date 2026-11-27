@@ -28,6 +28,8 @@ struct ReaderView: View {
     @State private var showListen = false
     @State private var showSourceSwitch = false
     @State private var commentParagraph: Paragraph?
+    /// 点「导出正文」后生成的临时 TXT，驱动分享面板。
+    @State private var exportFile: ExportedTextFile?
     @State private var flash: String?
     /// 在线书正在拉目录或正文。
     @State private var isLoadingNetwork = false
@@ -300,6 +302,11 @@ struct ReaderView: View {
             .presentationDetents([.medium, .large])
             .presentationCornerRadius(38)
         }
+        .sheet(item: $exportFile) { file in
+            ExportSheet(file: file, bookTitle: book.title)
+                .presentationDetents([.fraction(0.42)])
+                .presentationCornerRadius(32)
+        }
         .task {
             guard store.eyeCare.enabled, store.eyeCare.restReminder else { return }
             try? await Task.sleep(for: .seconds(store.eyeCare.restMinutes * 60))
@@ -555,6 +562,12 @@ struct ReaderView: View {
                         Label("缓存后续章节", systemImage: "arrow.down.circle")
                     }
 
+                    Button {
+                        exportFile = exportCurrentBook()
+                    } label: {
+                        Label("导出正文", systemImage: "square.and.arrow.up")
+                    }
+
                     Divider()
 
                     Button {
@@ -719,6 +732,49 @@ struct ReaderView: View {
                     flash = nil
                 }
             }
+        }
+    }
+
+    /// 把这本书已解析的正文导出成 TXT，交给 `ShareLink` 分享。
+    /// 用阅读页持有的 `chapters`（段落已经过净化/分段），这样本地书、演示书、
+    /// 网络书都能导出同一份「读者此刻看到的内容」，而不是只认在线缓存。
+    private func exportCurrentBook() -> ExportedTextFile? {
+        let all = store.chapters(for: book)
+        guard !all.isEmpty else { return nil }
+
+        var text = book.title + "\n"
+        if !book.author.isEmpty { text += "作者：\(book.author)\n" }
+        text += "\n"
+
+        var empty = 0
+        for chapter in all {
+            text += chapter.title + "\n\n"
+            let body = chapter.paragraphs.map(\.text).joined(separator: "\n")
+            if body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                empty += 1
+                text += "【本章正文尚未加载】\n\n"
+            } else {
+                text += body + "\n\n"
+            }
+        }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YeHangExports", isDirectory: true)
+        let folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            // 每次导出换一个 UUID 目录，旧的导出留着不删也无妨——系统会在临时目录
+            // 压力下自行回收；这里不做激进删除，避免误删正在被分享面板使用的文件。
+            let safeName = book.title
+                .components(separatedBy: CharacterSet(charactersIn: "/\\:"))
+                .joined(separator: "_")
+            let filename = (safeName.isEmpty ? "书籍" : safeName) + ".txt"
+            let url = folder.appendingPathComponent(filename)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            return ExportedTextFile(url: url, chapterCount: all.count, emptyChapters: empty)
+        } catch {
+            showFlash("导出失败：\(error.localizedDescription)")
+            return nil
         }
     }
 
@@ -2355,6 +2411,64 @@ struct SegmentCommentsSheet: View {
         if minutes < 60 { return "\(minutes) 分钟前" }
         if minutes < 1_440 { return "\(minutes / 60) 小时前" }
         return "\(minutes / 1_440) 天前"
+    }
+}
+
+// MARK: - 正文导出
+
+/// 导出结果。`id` 每次导出都是新的，保证连导两次也能重弹分享面板。
+struct ExportedTextFile: Identifiable {
+    let id = UUID()
+    let url: URL
+    let chapterCount: Int
+    let emptyChapters: Int
+}
+
+struct ExportSheet: View {
+    let file: ExportedTextFile
+    let bookTitle: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(Palette.accent)
+
+            Text("已生成《\(bookTitle)》正文")
+                .font(.system(size: 16, weight: .semibold, design: .serif))
+                .foregroundStyle(Palette.text)
+
+            Text(summary)
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.secondary)
+                .multilineTextAlignment(.center)
+
+            ShareLink(item: file.url, preview: SharePreview(bookTitle + ".txt")) {
+                Label("分享 TXT 文件", systemImage: "square.and.arrow.up")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Palette.onAccent)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Palette.accentSolid, in: Capsule())
+            }
+            .buttonStyle(PressableStyle())
+            .padding(.horizontal, 24)
+
+            Button("完成") { dismiss() }
+                .font(.system(size: 13))
+                .foregroundStyle(Palette.secondary)
+                .buttonStyle(PressableStyle())
+        }
+        .padding(.top, 26)
+        .padding(.bottom, 14)
+    }
+
+    private var summary: String {
+        if file.emptyChapters == 0 {
+            return "共 \(file.chapterCount) 章，正文已全部导出。文件只留在临时目录。"
+        }
+        return "共 \(file.chapterCount) 章，其中 \(file.emptyChapters) 章正文尚未加载，已用占位文字标注。"
     }
 }
 

@@ -76,6 +76,7 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 | 进度恢复 | 章节 + 段落 ID + UTF-16 offset 持久化，字号变化后可回到同一段 |
 | 阅读设置 / 目录 / 书签 / 笔记 | 即时生效并持久化；书签备注可编辑 |
 | iCloud 私有同步 | 模拟账号、同步、冲突与保留副本 |
+| 正文导出 | 阅读页「⋯ → 导出正文」把已解析段落拼成 TXT，经系统分享面板发出；未加载章节如实标注 |
 | 数据迁移 | books.json / notes.md / annotations.md 预览、复制与分享 |
 | 多类型书架 | 小说 / 漫画 / 有声同架与筛选 |
 | 音量键翻页 | 阅读设置开关 + `AVAudioSession` 音量变化监听 |
