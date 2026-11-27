@@ -92,6 +92,28 @@ final class LibraryStorageTests: XCTestCase {
         XCTAssertEqual(try storage.byteCount(bookID: "book-a"), before)
     }
 
+    /// 崩溃续跑：对象已经写盘、但清单尚未登记这一章时重跑迁移，必须把
+    /// 已存在的对象补登记进清单，而不是因为「文件已在」跳过导致永久失败。
+    /// 这正是 saveChapters 里 continue 跳过登记造成的死锁场景。
+    func testCrashResumeRegistersExistingObjectIntoManifest() throws {
+        let value = chapter("c0", order: 0, paragraphs: ["正文"])
+        try storage.saveChapters([value], bookID: "book-a")
+
+        // 模拟「对象已写、清单未登记」的崩溃现场：把清单清空，对象文件保留。
+        let directory = storage.bookDirectory("book-a")
+        let encoder = JSONEncoder()
+        try encoder.encode(ChapterManifest(entries: [:])).write(
+            to: directory.appendingPathComponent("manifest.json"),
+            options: .atomic
+        )
+        XCTAssertNil(try storage.chapter(id: "c0", bookID: "book-a"), "前置条件：此刻清单还没登记")
+
+        // 重跑：对象在但清单缺登记，saveChapters 必须补上。
+        try storage.saveChapters([value], bookID: "book-a")
+        XCTAssertEqual(try storage.chapter(id: "c0", bookID: "book-a")?.id, "c0")
+        XCTAssertEqual(try storage.chapterIDs(bookID: "book-a"), ["c0"])
+    }
+
     /// 更新一章后，旧对象变成孤儿，可被回收；新内容必须能读回。
     func testUpdatingChapterLeavesReclaimableObject() throws {
         try storage.saveChapters([chapter("c0", order: 0, paragraphs: ["旧正文"])], bookID: "book-a")

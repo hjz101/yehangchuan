@@ -230,11 +230,12 @@ public struct LibraryStorage: Sendable {
             let data = try encoder.encode(chapter)
             let filename = ContentID.hex(SHA256.hash(data: data)) + ".json"
             let target = objects.appendingPathComponent(filename)
-            if FileManager.default.fileExists(atPath: target.path) {
-                // 内容寻址：同名即同内容，不必重写。
-                continue
+            if !FileManager.default.fileExists(atPath: target.path) {
+                try writer.write(data, to: target)
             }
-            try writer.write(data, to: target)
+            // 登记必须无条件执行：崩溃可能停在「对象已写、清单未登记」之间，
+            // 重跑时对象虽已存在，这一章仍必须进清单，否则校验永远失败。
+            // 内容寻址下同名即同内容，存在就跳过写入，但绝不能跳过登记。
             next.entries[chapter.id] = filename
         }
         try writer.write(encoder.encode(next), to: directory.appendingPathComponent("manifest.json"))
