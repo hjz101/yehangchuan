@@ -48,7 +48,7 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 | **摘录** | 摘录流、按书筛选、只看收藏、写笔记、复制 |
 | **统计** | 今日目标环、7 日柱状图、13 周 91 天热力图、连续天数与偏好星期洞察 |
 | **设置** | 阅读偏好、每日目标、护眼与外观（界面明暗 + 暖色滤光）、备份、缓存、导出、账户与同步、分发与合规、功能实验室 |
-| **导入** | 系统文件选择；TXT 真实编码探测与章节切分；EPUB / 漫画 ZIP / 音频元数据模拟导入；链接与剪贴板 |
+| **导入** | 系统文件选择；TXT 真实编码探测与章节切分；EPUB 真实按需解析章节与正文；漫画 ZIP / 音频元数据模拟导入；链接与剪贴板 |
 | **漫画** | 页漫 / 条漫切换、进度恢复、图片缓存、系统语音描述 |
 | **实验室** | AI 摘要 / 封面 / TTS、JS 书源沙箱、在线发现、多角色与后台播放配置 |
 
@@ -63,7 +63,7 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 | 规划项 | Demo 落地 |
 | --- | --- |
 | TXT 导入 / 编码 / 章节切分 | 真实读取 UTF-8、GB18030、UTF-16，正则切章，重复标题合并 |
-| EPUB / 漫画 / 音频解析 | 读取文件信息后以模拟章节进入书架；漫画可读 |
+| EPUB / 漫画 / 音频解析 | EPUB 真实按需读取 ZIP 内章节与正文；漫画 ZIP 与音频元数据以演示章节进入书架，漫画可读 |
 | 分页与三种翻页 | 平移、覆盖、无动画；另有上下滚动 |
 | 进度恢复 | 章节 + 段落 ID + UTF-16 offset 持久化，字号变化后可回到同一段 |
 | 阅读设置 / 目录 / 书签 / 笔记 | 即时生效并持久化；书签备注可编辑 |
@@ -110,7 +110,7 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 
 ## 未实现
 
-- 真实 EPUB / CBZ / RAR / 7z 解包，真实 mp3/m4a/m4b 文件播放。
+- CBZ / RAR / 7z 解包，真实 mp3/m4a/m4b 文件播放（EPUB 已能真实按需读取章节与正文）。
 - CloudKit、WKWebView 执行 JS（规则 JS 走的是 JavaScriptCore）、真实 AI 请求与本机 ZIP 打包。
 - App Store 分发与内购；当前为 TestFlight / 自签定位。
 

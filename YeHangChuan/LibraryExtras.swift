@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
 import CoreFoundation
+import LegadoCore
 
 // MARK: - Import
 
@@ -263,7 +264,7 @@ struct SmartImportSheet: View {
     }
 
     private var formatNote: some View {
-        Text("TXT 为真实解析；EPUB、漫画压缩包与音频会在读取文件信息后以演示章节进入书架。所有内容只留在这台设备。")
+        Text("TXT 与 EPUB 为真实解析；漫画压缩包与音频会在读取文件信息后以演示章节进入书架。所有内容只留在这台设备。")
             .font(.system(size: 10.5))
             .foregroundStyle(Palette.tertiary)
             .padding(.horizontal, 2)
@@ -289,6 +290,30 @@ struct SmartImportSheet: View {
                 detail: "本机 TXT · \(Self.encodingName(data)) · \(parsed.chapters.count) 章",
                 chapters: parsed.chapters
             )
+        } else if ext == "epub" {
+            // EPUB 的真实解析能力已在 LegadoCore 里：按需从 ZIP 内读章节标题与正文，
+            // 不向磁盘解包。导入时把正文一并取出来塞进草稿，阅读页无需改动。
+            do {
+                let service = LocalBookService.live()
+                let report = try service.openFile(at: url)
+                let chapters = report.chapters.enumerated().map { index, source in
+                    let text = (try? service.loadContent(book: report.book, chapter: source).content) ?? ""
+                    return Chapter(
+                        id: "epub-\(index)-\(source.title.prefix(12))",
+                        title: source.title,
+                        paragraphs: TextSegmenter.paragraphs(from: text, chapterID: "epub-\(index)")
+                    )
+                }
+                draft = ImportDraft(
+                    title: report.book.name.isEmpty ? name : report.book.name,
+                    author: report.book.author.isEmpty ? "本地 EPUB" : report.book.author,
+                    kind: .novel,
+                    detail: "本机 EPUB · 真实解析 · \(chapters.count) 章",
+                    chapters: chapters
+                )
+            } catch {
+                message = "EPUB 解析失败：\(error.localizedDescription)"
+            }
         } else if ["mp3", "m4a", "m4b"].contains(ext) {
             draft = ImportDraft(
                 title: name,
