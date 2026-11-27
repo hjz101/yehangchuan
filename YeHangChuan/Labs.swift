@@ -11,6 +11,7 @@ struct DataExportSheet: View {
     @State private var tab: ExportTab = .json
     @State private var message = ""
     @State private var fileURL: URL?
+    @State private var zipURL: URL?
 
     enum ExportTab: String, CaseIterable, Identifiable {
         case json = "books.json"
@@ -29,7 +30,9 @@ struct DataExportSheet: View {
         let excerpts: [Excerpt]
     }
 
-    private var content: String {
+    private var content: String { content(for: tab) }
+
+    private func content(for tab: ExportTab) -> String {
         switch tab {
         case .json:
             let payload = Payload(
@@ -125,13 +128,37 @@ struct DataExportSheet: View {
                             }
                         }
 
+                        Button {
+                            makeZip()
+                        } label: {
+                            Label("打包为 ZIP（三个文件）", systemImage: "doc.zipper")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Palette.jade)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .glassSurface(cornerRadius: 18, tint: Palette.glassTint, interactive: true)
+                        }
+                        .buttonStyle(PressableStyle())
+
+                        if let zipURL {
+                            ShareLink(item: zipURL) {
+                                Label("分享 ZIP 包", systemImage: "square.and.arrow.up")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Palette.onAccent)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(Palette.accentSolid, in: Capsule())
+                            }
+                            .buttonStyle(PressableStyle())
+                        }
+
                         if !message.isEmpty {
                             Text(message)
                                 .font(.system(size: 10.5))
                                 .foregroundStyle(Palette.tertiary)
                         }
 
-                        Text("演示导出会生成 books.json、notes.md、annotations.md 三个文件预览；分享写入临时目录，不修改书架数据。")
+                        Text("books.json、notes.md、annotations.md 可单独预览或复制；「打包为 ZIP」会把三份内容写成真正的 zip 文件，分享到临时目录，不修改书架数据。")
                             .font(.system(size: 10))
                             .foregroundStyle(Palette.tertiary)
                     }
@@ -152,6 +179,22 @@ struct DataExportSheet: View {
                 try? content.write(to: url, atomically: true, encoding: .utf8)
                 fileURL = url
             }
+        }
+    }
+
+    private func makeZip() {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmm"
+        let name = "夜航船-导出-\(formatter.string(from: Date())).zip"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        do {
+            try ArchiveExporter.write(ExportTab.allCases.map { tab in
+                ArchiveExportItem(name: tab.rawValue, data: Data(content(for: tab).utf8))
+            }, to: url)
+            zipURL = url
+            message = "已生成 ZIP 包（含 3 个文件）"
+        } catch {
+            message = "打包失败：\(error.localizedDescription)"
         }
     }
 

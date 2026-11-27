@@ -77,7 +77,7 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 | 阅读设置 / 目录 / 书签 / 笔记 | 即时生效并持久化；书签备注可编辑 |
 | iCloud 私有同步 | 模拟账号、同步、冲突与保留副本 |
 | 正文导出 | 阅读页「⋯ → 导出正文」与有声书播放器「分享」都把已解析段落拼成 TXT，经系统分享面板发出；未加载章节如实标注 |
-| 数据迁移 | books.json / notes.md / annotations.md 预览、复制与分享 |
+| 数据迁移 | books.json / notes.md / annotations.md 预览、复制与分享；可打包成一个真实 ZIP 一次导出 |
 | 多类型书架 | 小说 / 漫画 / 有声同架与筛选 |
 | 音量键翻页 | 阅读设置开关 + `AVAudioSession` 音量变化监听 |
 | 书源 JSON / 换源 / 权限 | 导入默认关闭、启用警告、私网拒绝；换源会检索同名书并做四步验证后才提交 |
@@ -131,7 +131,7 @@ xcodebuild -project YeHangChuan.xcodeproj -scheme YeHangChuan \
 ## 未实现
 
 - RAR / 7z 解包（CBZ/ZIP 已真实解包并按自然页序读取；EPUB 真实按需读取、mp3/m4a/m4b 真实播放已实现）。
-- CloudKit、WKWebView 执行 JS（规则 JS 走的是 JavaScriptCore）、真实 AI 请求与本机 ZIP 打包。
+- CloudKit、WKWebView 执行 JS（规则 JS 走的是 JavaScriptCore）与真实 AI 请求（本机 ZIP 打包已实现，导出页可一次分享三个文件的 zip）。
 - App Store 分发与内购；当前为自签安装定位，`DEVELOPMENT_TEAM` 留空，Xcode 选 **Sign to Run Locally**。已提供 AppIcon、隐私清单（`PrivacyInfo.xcprivacy`）与后台音频声明，真机安装前在 Xcode 的 Devices 里选好目标设备即可。
 
 标着「模拟」的入口（AI、TTS 多角色、iCloud 同步、CarPlay）不会发出真实网络请求。**书源链路例外：启用书源后，搜索、目录、正文、发现、段评与换源都会真的联网**，请求地址可在「设置 → 网络日志」里查看（需要先打开记录开关）。
