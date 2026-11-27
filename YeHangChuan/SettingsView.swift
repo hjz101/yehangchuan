@@ -4,13 +4,11 @@ import UIKit
 struct SettingsView: View {
     @Environment(AppStore.self) private var store
 
-    /// 缓存与空间：图片缓存要数一遍磁盘目录。
+    /// 缓存与空间：三类缓存都要数一遍磁盘目录。
     /// 这个数**不能在 body 里现算**：一次 body 求值就枚举上百个文件，
     /// 切到设置页时会明显顿一下。改成进页面后异步算一次，算完再显示。
-    static func storageLabel(chapterMB: Double, audioMB: Double, imageBytes: Int?) -> String {
-        let imageMB = Double(imageBytes ?? 0) / 1_048_576
-        let total = chapterMB + imageMB + audioMB
-        return String(format: "%.1f MB", total)
+    static func storageLabel(bytes: Int) -> String {
+        String(format: "%.1f MB", Double(bytes) / 1_048_576)
     }
 
     /// 版本号从 Info.plist 读，别在界面里手写一份会跟工程设置对不上的字符串。
@@ -36,9 +34,9 @@ struct SettingsView: View {
     @State private var showCompliance = false
     @State private var showEyeCare = false
     @State private var readerForFrameAdjust: Book?
-    /// 图片缓存的真实占用，进页面后异步统计一次。
+    /// 各类缓存的真实占用，进页面后异步统计一次。
     /// nil 表示还没算出来，这时候显示「计算中」而不是显示一个假的 0。
-    @State private var imageCacheBytes: Int?
+    @State private var cacheUsage: CacheUsage.Snapshot?
 
     var body: some View {
         NavigationStack {
@@ -139,12 +137,12 @@ struct SettingsView: View {
                                 } label: {
                                     SettingsRow(
                                         title: "缓存与空间",
-                                        value: imageCacheBytes == nil
+                                        value: cacheUsage == nil
                                             ? "计算中…"
                                             : Self.storageLabel(
-                                                chapterMB: store.backend.cacheChapterMB,
-                                                audioMB: store.backend.cacheAudioMB,
-                                                imageBytes: imageCacheBytes
+                                                bytes: (cacheUsage?.chapterBytes ?? 0)
+                                                    + (cacheUsage?.imageBytes ?? 0)
+                                                    + (cacheUsage?.audioBytes ?? 0)
                                             ),
                                         systemImage: "internaldrive"
                                     )
@@ -255,10 +253,8 @@ struct SettingsView: View {
                     .scrollIndicators(.hidden)
                     .task {
                         // 只在第一次进设置页时算一次；后面再进来沿用结果。
-                        guard imageCacheBytes == nil else { return }
-                        imageCacheBytes = await Task.detached(priority: .utility) {
-                            ImageCacheStore.totalBytes()
-                        }.value
+                        guard cacheUsage == nil else { return }
+                        cacheUsage = await CacheUsage.snapshot()
                     }
                     .onAppear {
                         #if DEBUG
@@ -1356,14 +1352,17 @@ struct CacheSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var message = ""
-    /// 图片缓存是真实落盘的清单文件，单独按磁盘内容统计，
-    /// 不再用 MockBackend 里那个写死的 48.6 MB。
-    @State private var imageCacheBytes = ImageCacheStore.totalBytes()
+    /// 三类缓存都按真实磁盘内容统计，进页后再算一次（枚举目录不进 body）。
+    @State private var usage: CacheUsage.Snapshot?
 
-    private var imageCacheMB: Double { Double(imageCacheBytes) / 1_048_576 }
+    private var totalBytes: Int {
+        (usage?.chapterBytes ?? 0) + (usage?.imageBytes ?? 0) + (usage?.audioBytes ?? 0)
+    }
 
-    private var total: Double {
-        store.backend.cacheChapterMB + imageCacheMB + store.backend.cacheAudioMB
+    private var totalMB: Double { Double(totalBytes) / 1_048_576 }
+
+    private func refreshUsage() async {
+        usage = await CacheUsage.snapshot()
     }
 
     var body: some View {
@@ -1375,10 +1374,10 @@ struct CacheSheet: View {
                     VStack(alignment: .leading, spacing: 16) {
                         HStack(spacing: 14) {
                             RingProgress(
-                                value: min(total / 160, 1),
+                                value: min(totalMB / 160, 1),
                                 lineWidth: 7,
                                 tint: Palette.jade,
-                                label: String(format: "%.1f", total),
+                                label: String(format: "%.1f", totalMB),
                                 caption: "MB"
                             )
                             .frame(width: 62, height: 62)
@@ -1396,22 +1395,33 @@ struct CacheSheet: View {
                         .padding(14)
                         .glassSurface(cornerRadius: 22)
 
-                        cacheRow("章节", size: store.backend.cacheChapterMB, symbol: "doc.text", kind: "章节")
-                        cacheRow("图片", size: imageCacheMB, symbol: "photo", kind: "图片")
-                        cacheRow("音频", size: store.backend.cacheAudioMB, symbol: "waveform", kind: "音频")
+                        cacheRow("章节", bytes: usage?.chapterBytes, symbol: "doc.text", kind: "章节")
+                        cacheRow("图片", bytes: usage?.imageBytes, symbol: "photo", kind: "图片")
+                        cacheRow("音频", bytes: usage?.audioBytes, symbol: "waveform", kind: "音频")
 
                         Button {
-                            let mockFreed = store.backend.clearCache("全部")
-                            let diskFreed = Double(ImageCacheStore.removeAll()) / 1_048_576
-                            imageCacheBytes = ImageCacheStore.totalBytes()
-                            message = String(format: "已清理 %.1f MB", mockFreed + diskFreed)
+                            Task { @MainActor in
+                                let chapterFreed = await CacheUsage.clearChapters()
+                                let imageFreed = CacheUsage.clearImages()
+                                let audio = CacheUsage.clearAudio()
+                                await refreshUsage()
+                                var text = String(
+                                    format: "已清理 %.1f MB",
+                                    Double(chapterFreed + imageFreed + audio.freed) / 1_048_576
+                                )
+                                if audio.skipped > 0 {
+                                    text += "；\(audio.skipped) 个音频正在使用，未能删除"
+                                }
+                                message = text
+                            }
                         } label: {
                             Text("清理全部缓存")
                                 .readableButtonStyle(tint: Palette.accentSolid)
                         }
                         .buttonStyle(PressableStyle(scale: 0.97))
+                        .disabled(usage == nil)
 
-                        Text("章节与音频为演示数据估算值；漫画图片缓存是降采样后的真实页图，写在 Application Support 下。")
+                        Text("三项都按真实磁盘统计：章节是书源正文缓存，图片是降采样后的漫画页图，音频是导入到沙箱的音频副本。清除音频等于删除这本书的本地音频，需重新导入。")
                             .font(.system(size: 10))
                             .foregroundStyle(Palette.tertiary)
 
@@ -1435,6 +1445,7 @@ struct CacheSheet: View {
                         .fontWeight(.semibold)
                 }
             }
+            .task { await refreshUsage() }
         }
     }
 
@@ -1513,7 +1524,10 @@ struct CacheSheet: View {
         .glassSurface(cornerRadius: 18)
     }
 
-    private func cacheRow(_ title: String, size: Double, symbol: String, kind: String) -> some View {        HStack(spacing: 12) {
+    /// 单类缓存行。`bytes` 为 nil 表示还在统计，显示「计算中」而不是一个假的 0。
+    private func cacheRow(_ title: String, bytes: Int?, symbol: String, kind: String) -> some View {
+        let size = Double(bytes ?? 0) / 1_048_576
+        return HStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Palette.jade)
@@ -1524,7 +1538,7 @@ struct CacheSheet: View {
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Palette.text)
-                Text(String(format: "%.1f MB", size))
+                Text(bytes == nil ? "计算中…" : String(format: "%.1f MB", size))
                     .font(.system(size: 10))
                     .foregroundStyle(Palette.tertiary)
             }
@@ -1532,13 +1546,24 @@ struct CacheSheet: View {
             Spacer()
 
             Button("清理") {
-                if kind == "图片" {
-                    let freed = Double(ImageCacheStore.removeAll()) / 1_048_576
-                    imageCacheBytes = ImageCacheStore.totalBytes()
-                    message = String(format: "已清理 %.1f MB %@", freed, title)
-                } else {
-                    let freed = store.backend.clearCache(kind)
-                    message = String(format: "已清理 %.1f MB %@", freed, title)
+                Task { @MainActor in
+                    var text: String
+                    switch kind {
+                    case "章节":
+                        let freed = await CacheUsage.clearChapters()
+                        text = String(format: "已清理 %.1f MB %@", Double(freed) / 1_048_576, title)
+                    case "图片":
+                        let freed = CacheUsage.clearImages()
+                        text = String(format: "已清理 %.1f MB %@", Double(freed) / 1_048_576, title)
+                    default:
+                        let result = CacheUsage.clearAudio()
+                        text = String(format: "已清理 %.1f MB %@", Double(result.freed) / 1_048_576, title)
+                        if result.skipped > 0 {
+                            text += "；\(result.skipped) 个文件正在使用，未能删除"
+                        }
+                    }
+                    await refreshUsage()
+                    message = text
                 }
             }
             .font(.system(size: 11.5, weight: .medium))

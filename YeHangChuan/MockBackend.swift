@@ -108,11 +108,8 @@ final class MockBackend {
     var syncState: CloudSyncState = .idle
     var lastSyncAt: Date?
 
-    var cacheChapterMB = 12.4
-    /// 图片缓存已改为真实落盘（见 ImageCacheStore），这里不再保留假数值，
-    /// 免得设置页显示的数字和磁盘对不上。
-    var cacheImageMB: Double = 0
-    var cacheAudioMB = 36.2
+    /// 章节、图片、音频三类缓存都已按真实磁盘统计（见 `CacheUsage`），
+    /// 这里不再保留写死的估算值 —— 设置页显示的数字必须和磁盘对得上。
     var downloadProgress: Double = 0
     var isDownloading = false
     var lastDownloadLabel = "未开始"
@@ -256,23 +253,9 @@ final class MockBackend {
             try? await Task.sleep(for: .milliseconds(180))
             downloadProgress = Double(index) / Double(max(count, 1))
         }
-        cacheChapterMB += Double(count) * 0.18
         isDownloading = false
         lastDownloadLabel = "\(book.title) · \(count) 章（演示估算）"
         return count
-    }
-
-    func clearCache(_ kind: String) -> Double {
-        var freed: Double = 0
-        switch kind {
-        case "章节": freed = cacheChapterMB; cacheChapterMB = 0
-        case "图片": freed = cacheImageMB; cacheImageMB = 0
-        case "音频": freed = cacheAudioMB; cacheAudioMB = 0
-        default:
-            freed = cacheChapterMB + cacheImageMB + cacheAudioMB
-            cacheChapterMB = 0; cacheImageMB = 0; cacheAudioMB = 0
-        }
-        return freed
     }
 
     func analyzeRoles(_ text: String) -> [MockRole] {

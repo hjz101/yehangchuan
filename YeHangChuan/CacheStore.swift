@@ -1,4 +1,6 @@
 import Foundation
+import AVFoundation
+import LegadoCore
 
 /// 漫画图片缓存。真漫画把降采样后的页图写进 `ImageCache/<bookID>/`；
 /// 老演示书没有真实图片可存，只保留一份 JSON 清单。两种形态的开关、
@@ -140,5 +142,90 @@ enum ImageCacheStore {
             total += (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         }
         return total
+    }
+}
+
+/// 缓存与空间页的真实磁盘统计。
+///
+/// 以前这里两行写死的 12.4 MB / 36.2 MB，清理只把内存数字清零，磁盘上
+/// 一个字节都没动。现在三类缓存都数真实目录，清理也真的删文件：
+/// - 章节：LegadoCore 的章节正文缓存（`Application Support/Legado/ChapterContent`）；
+/// - 图片：漫画降采样页图（`ImageCacheStore`）；
+/// - 音频：导入到沙箱的音频文件（`AudioBooks`，用户文件，不随缓存清理删除）。
+enum CacheUsage {
+    struct Snapshot: Sendable {
+        var chapterBytes: Int
+        var imageBytes: Int
+        var audioBytes: Int
+        /// 清理音频时没删掉的文件（正在播放、占用中），界面要如实说。
+        var audioSkipped: Int = 0
+    }
+
+    static let audioDirectoryName = "AudioBooks"
+
+    static func audioDirectory() -> URL? {
+        guard let base = LibraryStore.shared.directory else { return nil }
+        return base.appendingPathComponent(audioDirectoryName, isDirectory: true)
+    }
+
+    /// 只读统计，不触发缓存目录的创建与迁移以外的副作用。
+    static func snapshot() async -> Snapshot {
+        let chapterBytes = (try? await ChapterContentCache.live().statistics().bytes) ?? 0
+        return await Task.detached(priority: .utility) {
+            Snapshot(
+                chapterBytes: chapterBytes,
+                imageBytes: ImageCacheStore.totalBytes(),
+                audioBytes: directorySize(audioDirectory())
+            )
+        }.value
+    }
+
+    /// 清空章节正文缓存，返回真实释放的字节数。
+    static func clearChapters() async -> Int {
+        let before = (try? await ChapterContentCache.live().statistics().bytes) ?? 0
+        try? await ChapterContentCache.live().removeAll()
+        let after = (try? await ChapterContentCache.live().statistics().bytes) ?? 0
+        return max(before - after, 0)
+    }
+
+    @discardableResult
+    static func clearImages() -> Int {
+        ImageCacheStore.removeAll()
+    }
+
+    /// 删除导入到沙箱的音频副本。返回 (释放字节数, 删不掉的文件数)。
+    /// 用户正在播放的那一份会被系统占用，删不掉属正常，不静默吞掉。
+    static func clearAudio() -> (freed: Int, skipped: Int) {
+        guard let directory = audioDirectory() else { return (0, 0) }
+        let manager = FileManager.default
+        guard let names = try? manager.contentsOfDirectory(atPath: directory.path) else { return (0, 0) }
+        var freed = 0
+        var skipped = 0
+        for name in names {
+            let url = directory.appendingPathComponent(name)
+            let size = fileSize(url)
+            do {
+                try manager.removeItem(at: url)
+                freed += size
+            } catch {
+                skipped += 1
+            }
+        }
+        return (freed, skipped)
+    }
+
+    private static func directorySize(_ url: URL?) -> Int {
+        guard let url, let enumerator = FileManager.default.enumerator(
+            at: url, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles]
+        ) else { return 0 }
+        var total = 0
+        for case let fileURL as URL in enumerator {
+            total += (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        }
+        return total
+    }
+
+    private static func fileSize(_ url: URL) -> Int {
+        (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
     }
 }
