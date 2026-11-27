@@ -244,9 +244,10 @@ final class WebViewSourcePageExecutorTests: XCTestCase {
         XCTAssertEqual(executor.recentTraces.count, 20)
         XCTAssertEqual(executor.traces(in: scopeA).count, 20)
 
-        // 无作用域的请求（模拟阅读时别的书源）不该算进任何一次执行。
-        _ = try await executor.execute(prepared(html: html), source: source, timeout: 10)
-        XCTAssertNil(executor.recentTraces.first?.scopeID)
+        // 无作用域的请求（模拟阅读时别的书源）用独立地址，便于确认它不会串进来。
+        var unscoped = prepared(html: html)
+        unscoped.url = URL(string: "https://unscoped.example.com/chapter")!
+        _ = try await executor.execute(unscoped, source: source, timeout: 10)
 
         // 缓存已满时，B 仍能精确取到本次这一条。
         _ = try await WebViewTraceScope.$current.withValue(scopeB) {
@@ -256,5 +257,7 @@ final class WebViewSourcePageExecutorTests: XCTestCase {
         XCTAssertEqual(bTraces.count, 1, "缓存已满时仍应识别出本次作用域的轨迹")
         XCTAssertEqual(bTraces.first?.sourceName, source.bookSourceName)
         XCTAssertEqual(bTraces.first?.scopeID, scopeB)
+        XCTAssertFalse(bTraces.contains { $0.url == unscoped.url.absoluteString },
+                       "别的书源的并发请求不该串进本次作用域")
     }
 }
