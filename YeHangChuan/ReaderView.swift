@@ -158,15 +158,17 @@ struct ReaderView: View {
                     .padding(.vertical, 9)
                     .glassCapsule(tint: settings.theme.isDark ? .white.opacity(0.08) : .white.opacity(0.5))
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    // 提示条正压在屏幕正中，能点就得让路：否则它浮着的那 1.5 秒里
+                    // 点中间既唤不出工具栏、也翻不了页。
+                    .allowsHitTesting(false)
             }
 
-            // 边缘翻页热区
-            if settings.pageMode == .slide && settings.pageTurnEffect == .slide && showChrome == false {
-                HStack(spacing: 0) {
-                    tapZone(.backward)
-                    tapZone(.forward)
-                }
-            }
+            // 翻页热区不再是一层铺满屏幕的透明遮罩。
+            //
+            // 以前这里挂了两块各占半屏的 tapZone，铺满整页：中间那一下被当成
+            // 翻页吞掉了，读者怎么点也唤不出工具栏；遮罩同时也截走了
+            // TabView 的左滑手势。现在分区判定挪进正文自己的触摸层
+            // （见 `handlePageTap`），既不挡手势，也能分清左/中/右。
 
             if settings.volumeKeyTurn {
                 VolumeKeyReader(
@@ -457,7 +459,7 @@ struct ReaderView: View {
                         settings: settings,
                         onComment: { commentParagraph = $0 },
                         onSelect: { selectedParagraph = $0 },
-                        onTap: toggleChrome
+                        onTap: handlePageTap
                     )
                 }
             } else {
@@ -496,7 +498,27 @@ struct ReaderView: View {
         }
     }
 
-    private enum TapZone { case backward, forward }
+    /// 分页模式的点击分区：左右三分之一翻页，中间三分之一收放工具栏。
+    ///
+    /// 落点是正文层的坐标（左右已各让出 `sideMargin`），按正文宽度三等分即可。
+    /// 不另加全屏遮罩：那会截走 TabView 的左滑与覆盖翻页的拖拽，
+    /// 而且会把「点中间」这件事彻底吞掉 —— 这正是之前唤不出工具栏的原因。
+    private func handlePageTap(_ point: CGPoint, in size: CGSize) {
+        // 工具栏开着的时候，点正文任何地方都是收起 ——
+        // 与滚动模式、覆盖翻页保持同一种手感。
+        guard !showChrome else {
+            toggleChrome()
+            return
+        }
+        let third = max(size.width, 1) / 3
+        if point.x < third {
+            turnPage(forward: settings.direction == .rtl)
+        } else if point.x > size.width - third {
+            turnPage(forward: settings.direction == .ltr)
+        } else {
+            toggleChrome()
+        }
+    }
 
     /// 分页模式下的一页。绘制层需要 `PaginatedBook` 才能拿到这一页的排版，
     /// 所以不能只传 `ReadingPage`。
@@ -509,23 +531,8 @@ struct ReaderView: View {
             settings: settings,
             onComment: { commentParagraph = $0 },
             onSelect: { selectedParagraph = $0 },
-            onTap: toggleChrome
+            onTap: handlePageTap
         )
-    }
-
-    private func tapZone(_ zone: TapZone) -> some View {
-        Color.clear
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
-                    let movingForward = settings.direction == .ltr ? zone == .forward : zone == .backward
-                    if !movingForward {
-                        pageIndex = max(pageIndex - 1, 0)
-                    } else {
-                        pageIndex = min(pageIndex + 1, pageCount - 1)
-                    }
-                }
-            }
     }
 
     // MARK: Chrome
@@ -732,6 +739,16 @@ struct ReaderView: View {
     private func toggleChrome() {
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             showChrome.toggle()
+        }
+    }
+
+    /// 只在「工具栏是收起的」状态下调用的唤出动作（音量键、外接键盘等路径用）。
+    /// 用显式的 true 而不是 toggle：若中途状态被别的路径改过，
+    /// toggle 会把工具栏又收回去，读者会以为点击没生效。
+    private func revealChrome() {
+        guard !showChrome else { return }
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+            showChrome = true
         }
     }
 
@@ -1251,7 +1268,8 @@ struct PageFlipReader: View {
     let settings: ReaderSettings
     let onComment: (Paragraph) -> Void
     let onSelect: (Paragraph) -> Void
-    let onTap: () -> Void
+    /// 落点与触摸层尺寸：由阅读页决定左右翻页还是唤出工具栏。
+    let onTap: (CGPoint, CGSize) -> Void
 
     @State private var offset: CGFloat = 0
 
@@ -1350,7 +1368,8 @@ struct ReaderPageView: View {
     let settings: ReaderSettings
     let onComment: (Paragraph) -> Void
     let onSelect: (Paragraph) -> Void
-    let onTap: () -> Void
+    /// 落点与触摸层尺寸：由阅读页决定左右翻页还是唤出工具栏。
+    let onTap: (CGPoint, CGSize) -> Void
 
     /// 本页正文的范围。绘制层与命中测试共用同一个区域。
     private var textSize: CGSize { pagination.size }

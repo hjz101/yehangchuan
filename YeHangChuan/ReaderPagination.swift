@@ -295,8 +295,14 @@ final class CoreTextPageUIView: UIView {
 ///
 /// 只放 tap 与 long press 两个识别器：手指一移动它们就失败，
 /// 所以左右滑翻页、上下滚动的拖动照常交给外层的手势处理，不会被吞掉。
+///
+/// 这两个识别器**不互相 require(toFail:)**。用一个 0.35 秒的长按去挡轻点，
+/// 意味着每次点屏幕唤出工具栏都要先等那 0.35 秒 —— 手感就是「点了没反应」。
+/// 改成：长按一旦成立就置一个标记，随后抬手时轻点的回调直接丢一次。
 struct PageTouchSurface: UIViewRepresentable {
-    let onTap: () -> Void
+    /// 落点 + 触摸层尺寸。分区（左右翻页、中间唤出工具栏）由调用方决定：
+    /// 这里只如实报告「点在了哪儿」，不猜用户想要什么。
+    let onTap: (CGPoint, CGSize) -> Void
     let onLongPress: (CGPoint) -> Void
 
     func makeUIView(context: Context) -> TouchUIView {
@@ -304,7 +310,7 @@ struct PageTouchSurface: UIViewRepresentable {
         view.backgroundColor = .clear
         view.isOpaque = false
 
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap))
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         let press = UILongPressGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleLongPress(_:))
@@ -312,7 +318,6 @@ struct PageTouchSurface: UIViewRepresentable {
         press.minimumPressDuration = 0.35
         // 手指稍微抖一下不该丢掉这次长按。
         press.allowableMovement = 12
-        tap.require(toFail: press)
 
         view.addGestureRecognizer(tap)
         view.addGestureRecognizer(press)
@@ -329,23 +334,38 @@ struct PageTouchSurface: UIViewRepresentable {
     }
 
     final class Coordinator: NSObject {
-        var onTap: () -> Void
+        var onTap: (CGPoint, CGSize) -> Void
         var onLongPress: (CGPoint) -> Void
+        /// 本次触摸已经被长按消费掉：抬手时不要再多触发一次轻点。
+        private var longPressHandled = false
 
-        init(onTap: @escaping () -> Void, onLongPress: @escaping (CGPoint) -> Void) {
+        init(onTap: @escaping (CGPoint, CGSize) -> Void, onLongPress: @escaping (CGPoint) -> Void) {
             self.onTap = onTap
             self.onLongPress = onLongPress
         }
 
-        @objc func handleTap() {
-            onTap()
+        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
+            guard !longPressHandled, let view = recognizer.view else { return }
+            onTap(recognizer.location(in: view), view.bounds.size)
         }
 
         @objc func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
             // 只在按下那一刻响应一次：长按中手指出汗抖动会持续发 .changed，
             // 每个都响应的话会弹出好几遍。
-            guard recognizer.state == .began, let view = recognizer.view else { return }
-            onLongPress(recognizer.location(in: view))
+            switch recognizer.state {
+            case .began:
+                guard let view = recognizer.view else { return }
+                longPressHandled = true
+                onLongPress(recognizer.location(in: view))
+            case .ended, .cancelled, .failed:
+                // 手势结束后隔一拍再清标记：同一次触摸里的轻点识别器
+                // 是在长按结束之后才决定是否触发的。
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                    self?.longPressHandled = false
+                }
+            default:
+                break
+            }
         }
     }
 }
