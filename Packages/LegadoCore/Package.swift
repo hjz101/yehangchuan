@@ -39,7 +39,10 @@ let package = Package(
         ),
         .testTarget(
             name: "LegadoCoreTests",
-            dependencies: ["LegadoCore"]
+            dependencies: [
+                "LegadoCore",
+                .product(name: "ZIPFoundation", package: "ZIPFoundation")
+            ]
         )
     ]
 )

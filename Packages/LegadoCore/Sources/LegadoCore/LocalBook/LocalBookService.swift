@@ -11,7 +11,7 @@ public enum LocalBookError: Error, LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
-        case .unsupportedFormat: "当前支持 TXT 和 EPUB 本地书"
+        case .unsupportedFormat: "当前支持 TXT、EPUB 本地书与 CBZ / ZIP 漫画"
         case .oversized: "本地书超过当前配置允许的大小"
         case .unreadableEncoding: "无法识别 TXT 编码"
         case .missingFile: "本地书文件已丢失"
@@ -158,6 +158,32 @@ public struct LocalBookService: Sendable {
         guard let url = URL(string: book.bookUrl), url.isFileURL, url.pathExtension.lowercased() == "epub" else { return [] }
         try validateFile(url)
         return try EPUBBook(url: url).illustrations(chapter: chapter)
+    }
+
+    // MARK: - 漫画压缩包（CBZ / ZIP）
+
+    /// 漫画走独立入口，不混进 TXT/EPUB 的 supports/openFile：
+    /// 那套按字节 offsets 切章的逻辑对图片没有意义。
+    public static func supportsComic(_ url: URL) -> Bool {
+        url.isFileURL && ["zip", "cbz"].contains(url.pathExtension.lowercased())
+    }
+
+    /// 只读索引：页数、自然页序、按顶层文件夹归纳的「话」。
+    public func inspectComic(at url: URL) throws -> ComicBookReport {
+        guard Self.supportsComic(url) else { throw LocalBookError.unsupportedFormat }
+        try validateFile(url)
+        return try ComicArchive.inspect(url: url)
+    }
+
+    public func loadComicPage(at url: URL, path: String) throws -> Data {
+        guard Self.supportsComic(url) else { throw LocalBookError.unsupportedFormat }
+        return try ComicArchive.pageData(url: url, path: path)
+    }
+
+    /// 按需降采样，避免条漫把整包原图塞进内存。
+    public func loadComicThumbnail(at url: URL, path: String, maxPixelSize: Int = 1600) throws -> Data {
+        guard Self.supportsComic(url) else { throw LocalBookError.unsupportedFormat }
+        return try ComicArchive.thumbnail(url: url, path: path, maxPixelSize: maxPixelSize)
     }
 
     private func validateFile(_ url: URL) throws {
