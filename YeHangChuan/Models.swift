@@ -730,7 +730,8 @@ final class AppStore {
     var sources: [BookSource] = MockData.sources
     var settings = ReaderSettings()
     var excerpts: [Excerpt] = MockData.excerpts
-    var days: [DayStat] = MockData.dayStats
+    /// 真实阅读记录。统计页的每一项都从它派生，不再是写死的演示数组。
+    var readRecords: [ReadRecord] = []
     var goalMinutes: Int = 60
     var appearance: AppAppearance = .dark
     var player = AudioPlayer()
@@ -753,6 +754,11 @@ final class AppStore {
     private static let legacySnapshotKey = "yehangchuan.snapshot.v5"
 
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var readingRepository: FileReadingActivityRepository?
+    @ObservationIgnored private var readingSaveTask: Task<Void, Never>?
+    private static let readingService = ReadingActivityService()
+    /// 单机 Demo 没有账号体系，用一个固定设备 ID 汇总本机阅读记录。
+    private static let deviceID = "local"
 
     /// 书架迁移结果。启动时跑一次，界面据此如实告诉用户搬了什么。
     var migrationReport: LibraryMigrationReport?
@@ -768,6 +774,24 @@ final class AppStore {
     init() {
         runLibraryMigration()
         loadSnapshot()
+        loadReadingRecords()
+    }
+
+    private func loadReadingRecords() {
+        guard let directory = LibraryStore.shared.directory else { return }
+        let repository = FileReadingActivityRepository(
+            bookmarksURL: directory.appendingPathComponent("reading_bookmarks.json"),
+            recordsURL: directory.appendingPathComponent("read_records.json")
+        )
+        readingRepository = repository
+        Task.detached { [repository] in
+            let records = try? await repository.loadReadRecords()
+            await MainActor.run { [weak self] in
+                // 打开书可能在读取完成前就开始计时，别把刚记下的今天覆盖掉。
+                guard let self, self.readRecords.isEmpty else { return }
+                self.readRecords = records ?? []
+            }
+        }
     }
 
     // MARK: Shelf
@@ -967,6 +991,46 @@ final class AppStore {
     }
 
     // MARK: Stats
+
+    /// 近 91 天的真实阅读分钟，按 `ReadRecord.dailyReadTimes` 汇总。
+    /// 没有任何记录时整条曲线都是 0 —— 这是如实反映，而不是拿演示数据充数。
+    var days: [DayStat] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        var totals: [String: Int64] = [:]
+        for record in readRecords {
+            for (day, milliseconds) in record.dailyReadTimes where milliseconds > 0 {
+                totals[day, default: 0] += milliseconds
+            }
+        }
+        return (0..<91).reversed().map { offset in
+            let date = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
+            let key = ReadingActivityService.dayKey(for: date, calendar: calendar)
+            return DayStat(id: key, date: date, minutes: Int((totals[key] ?? 0) / 60_000))
+        }
+    }
+
+    /// 阅读页在翻页 / 离开时把停留时间交回来。只有 >= 1 秒的停留才计入，
+    /// 避免连续拖动滑块式翻页刷出无意义的毫秒数。
+    func recordReading(elapsedMilliseconds: Int64, bookName: String) {
+        guard elapsedMilliseconds >= 1_000, !bookName.isEmpty else { return }
+        let now = Int64(Date().timeIntervalSince1970 * 1_000)
+        readRecords = Self.readingService.addingReadTime(
+            elapsedMilliseconds,
+            deviceID: Self.deviceID,
+            bookName: bookName,
+            now: now,
+            to: readRecords
+        )
+        let snapshot = readRecords
+        let previous = readingSaveTask
+        let repository = readingRepository
+        // 串行落盘：翻页很快时可能连续结算多次，不能让旧的快照后写覆盖新的。
+        readingSaveTask = Task.detached {
+            await previous?.value
+            try? await repository?.saveReadRecords(snapshot)
+        }
+    }
 
     var todayMinutes: Int {
         days.last?.minutes ?? 0

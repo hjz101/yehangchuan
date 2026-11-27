@@ -170,7 +170,7 @@ public struct ReadingActivityService: Sendable {
         )
     }
 
-    private static func dayKey(for date: Date, calendar: Calendar) -> String {
+    public static func dayKey(for date: Date, calendar: Calendar) -> String {
         let components = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
     }

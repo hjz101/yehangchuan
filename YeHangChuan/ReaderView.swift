@@ -40,6 +40,9 @@ struct ReaderView: View {
     @State private var scrollParagraphID: String?
     /// 滚动模式下据此把段落位置换算成与分页模式一致的百分比。
     @State private var scrollProgress: Double = 0
+    /// 上次结算阅读时长的时间点。统计页的数据来自真实停留时间，
+    /// 每翻一页（含滚动模式）结算一次，离开阅读页时再结算剩余部分。
+    @State private var lastReadingTick = Date()
 
     private var settings: ReaderSettings { store.settings }
     private var chapters: [Chapter] { store.chapters(for: book) }
@@ -192,6 +195,7 @@ struct ReaderView: View {
         .statusBarHidden(!showChrome)
         .persistentSystemOverlays(.hidden)
         .onAppear(perform: bootstrap)
+        .onDisappear { flushReadingTime() }
         .onChange(of: settings.fontSize) { _, _ in rebuild(restore: false) }
         .onChange(of: settings.lineSpacing) { _, _ in rebuild(restore: false) }
         .onChange(of: settings.sideMargin) { _, _ in rebuild(restore: false) }
@@ -1121,7 +1125,18 @@ struct ReaderView: View {
         scrollProgress = min(max(Double(seen) / Double(total), 0), 1)
     }
 
+    /// 把距上次结算的停留时间计入统计。> 4 小时的间隔视为后台挂起，
+    /// 不计入阅读时长，避免把离线时间算成读数。
+    private func flushReadingTime() {
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastReadingTick)
+        lastReadingTick = now
+        guard elapsed >= 1, elapsed <= 14_400 else { return }
+        store.recordReading(elapsedMilliseconds: Int64(elapsed * 1_000), bookName: book.title)
+    }
+
     private func syncProgress() {
+        flushReadingTime()
         if isScrollMode {
             let anchor = scrollAnchor
             guard let chapterTitle = anchor.chapterTitle, let paragraphID = anchor.paragraphID else { return }
