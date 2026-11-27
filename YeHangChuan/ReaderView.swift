@@ -596,10 +596,7 @@ struct ReaderView: View {
 
                     Button {
                         Task { @MainActor in
-                            let count = await store.backend.download(book: book, count: 3)
-                            // 演示工程没有真实章节可下载，这里只更新估算的缓存量，
-                            // 文案里如实标出「演示」，别让读者以为真的离线可用。
-                            showFlash("已记录 \(count) 章缓存（演示数据）")
+                            await prefetchFollowingChapters()
                         }
                     } label: {
                         Label("缓存后续章节", systemImage: "arrow.down.circle")
@@ -909,6 +906,40 @@ struct ReaderView: View {
         }
         networkError = nil
         rebuild(restore: true, targetChapter: title)
+    }
+
+    /// 预取后续章节正文。`loadNetworkContent` 会把正文写回快照并落盘，
+    /// 所以提前拉一遍就是真实可用的离线缓存，不再只更新一个估算数字。
+    private func prefetchFollowingChapters() async {
+        guard book.isNetworkBook else {
+            showFlash("本地书的正文已在设备上，无需缓存")
+            return
+        }
+        let anchor = currentPage?.chapterTitle
+            ?? store.position(for: book.id)?.chapterTitle
+            ?? chapters.first?.title
+        guard let anchor,
+              let start = chapters.firstIndex(where: { $0.title == anchor }) else {
+            showFlash("还没有可缓存的目录")
+            return
+        }
+        let following = Array(chapters[(start + 1)...].prefix(3))
+        let pending = following.filter { $0.paragraphs.isEmpty }
+        guard !pending.isEmpty else {
+            showFlash(following.isEmpty ? "已经是最后一章" : "后续 \(following.count) 章已在本地")
+            return
+        }
+
+        isLoadingNetwork = true
+        defer { isLoadingNetwork = false }
+        var cached = 0
+        for chapter in pending {
+            let paragraphs = await store.loadNetworkContent(for: book, chapterID: chapter.id)
+            if paragraphs?.isEmpty == false { cached += 1 }
+        }
+        networkError = cached == 0 ? (store.engine.lastError ?? "缓存失败") : nil
+        showFlash(cached > 0 ? "已缓存后续 \(cached) 章正文" : "缓存失败，请检查书源或网络")
+        rebuild(restore: false)
     }
 
     /// 找到某个段落所属的章节。段评要按「章 + 段」去书源上取，
