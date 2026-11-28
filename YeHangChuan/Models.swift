@@ -1127,6 +1127,7 @@ final class AppStore {
         // 下次从原书源重新入架会拿到「上一个源」的章节，正文却去原源取 —— 对不上。
         // 顺带也避免快照里堆积已删书籍的整份正文。
         customChapters[bookID] = nil
+        invalidateLibraryUsage()
         showToast("已从书架移除")
         saveSnapshot()
     }
@@ -1142,6 +1143,7 @@ final class AppStore {
             }
         }
         showToast("已加入书架：\(book.title)")
+        invalidateLibraryUsage()
         saveSnapshot()
     }
 
@@ -1547,6 +1549,7 @@ final class AppStore {
         books.insert(book, at: 0)
         let unit = book.kind == .comic ? "话" : "章"
         showToast("已导入《\(book.title)》· \(draft.chapters.count) \(unit)")
+        invalidateLibraryUsage()
         saveSnapshot()
         return true
     }
@@ -1967,6 +1970,7 @@ final class AppStore {
                 return
             }
             await Self.persist(snapshot, sequence: sequence)
+            invalidateLibraryUsage()
         }
     }
 
@@ -1978,6 +1982,7 @@ final class AppStore {
         let snapshot = makeSnapshot()
         let sequence = LibraryStore.shared.nextSequence()
         LibraryStore.shared.write(snapshot, sequence: sequence, synchronously: true)
+        invalidateLibraryUsage()
     }
 
     private static func persist(_ snapshot: Snapshot, sequence: Int) async {
@@ -2164,29 +2169,54 @@ final class AppStore {
         return FileManager.default.fileExists(atPath: LibraryStorage(root: directory).indexURL.path)
     }
 
+    /// 书架占用统计的一次扫描结果。设置页每帧都会同时读 summary 与 bytes，
+    /// 从磁盘重新遍历一遍索引与每本书的清单会明显卡顿，所以两者共用这一份缓存。
+    private struct LibraryUsage {
+        let summary: (books: Int, chapters: Int)?
+        let bytes: Int
+    }
+
+    @ObservationIgnored
+    private var cachedLibraryUsage: LibraryUsage?
+
+    /// 书架落盘、删书、入架后置脏，下一次读取再重新扫描。
+    private func invalidateLibraryUsage() {
+        cachedLibraryUsage = nil
+    }
+
+    private func libraryUsage() -> LibraryUsage {
+        if let cachedLibraryUsage { return cachedLibraryUsage }
+        let usage = Self.measureLibraryUsage()
+        cachedLibraryUsage = usage
+        return usage
+    }
+
+    private static func measureLibraryUsage() -> LibraryUsage {
+        guard let directory = SnapshotStore.shared.directoryURL else {
+            return LibraryUsage(summary: nil, bytes: 0)
+        }
+        let storage = LibraryStorage(root: directory)
+        guard let index = try? storage.loadIndex() else {
+            return LibraryUsage(summary: nil, bytes: 0)
+        }
+        var chapters = 0
+        var total = (try? Data(contentsOf: storage.indexURL).count) ?? 0
+        for bookID in index.booksWithChapters {
+            chapters += (try? storage.chapterIDs(bookID: bookID).count) ?? 0
+            total += (try? storage.byteCount(bookID: bookID)) ?? 0
+        }
+        return LibraryUsage(summary: (index.booksWithChapters.count, chapters), bytes: total)
+    }
+
     /// 书架里有多少本 / 多少章。直接从索引与清单数出来，不依赖迁移状态：
     /// 全新安装（从没跑过迁移）也应该如实显示，而不是「没有数据」。
     var migratedLibrarySummary: (books: Int, chapters: Int)? {
-        guard let directory = SnapshotStore.shared.directoryURL else { return nil }
-        let storage = LibraryStorage(root: directory)
-        guard let index = try? storage.loadIndex() else { return nil }
-        var chapters = 0
-        for bookID in index.booksWithChapters {
-            chapters += (try? storage.chapterIDs(bookID: bookID).count) ?? 0
-        }
-        return (index.booksWithChapters.count, chapters)
+        libraryUsage().summary
     }
 
     /// 新结构（索引 + 章节文件）在磁盘上的真实占用。没有迁移过就是 0。
     var migratedLibraryBytes: Int {
-        guard let directory = SnapshotStore.shared.directoryURL else { return 0 }
-        let storage = LibraryStorage(root: directory)
-        guard let index = try? storage.loadIndex() else { return 0 }
-        var total = (try? Data(contentsOf: storage.indexURL).count) ?? 0
-        for bookID in index.booksWithChapters {
-            total += (try? storage.byteCount(bookID: bookID)) ?? 0
-        }
-        return total
+        libraryUsage().bytes
     }
 
     private func apply(_ snapshot: Snapshot) {
