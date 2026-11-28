@@ -13,3 +13,8 @@ dist/
 DerivedData/
 *.xcuserstate
 xcuserdata/
+
+# 飞书 Bug 机器人运行态
+Scripts/feishu-bug-bot/.state.json
+Scripts/feishu-bug-bot/.bot.pid
+Scripts/feishu-bug-bot/logs/
