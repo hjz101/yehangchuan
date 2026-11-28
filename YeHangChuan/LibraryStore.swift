@@ -64,6 +64,9 @@ final class LibraryStore: @unchecked Sendable {
     /// 只在 `queue` 上访问。持有的是同一批 String 的引用，不复制正文。
     private var written: [String: [Chapter]] = [:]
     private var listed: Set<String> = []
+    /// 上次读取失败的书。它们仍在磁盘上，只是这次没读出来；
+    /// 保存时绝不能因为「内存里没有」就当成已删除。
+    private var failedReads: Set<String> = []
 
     private let storage: LibraryStorage?
     let directory: URL?
@@ -143,6 +146,7 @@ final class LibraryStore: @unchecked Sendable {
             queue.sync {
                 written = chapters
                 listed = Set(document.index.booksWithChapters)
+                failedReads = Set(document.failures.keys)
             }
             return Contents(
                 sections: document.index.sections,
@@ -188,7 +192,9 @@ final class LibraryStore: @unchecked Sendable {
         }
 
         let present = Set(snapshot.customChapters.filter { !$0.value.isEmpty }.keys)
-        let removed = listed.subtracting(present)
+        // 读取失败的书不在 present 里，但它并没有被删除；把它排除出 removed，
+        // 否则一次翻页保存就会把整本书的正文文件删掉。
+        let removed = listed.subtracting(present).subtracting(failedReads)
 
         let plan = LibraryWritePlan(
             sections: try Self.sections(of: snapshot),
@@ -200,7 +206,7 @@ final class LibraryStore: @unchecked Sendable {
         try LibraryDocumentWriter.write(plan, to: storage)
 
         written = snapshot.customChapters.filter { !$0.value.isEmpty }
-        listed = present
+        listed = present.union(failedReads)
         storedError = nil
     }
 
