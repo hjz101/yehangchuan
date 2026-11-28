@@ -1388,12 +1388,45 @@ final class AppStore {
         saveSnapshot()
     }
 
+    /// 找书对应的书源。正常情况下按持久化的 `sourceID` 精确命中。
+    ///
+    /// 书源被删除后重新导入会生成新的 UUID，旧书的 `sourceID` 永远对不上了。
+    /// 这时按书的站点 host 回找一次：书源被删掉的只是那条记录，站点没变。
+    /// 回退只用于本次加载，不写回书架（`sourceID` 保持原样），
+    /// 避免把「同一个站点有多条书源」的歧义固化进持久数据。
+    private func sourceForNetworkBook(_ book: Book) -> BookSource? {
+        if let sourceID = book.sourceID, let exact = sources.first(where: { $0.id == sourceID }) {
+            return exact
+        }
+        guard let bookURL = book.networkBookURL,
+              let bookHost = URL(string: bookURL)?.host else { return nil }
+        let target = URLHost.normalize(bookHost)
+        guard !target.isEmpty else { return nil }
+
+        let matches = sources.filter { source in
+            sourceMatchesHost(source, host: target)
+        }
+        guard !matches.isEmpty else { return nil }
+        if matches.count == 1 { return matches[0] }
+        // 同 host 多条时优先启用中的；仍不唯一就放弃回退，维持原来的错误。
+        let enabled = matches.filter(\.enabled)
+        return enabled.count == 1 ? enabled[0] : nil
+    }
+
+    /// 书源的展示地址或规则里的 `bookSourceUrl`（可能逗号分隔多域名）
+    /// 是否有任意一个归一化后等于 `target`。
+    private func sourceMatchesHost(_ source: BookSource, host target: String) -> Bool {
+        if URLHost.normalize(source.host) == target { return true }
+        guard let ruleURL = source.ruleSourceURL else { return false }
+        return BookSource.splitHosts(ruleURL).contains(target)
+    }
+
     /// 拉取并缓存目录。已缓存过就不再请求，除非强制刷新。
     @discardableResult
     func loadNetworkChapters(for book: Book, force: Bool = false) async -> [Chapter] {
         guard book.isNetworkBook else { return chapters(for: book) }
         if !force, let cached = customChapters[book.id], !cached.isEmpty { return cached }
-        guard let appSource = sources.first(where: { $0.id == book.sourceID }),
+        guard let appSource = sourceForNetworkBook(book),
               let engineSource = LegadoBridge.engineSource(from: appSource) else {
             engine.lastError = "书源已被移除或规则无法解析"
             return []
