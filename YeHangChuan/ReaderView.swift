@@ -841,20 +841,7 @@ struct ReaderView: View {
                         )
                     }
                     toolButton("听书", symbol: "speaker.wave.2") { showListen = true }
-                    toolButton(
-                        "段评",
-                        symbol: settings.hideSourceComments ? "text.bubble" : "text.bubble.fill"
-                    ) {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                            settings.hideSourceComments.toggle()
-                        }
-                        showFlash(settings.hideSourceComments ? "已屏蔽段评" : "已显示段评")
-                    }
-                    toolButton("版心", symbol: "rectangle.inset.filled") {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showFrameAdjust = true
-                        }
-                    }
+                    // 段评与版心的开关已统一迁到「阅读设置」，正文工具栏不再重复放控件。
                     toolButton("设置", symbol: "textformat.size") { showSettings = true }
                 }
                 .padding(.vertical, 7)
@@ -2375,27 +2362,13 @@ struct ReaderSettingsSheet: View {
                         preview
 
                         frameSection
+                        commentsSection
                         fontSizeSection
                         lineSpacingSection
                         themeSection
                         pageModeSection
                         typographySection
                         eyeCareSection
-
-                        Toggle(isOn: $settings.hideSourceComments) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("屏蔽书源段评")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundStyle(appTheme.text)
-                                Text("只保留干净的正文")
-                                    .font(.system(size: 10.5))
-                                    .foregroundStyle(appTheme.tertiary)
-                            }
-                        }
-                        .tint(appTheme.accent)
-                        .padding(.horizontal, 15)
-                        .padding(.vertical, 12)
-                        .glassSurface(cornerRadius: 18)
 
                         Toggle(isOn: $settings.purifyText) {
                             VStack(alignment: .leading, spacing: 2) {
@@ -2714,6 +2687,38 @@ struct ReaderSettingsSheet: View {
         }
     }
 
+    /// 段评显示策略。原来正文工具栏的「段评」按钮已迁到这里，
+    /// 开关依旧绑定 `hideSourceComments`，默认值和已有配置不变。
+    private var commentsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeading(
+                text: "段评",
+                trailing: settings.hideSourceComments ? "已屏蔽" : "已显示"
+            )
+
+            VStack(spacing: 12) {
+                Toggle(isOn: $settings.hideSourceComments) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("屏蔽书源段评")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(appTheme.text)
+                        Text("开启后隐藏段评胶囊与段落菜单里的段评入口，只保留干净正文")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(appTheme.tertiary)
+                    }
+                }
+                .tint(appTheme.accent)
+
+                Text("已有段评数据与显示配置都会保留，随时可以恢复显示。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(appTheme.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(14)
+            .glassSurface(cornerRadius: 20)
+        }
+    }
+
     /// 版心的完整形状：上下左右四个刻度，加上按真实比例画出来的预览。
     /// 预览盒子的比例就是屏幕，版心框的位置对应正文真正落笔的地方。
     private var frameSection: some View {
@@ -2724,6 +2729,11 @@ struct ReaderSettingsSheet: View {
             )
 
             VStack(spacing: 12) {
+                Text("预设与滑块共用同一组留白数据，调整后正文立即重新排版。")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(appTheme.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
                 framePreview
 
                 HStack(spacing: 6) {
