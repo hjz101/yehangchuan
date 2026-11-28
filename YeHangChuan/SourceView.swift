@@ -1819,7 +1819,19 @@ struct SourceImportExportSheet: View {
 
         // 已存在的书源地址 + 本次已加入的地址，一起参与去重。
         // 原来只跟已有书源比，同一个文件里写两遍会重复导入两份。
-        var seenURLs = Set(store.sources.map { $0.ruleSourceURL ?? $0.host })
+        // 比较前两边都走 `normalizedSourceIdentity`，否则 `https://A.com/`
+        // 和 `https://a.com` 会被当成两个不同站点重复导入。
+        var seenIdentities = Set<String>()
+        for source in store.sources {
+            var raws = [source.host]
+            if let ruleURL = source.ruleSourceURL {
+                raws.append(contentsOf: ruleURL.split(whereSeparator: { $0 == "," || $0 == "，" }).map(String.init))
+            }
+            for raw in raws {
+                let identity = normalizedSourceIdentity(raw)
+                if !identity.isEmpty { seenIdentities.insert(identity) }
+            }
+        }
         var added: [BookSource] = []
         var duplicates = 0
         var invalid = 0
@@ -1845,8 +1857,15 @@ struct SourceImportExportSheet: View {
                 continue
             }
 
-            let identity = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !seenURLs.contains(identity) else {
+            let identities = rawURL
+                .split(whereSeparator: { $0 == "," || $0 == "，" })
+                .map { normalizedSourceIdentity(String($0)) }
+                .filter { !$0.isEmpty }
+            guard !identities.isEmpty else {
+                invalid += 1
+                continue
+            }
+            guard !identities.contains(where: { seenIdentities.contains($0) }) else {
                 duplicates += 1
                 continue
             }
@@ -1856,7 +1875,7 @@ struct SourceImportExportSheet: View {
                 blockedPrivate += 1
                 continue
             }
-            seenURLs.insert(identity)
+            seenIdentities.formUnion(identities)
 
             // 规则原文按行重新序列化，保留全部 Legado 字段。
             let ownRule: String = {
@@ -1892,6 +1911,29 @@ struct SourceImportExportSheet: View {
             + (duplicates > 0 ? " · \(duplicates) 个重复已跳过" : "")
             + (invalid > 0 ? " · \(invalid) 个无效" : "")
             + (blockedPrivate > 0 ? " · \(blockedPrivate) 个私网地址已拦截" : "")
+    }
+
+    /// 书源地址的归一化身份：只保留 scheme + host + port。
+    /// host 小写，去掉末尾斜杠、空白与默认端口（http 80 / https 443）。
+    /// 已有书源与导入项两边都走它，同一站点的不同写法才不会重复导入。
+    private func normalizedSourceIdentity(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return "" }
+        if !value.contains("://") { value = "https://" + value }
+        guard let components = URLComponents(string: value),
+              let host = components.host?.lowercased(),
+              !host.isEmpty else {
+            return URLHost.normalize(raw)
+        }
+        var scheme = components.scheme?.lowercased() ?? "https"
+        if scheme != "http" && scheme != "https" { scheme = "https" }
+        var port = components.port
+        if (scheme == "http" && port == 80) || (scheme == "https" && port == 443) {
+            port = nil
+        }
+        var identity = "\(scheme)://\(host)"
+        if let port { identity += ":\(port)" }
+        return identity
     }
 
     private func exportJSON() {
