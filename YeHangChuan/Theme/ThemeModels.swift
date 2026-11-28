@@ -873,6 +873,14 @@ struct ThemeSelection: Codable, Equatable, Hashable, Sendable {
     }
 }
 
+/// 容错解码包装器：坏主题项解成 nil 而不是让整个数组抛错。
+private struct FailableTheme: Decodable {
+    let value: Theme?
+    init(from decoder: Decoder) throws {
+        value = try? Theme(from: decoder)
+    }
+}
+
 /// 主题目录索引。schemaVersion 串行升级；未来版本只读不写盘。
 struct ThemeCatalog: Codable, Sendable {
     static let currentSchemaVersion = 1
@@ -928,13 +936,19 @@ struct ThemeCatalog: Codable, Sendable {
         schemaVersion = (try? c.decodeIfPresent(Int.self, forKey: .schemaVersion))
             .flatMap { $0 >= 0 ? $0 : nil } ?? 0
         activeThemeID = (try? c.decodeIfPresent(String.self, forKey: .activeThemeID)) ?? ""
-        let rawThemes = (try? c.decodeIfPresent([Theme].self, forKey: .themes)) ?? []
-        themes = Array(rawThemes.prefix(ThemeLimits.themes))
+        // 逐个主题解码：单个坏项（非对象/类型错乱）只跳过并记录，不阻断整份 catalog。
+        // [Theme] 整体解码会在任一元素坏掉时整数组抛错；FailableTheme 的 try? 解包
+        // 让坏元素变成 nil 并被 compactMap 丢弃（unkeyedContainer 失败不前进，不能用循环 try?）。
+        let wrapped = (try? c.decodeIfPresent([FailableTheme].self, forKey: .themes)) ?? []
+        let decodedThemes = wrapped.compactMap(\.value).prefix(ThemeLimits.themes)
+        let localSkipped = wrapped.enumerated().filter { $0.element.value == nil }
+            .map { "(invalid theme at index \($0.offset))" }
+        themes = Array(decodedThemes)
         let rawAssets = (try? c.decodeIfPresent([AssetRef].self, forKey: .assets)) ?? []
         assets = Array(rawAssets.prefix(ThemeLimits.assets))
-        skippedThemes = (try? c.decodeIfPresent([String].self, forKey: .skippedThemes)).flatMap {
-            Array($0.prefix(ThemeLimits.skippedThemes))
-        }
+        var storedSkipped = (try? c.decodeIfPresent([String].self, forKey: .skippedThemes)) ?? []
+        storedSkipped.append(contentsOf: localSkipped)
+        skippedThemes = Array(storedSkipped.prefix(ThemeLimits.skippedThemes))
         let rawPending = (try? c.decodeIfPresent([PendingDelete].self, forKey: .pendingDelete)) ?? []
         pendingDelete = Array(rawPending.prefix(ThemeLimits.assets))
     }
@@ -1000,11 +1014,10 @@ struct ThemePackageManifest: Codable, Sendable {
         let raw = (try? c.decodeIfPresent([String: String].self, forKey: .checksums)) ?? [:]
         var clean: [String: String] = [:]
         for (key, value) in raw.prefix(ThemeLimits.assets) {
-            guard !key.contains(".."), !key.hasPrefix("/"),
-                  value.count == 64,
-                  value.unicodeScalars.allSatisfy({ c in
-                      (c.value >= 48 && c.value <= 57) || (c.value >= 97 && c.value <= 102)
-                  }) else { continue }
+            // 路径非法的 key 直接拒绝；checksum 值即使格式非法也保留，
+            // 让 ThemePackage.import 的逐资产校验抛 checksumMismatch，
+            // 避免「静默过滤成空校验集 → 资产绕过 SHA256」的安全漏洞（Phase5 缺陷2）。
+            guard !key.contains(".."), !key.hasPrefix("/") else { continue }
             clean[key] = value
         }
         checksums = clean

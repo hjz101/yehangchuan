@@ -190,6 +190,22 @@ enum ThemePackage {
         }
 
         // ④ 逐资产 checksums 核对（完整 256bit，自校验非来源认证）。
+        // 先校验清单里每个 checksum 都是完整 64hex；截断值必须拒绝（Phase5 缺陷2）。
+        for (name, checksum) in manifest.checksums {
+            let isHex64 = checksum.count == 64 && checksum.unicodeScalars.allSatisfy { c in
+                (c.value >= 48 && c.value <= 57) || (c.value >= 97 && c.value <= 102)
+            }
+            guard isHex64 else { throw ThemePackageError.checksumMismatch(name) }
+        }
+        // 包内资产文件（非 manifest.json/theme.json）必须都有对应 checksum 条目，
+        // 否则说明清单被篡改或资产被绕过校验。
+        let assetEntries = extracted.keys.filter {
+            $0 != "manifest.json" && $0 != "theme.json"
+        }
+        guard assetEntries.allSatisfy({ manifest.checksums[$0] != nil }) else {
+            throw ThemePackageError.checksumMismatch("包内资产缺少 checksum 条目")
+        }
+
         var assets: [(ref: AssetRef, data: Data)] = []
         for (name, checksum) in manifest.checksums {
             // 清单声明了资产但包内缺失：完整性错误，不允许静默跳过。
