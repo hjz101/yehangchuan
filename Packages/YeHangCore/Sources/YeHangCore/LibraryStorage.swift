@@ -274,6 +274,23 @@ public struct LibraryStorage: Sendable {
     public func chapter(id: String, bookID: String) throws -> StoredChapter? {
         let manifest = try manifest(bookID: bookID)
         guard let filename = manifest.entries[id] else { return nil }
+        return try decodeChapter(id: id, filename: filename, bookID: bookID)
+    }
+
+    /// 按顺序读出整本书的章节。缺对象时如实报错，不静默跳过。
+    public func chapters(bookID: String) throws -> [StoredChapter] {
+        // manifest 只读一次。逐章调 chapter(id:) 会把同一份 manifest
+        // 重读 N 次，书越大启动越慢。
+        let manifest = try manifest(bookID: bookID)
+        var result: [StoredChapter] = []
+        result.reserveCapacity(manifest.entries.count)
+        for (id, filename) in manifest.entries {
+            result.append(try decodeChapter(id: id, filename: filename, bookID: bookID))
+        }
+        return result.sorted { $0.order < $1.order }
+    }
+
+    private func decodeChapter(id: String, filename: String, bookID: String) throws -> StoredChapter {
         let url = try objectURL(filename, bookID: bookID)
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw LibraryStorageError.missingObject(filename)
@@ -281,14 +298,6 @@ public struct LibraryStorage: Sendable {
         let chapter = try JSONDecoder().decode(StoredChapter.self, from: Data(contentsOf: url))
         guard chapter.id == id else { throw LibraryStorageError.objectMismatch }
         return chapter
-    }
-
-    /// 按顺序读出整本书的章节。缺对象时如实报错，不静默跳过。
-    public func chapters(bookID: String) throws -> [StoredChapter] {
-        let manifest = try manifest(bookID: bookID)
-        return try manifest.entries.keys
-            .compactMap { try chapter(id: $0, bookID: bookID) }
-            .sorted { $0.order < $1.order }
     }
 
     public func chapterIDs(bookID: String) throws -> Set<String> {
