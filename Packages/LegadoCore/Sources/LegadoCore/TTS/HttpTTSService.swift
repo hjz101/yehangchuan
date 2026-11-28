@@ -28,6 +28,27 @@ public struct HttpTTSAudio: Sendable {
         self.contentType = contentType
         self.finalURL = finalURL
     }
+
+    /// File extension suitable for handing the response to an audio player.
+    /// Content-Type wins because some TTS endpoints omit the format from the URL.
+    public var suggestedFileExtension: String {
+        let mediaType = contentType?
+            .split(separator: ";", maxSplits: 1, omittingEmptySubsequences: true)
+            .first
+            .map(String.init)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        switch mediaType {
+        case "audio/mpeg", "audio/mp3": return "mp3"
+        case "audio/mp4", "audio/x-m4a", "audio/m4a": return "m4a"
+        case "audio/aac", "audio/aacp": return "aac"
+        case "audio/wav", "audio/x-wav", "audio/wave": return "wav"
+        case "audio/ogg", "application/ogg": return "ogg"
+        case "audio/webm": return "webm"
+        default:
+            let fileExtension = finalURL.pathExtension.lowercased()
+            return fileExtension.isEmpty ? "audio" : fileExtension
+        }
+    }
 }
 
 public struct HttpTTSAudioStream: Sendable {
