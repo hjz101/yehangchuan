@@ -845,6 +845,10 @@ struct SourceSearchSheet: View {
     @State private var isSearching = false
     @State private var hitsBySource: [String: Int] = [:]
     @State private var searchTask: Task<Void, Never>?
+    /// 检索代次。取消旧任务只是发了个取消信号，旧任务在引擎内部并不检查，
+    /// 回来后仍会写结果、把 isSearching 置 false。每次发起检索自增，
+    /// 回写前比对代次，旧代次直接丢弃。
+    @State private var searchGeneration = 0
     /// 真实检索结果，按书源逐条到达。
     @State private var results: [SourceHit] = []
     /// 每个书源的失败原因，界面上要能看见，而不是静默空结果。
@@ -936,7 +940,11 @@ struct SourceSearchSheet: View {
             .onChange(of: query) { _, _ in
                 runSearch()
             }
-            .onDisappear { searchTask?.cancel() }
+            .onDisappear {
+                searchTask?.cancel()
+                // 让所有在途检索失效，结果回来时不再写进已关闭的弹窗。
+                searchGeneration += 1
+            }
         }
     }
 
@@ -944,6 +952,8 @@ struct SourceSearchSheet: View {
     /// 规则解析不了的源会单独列出原因，而不是假装没搜到。
     private func runSearch() {
         searchTask?.cancel()
+        searchGeneration += 1
+        let generation = searchGeneration
         let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !keyword.isEmpty, !enabledSources.isEmpty else {
             results = []
@@ -961,7 +971,7 @@ struct SourceSearchSheet: View {
         searchTask = Task { @MainActor in
             // 输入停下来再发请求，避免每敲一个字就打一次网络。
             try? await Task.sleep(for: .milliseconds(420))
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == searchGeneration else { return }
 
             var engineSources: [LegadoCore.BookSource] = []
             for source in enabledSources {
@@ -973,11 +983,14 @@ struct SourceSearchSheet: View {
             }
 
             guard !engineSources.isEmpty else {
+                guard generation == searchGeneration, !Task.isCancelled else { return }
                 isSearching = false
                 return
             }
 
             let collected = await store.engine.search(keyword: keyword, sources: engineSources) { outcome in
+                // 旧代次的回调直接丢掉，不能污染新一轮的结果。
+                guard generation == searchGeneration, !Task.isCancelled else { return }
                 let sourceName = engineSources.first { $0.id == outcome.sourceID }?.bookSourceName ?? outcome.sourceID
                 if let message = outcome.diagnostics.first(where: { $0.severity == .error })?.message {
                     sourceErrors[sourceName] = message
@@ -998,6 +1011,7 @@ struct SourceSearchSheet: View {
                     }
                 }
             }
+            guard generation == searchGeneration, !Task.isCancelled else { return }
             hitsBySource = Dictionary(grouping: collected, by: \.sourceID).mapValues(\.count)
             withAnimation(.easeOut(duration: 0.2)) { isSearching = false }
         }
