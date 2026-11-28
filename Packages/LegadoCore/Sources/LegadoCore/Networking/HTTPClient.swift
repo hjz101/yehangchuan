@@ -459,9 +459,106 @@ public final class URLSessionHTTPTransport: ProxyHTTPTransport, StreamingHTTPTra
     }
 
     private static func headers(from response: HTTPURLResponse) -> [String: String] {
-        response.allHeaderFields.reduce(into: [:]) { result, entry in
-            result[String(describing: entry.key)] = String(describing: entry.value)
+        var result: [String: String] = [:]
+        for (rawKey, rawValue) in response.allHeaderFields {
+            let name = String(describing: rawKey)
+            let text = (rawValue as? [Any])?.map { String(describing: $0) }.joined(separator: ", ")
+                ?? String(describing: rawValue)
+            // 同名的多值头（Set-Cookie）必须拼起来保留，否则后者覆盖前者。
+            if let existing = result.keys.first(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
+                result[existing] = (result[existing] ?? "") + ", " + text
+            } else {
+                result[name] = text
+            }
         }
+        return result
+    }
+}
+
+/// 解析 `Set-Cookie` 头字符串。
+///
+/// URLSession 可能把多个 `Set-Cookie` 合并成一个逗号分隔的字符串，
+/// 而 `Expires` 的日期本身带逗号（`Wed, 21 Oct 2015 07:28:00 GMT`），
+/// 不能直接按逗号切分。
+enum SetCookieHeaderParser {
+    /// 把合并后的 `Set-Cookie` 头拆成逐条 cookie 字符串。
+    static func split(_ header: String) -> [String] {
+        var values: [String] = []
+        var current = ""
+        var index = header.startIndex
+        while index < header.endIndex {
+            let character = header[index]
+            if character == "," {
+                let next = header.index(after: index)
+                if next < header.endIndex, startsNewCookie(header[next...]) {
+                    let value = current.trimmingCharacters(in: .whitespaces)
+                    if !value.isEmpty { values.append(value) }
+                    current = ""
+                    index = next
+                    continue
+                }
+            }
+            current.append(character)
+            index = header.index(after: index)
+        }
+        let tail = current.trimmingCharacters(in: .whitespaces)
+        if !tail.isEmpty { values.append(tail) }
+        return values
+    }
+
+    /// 逗号后若是 `name=value` 片段（且在下一个逗号前出现 `=`），视为下一条 cookie。
+    /// `Expires` 的日期段（`21 Oct 2015 07:28:00 GMT`）没有等号，因此不会被误切。
+    private static func startsNewCookie(_ remainder: Substring) -> Bool {
+        let segment = remainder.prefix { $0 != "," }
+        guard let equals = segment.firstIndex(of: "=") else { return false }
+        let name = segment[..<equals].trimmingCharacters(in: .whitespaces)
+        return !name.isEmpty && !name.contains(" ") && !name.contains(";")
+    }
+
+    /// 解析 cookie 的 `name=value` 片段。
+    static func nameValue(_ header: String) -> (name: String, value: String)? {
+        guard let first = header.split(separator: ";", maxSplits: 1).first,
+              let equals = first.firstIndex(of: "=") else { return nil }
+        let name = first[..<equals].trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return nil }
+        let value = first[first.index(after: equals)...].trimmingCharacters(in: .whitespaces)
+        return (name, value)
+    }
+
+    /// Max-Age 非正、Expires 已过期或值为空的 cookie 表示删除。
+    static func isDeletion(_ header: String, now: Date = Date()) -> Bool {
+        guard let pair = nameValue(header) else { return false }
+        if pair.value.isEmpty { return true }
+        for attribute in header.split(separator: ";").dropFirst() {
+            guard let equals = attribute.firstIndex(of: "=") else { continue }
+            let key = attribute[..<equals].trimmingCharacters(in: .whitespaces).lowercased()
+            let raw = attribute[attribute.index(after: equals)...].trimmingCharacters(in: .whitespaces)
+            switch key {
+            case "max-age":
+                if let seconds = Int64(raw), seconds <= 0 { return true }
+            case "expires":
+                if let date = parseHTTPDate(raw), date <= now { return true }
+            default:
+                break
+            }
+        }
+        return false
+    }
+
+    private static func parseHTTPDate(_ value: String) -> Date? {
+        let formats = [
+            "EEE, dd MMM yyyy HH:mm:ss zzz",
+            "EEE, dd-MMM-yyyy HH:mm:ss zzz",
+            "dd MMM yyyy HH:mm:ss zzz"
+        ]
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        for format in formats {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: value) { return date }
+        }
+        return nil
     }
 }
 
@@ -470,10 +567,16 @@ public final class LegadoCookieStore: @unchecked Sendable {
 
     private let storage: HTTPCookieStorage
     private let lock = NSLock()
-    private let persistent = PersistentRuntimeCache.shared
+    private let persistent: PersistentRuntimeCache
 
     public init(storage: HTTPCookieStorage = .shared) {
         self.storage = storage
+        self.persistent = PersistentRuntimeCache.shared
+    }
+
+    init(storage: HTTPCookieStorage, persistent: PersistentRuntimeCache) {
+        self.storage = storage
+        self.persistent = persistent
     }
 
     public func cookieHeader(for value: String) -> String {
@@ -497,29 +600,46 @@ public final class LegadoCookieStore: @unchecked Sendable {
 
     public func setCookie(_ cookie: String, for value: String) {
         guard let url = normalizedURL(value), !cookie.isEmpty else { return }
-        var cookies = HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": cookie], for: url)
-        if cookies.isEmpty,
-           let host = url.host,
-           let first = cookie.split(separator: ";").first {
-            let pair = first.split(separator: "=", maxSplits: 1).map(String.init)
-            if pair.count == 2, let fallback = HTTPCookie(properties: [
-                .name: pair[0].trimmingCharacters(in: .whitespaces),
-                .value: pair[1],
-                .domain: host,
-                .path: "/",
-                .secure: url.scheme == "https" ? "TRUE" : "FALSE"
-            ]) {
+        let entries = SetCookieHeaderParser.split(cookie)
+        guard !entries.isEmpty else { return }
+        let key = persistenceKey(url)
+        var header = persistent.cookie(for: key) ?? ""
+        lock.lock()
+        for entry in entries {
+            if SetCookieHeaderParser.isDeletion(entry) {
+                // Max-Age=0 / 过期的 Expires / 空值：从内存罐与持久罐一起删掉。
+                let name = SetCookieHeaderParser.nameValue(entry)?.name
+                    ?? HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": entry], for: url).first?.name
+                guard let name else { continue }
+                storage.cookies(for: url)?.filter { $0.name == name }.forEach(storage.deleteCookie)
+                header = removingCookie(named: name, from: header)
+                continue
+            }
+            var cookies = HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": entry], for: url)
+            if cookies.isEmpty, let fallback = fallbackCookie(entry, url: url) {
                 cookies = [fallback]
             }
+            cookies.forEach(storage.setCookie)
+            header = mergeCookieHeaders(header, persistentCookieHeader(entry))
         }
-        lock.lock()
-        cookies.forEach(storage.setCookie)
         lock.unlock()
-        let old = persistent.cookie(for: persistenceKey(url)) ?? ""
-        persistent.putCookie(
-            key: persistenceKey(url),
-            value: mergeCookieHeaders(old, persistentCookieHeader(cookie))
-        )
+        if header.isEmpty {
+            persistent.deleteCookie(key: key)
+        } else {
+            persistent.putCookie(key: key, value: header)
+        }
+    }
+
+    /// 给无法被 `HTTPCookie` 解析的单条 `name=value` 生成兜底 cookie。
+    private func fallbackCookie(_ entry: String, url: URL) -> HTTPCookie? {
+        guard let host = url.host, let pair = SetCookieHeaderParser.nameValue(entry) else { return nil }
+        return HTTPCookie(properties: [
+            .name: pair.name,
+            .value: pair.value,
+            .domain: host,
+            .path: "/",
+            .secure: url.scheme == "https" ? "TRUE" : "FALSE"
+        ])
     }
 
     public func removeCookies(for value: String) {
@@ -603,6 +723,17 @@ public final class LegadoCookieStore: @unchecked Sendable {
             let name = pair[0].trimmingCharacters(in: .whitespaces)
             guard !attributes.contains(name.lowercased()) else { return nil }
             return "\(name)=\(pair[1].trimmingCharacters(in: .whitespaces))"
+        }.joined(separator: "; ")
+    }
+
+    /// 从持久 cookie 头里删掉指定名字。cookie 名区分大小写。
+    private func removingCookie(named name: String, from header: String) -> String {
+        header.split(separator: ";").compactMap { part -> String? in
+            let pair = part.split(separator: "=", maxSplits: 1).map(String.init)
+            guard pair.count == 2 else { return nil }
+            let key = pair[0].trimmingCharacters(in: .whitespaces)
+            guard key != name else { return nil }
+            return "\(key)=\(pair[1].trimmingCharacters(in: .whitespaces))"
         }.joined(separator: "; ")
     }
 }
@@ -982,10 +1113,24 @@ public actor SourceNetworkPolicy {
 
     private func captureCookies(response: HTTPResponse, sourceID: String) {
         guard let header = response.headers.first(where: { $0.key.caseInsensitiveCompare("Set-Cookie") == .orderedSame })?.value else { return }
-        LegadoCookieStore.shared.setCookie(header, for: response.finalURL.absoluteString)
-        for cookie in HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": header], for: response.finalURL) {
-            upsert(.init(name: cookie.name, value: cookie.value, domain: cookie.domain, path: cookie.path, expiresAt: cookie.expiresDate, secure: cookie.isSecure), sourceID: sourceID)
+        for entry in SetCookieHeaderParser.split(header) {
+            LegadoCookieStore.shared.setCookie(entry, for: response.finalURL.absoluteString)
+            let parsed = HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": entry], for: response.finalURL)
+            if SetCookieHeaderParser.isDeletion(entry) {
+                if let name = parsed.first?.name ?? SetCookieHeaderParser.nameValue(entry)?.name {
+                    removeCookie(named: name, sourceID: sourceID)
+                }
+                continue
+            }
+            for cookie in parsed {
+                upsert(.init(name: cookie.name, value: cookie.value, domain: cookie.domain, path: cookie.path, expiresAt: cookie.expiresDate, secure: cookie.isSecure), sourceID: sourceID)
+            }
         }
+    }
+
+    private func removeCookie(named name: String, sourceID: String) {
+        cookies[sourceID]?.removeAll { $0.name == name }
+        if cookies[sourceID]?.isEmpty == true { cookies[sourceID] = nil }
     }
 
     private func dataURIResponse(for prepared: PreparedRequest) throws -> HTTPResponse {
