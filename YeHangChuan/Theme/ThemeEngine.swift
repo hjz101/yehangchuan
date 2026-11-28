@@ -43,7 +43,7 @@ struct ResolvedBackground: Equatable {
         case solid(Color)
         case linear(colors: [Color], start: CGPoint, end: CGPoint)
         case radial(colors: [Color], center: CGPoint, startRadius: CGFloat, endRadius: CGFloat)
-        case mesh(points: [CGPoint], colors: [Color], rows: Int, cols: Int)
+        case mesh(points: [[Double]], colors: [Color], rows: Int, cols: Int)
         case image(assetID: String, mode: ImageFillMode, overlay: Color?)
     }
 
@@ -256,10 +256,10 @@ enum ThemeEngine {
         case let .mesh(points, colors):
             let rows = points.count
             let cols = points.first?.count ?? 0
+            // points 已由模型层 clamp 到 0...1 且点数校验通过，直接缓存，
+            // 渲染器 body 内不做任何数组变换（P1-00 性能红线）。
             style = .mesh(
-                points: points.compactMap { p in
-                    p.count >= 2 ? CGPoint(x: p[0], y: p[1]) : nil
-                },
+                points: points,
                 colors: colors.map { color($0, scheme: scheme) },
                 rows: rows,
                 cols: cols
