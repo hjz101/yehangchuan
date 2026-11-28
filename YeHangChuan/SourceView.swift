@@ -872,7 +872,15 @@ struct SourceSearchSheet: View {
         store.sources.filter(\.enabled)
     }
 
-    private var enabledCount: Int { enabledSources.count }
+    /// 实际参与检索的书源。之前选中的只是高亮，检索永远跑全部启用源，
+    /// 筛选形同虚设。选中项为空或已被禁用时退回全部启用源。
+    private var searchSources: [BookSource] {
+        if let selectedSourceID,
+           let selected = enabledSources.first(where: { $0.id == selectedSourceID }) {
+            return [selected]
+        }
+        return enabledSources
+    }
 
     var body: some View {
         NavigationStack {
@@ -900,7 +908,7 @@ struct SourceSearchSheet: View {
                                 if !isSearching && !searchedKeyword.isEmpty {
                                     HStack(spacing: 5) {
                                         Image(systemName: "antenna.radiowaves.left.and.right")
-                                        Text("并发检索 \(enabledCount) 个书源 · \(results.count) 条结果")
+                                        Text("并发检索 \(searchSources.count) 个书源 · \(results.count) 条结果")
                                     }
                                     .font(.system(size: 9.5, weight: .medium))
                                     .foregroundStyle(theme.tertiary)
@@ -944,6 +952,9 @@ struct SourceSearchSheet: View {
             .onChange(of: query) { _, _ in
                 runSearch()
             }
+            .onChange(of: selectedSourceID) { _, _ in
+                runSearch()
+            }
             .onDisappear {
                 searchTask?.cancel()
                 // 让所有在途检索失效，结果回来时不再写进已关闭的弹窗。
@@ -959,7 +970,8 @@ struct SourceSearchSheet: View {
         searchGeneration += 1
         let generation = searchGeneration
         let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !keyword.isEmpty, !enabledSources.isEmpty else {
+        let sources = searchSources
+        guard !keyword.isEmpty, !sources.isEmpty else {
             results = []
             sourceErrors = [:]
             searchedKeyword = ""
@@ -978,7 +990,7 @@ struct SourceSearchSheet: View {
             guard !Task.isCancelled, generation == searchGeneration else { return }
 
             var engineSources: [LegadoCore.BookSource] = []
-            for source in enabledSources {
+            for source in sources {
                 if let engine = LegadoBridge.engineSource(from: source) {
                     engineSources.append(engine)
                 } else {
@@ -1001,8 +1013,8 @@ struct SourceSearchSheet: View {
                 }
                 for book in outcome.books {
                     // 书源 ID 用界面侧的，加书架时才能找回来。
-                    let appSourceID = enabledSources.first { $0.host == outcome.sourceID || $0.id == outcome.sourceID }?.id
-                        ?? LegadoBridge.appSourceID(engineID: outcome.sourceID, in: enabledSources)
+                    let appSourceID = sources.first { $0.host == outcome.sourceID || $0.id == outcome.sourceID }?.id
+                        ?? LegadoBridge.appSourceID(engineID: outcome.sourceID, in: sources)
                         ?? outcome.sourceID
                     withAnimation(.easeOut(duration: 0.18)) {
                         results.append(
