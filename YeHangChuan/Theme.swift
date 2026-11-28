@@ -233,11 +233,16 @@ struct GlassIconButton: View {
 /// 注意：scaleEffect 不改变 hitTest 热区，44pt 触控核验看 frame（P4-04）。
 struct PressableStyle: ButtonStyle {
     @Environment(\.theme) private var theme
+    private let scaleOverride: Double?
+
+    /// 控件级 scale 覆盖；未指定时使用主题 ShapeSpec.pressScale。
+    init(scale: Double? = nil) { scaleOverride = scale }
 
     func makeBody(configuration: Configuration) -> some View {
         let shape = theme.shape
+        let pressedScale = scaleOverride ?? shape.pressScale
         return configuration.label
-            .scaleEffect(configuration.isPressed ? shape.pressScale : 1)
+            .scaleEffect(configuration.isPressed ? pressedScale : 1)
             .opacity(configuration.isPressed ? shape.pressOpacity : 1)
             .animation(
                 reduceMotion ? nil : .spring(
@@ -260,7 +265,7 @@ struct SectionHeading: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(text)
-                .themeFont(.appBody, size: 12, weight: .semibold))
+                .themeFont(.appBody, size: 12, weight: .semibold)
                 .tracking(1.6)
                 .foregroundStyle(theme.secondary)
 
@@ -268,7 +273,7 @@ struct SectionHeading: View {
 
             if let trailing {
                 Text(trailing)
-                    .themeFont(.appBody, size: 11, weight: .medium))
+                    .themeFont(.appBody, size: 11, weight: .medium)
                     .foregroundStyle(theme.tertiary)
             }
         }
@@ -340,7 +345,7 @@ struct RingProgress: View {
                 }
                 if let caption {
                     Text(caption)
-                        .themeFont(.appBody, size: 9, weight: .medium))
+                        .themeFont(.appBody, size: 9, weight: .medium)
                         .foregroundStyle(theme.tertiary)
                 }
             }
@@ -454,7 +459,7 @@ struct ToastView: View {
 
     var body: some View {
         Text(text)
-            .themeFont(.appBody, size: 13, weight: .medium))
+            .themeFont(.appBody, size: 13, weight: .medium)
             .foregroundStyle(theme.text)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -493,7 +498,7 @@ struct SettingsRow: View {
             HStack(spacing: 13) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .themeFont(.appBody, size: 14, weight: .semibold))
+                        .themeFont(.appBody, size: 14, weight: .semibold)
                         .foregroundStyle(rowTint)
                         .frame(width: 30, height: 30)
                         .background(rowTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -516,7 +521,7 @@ struct SettingsRow: View {
 
                 if showsChevron {
                     Image(systemName: "chevron.right")
-                        .themeFont(.appBody, size: 11, weight: .bold))
+                        .themeFont(.appBody, size: 11, weight: .bold)
                         .foregroundStyle(theme.tertiary.opacity(0.5))
                 }
             }

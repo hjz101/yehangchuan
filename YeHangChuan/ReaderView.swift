@@ -157,6 +157,14 @@ struct ReaderView: View {
         effectiveReaderStyle.surface
     }
 
+    private var readerScheme: ColorScheme {
+        effectiveSurface.isDark ? .dark : .light
+    }
+
+    private func readerColor(_ color: ThemeColor) -> Color {
+        ThemeEngine.color(color, scheme: readerScheme)
+    }
+
     private var chromeColor: Color {
         effectiveSurface.isDark ? .white : themeTokens.text
     }
@@ -193,7 +201,7 @@ struct ReaderView: View {
             if let flash {
                 Text(flash)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(effectiveSurface.text)
+                    .foregroundStyle(readerColor(effectiveSurface.text))
                     .padding(.horizontal, 15)
                     .padding(.vertical, 9)
                     .glassCapsule(tint: effectiveSurface.isDark ? .white.opacity(0.08) : .white.opacity(0.5))
@@ -417,13 +425,13 @@ struct ReaderView: View {
         VStack(spacing: 12) {
             Image(systemName: "doc.text")
                 .font(.system(size: 30, weight: .light))
-                .foregroundStyle(effectiveSurface.secondary)
+                .foregroundStyle(readerColor(effectiveSurface.secondary))
             Text("这本书没有可显示的正文")
                 .font(.system(size: 15, weight: .semibold, design: .serif))
-                .foregroundStyle(effectiveSurface.text)
+                .foregroundStyle(readerColor(effectiveSurface.text))
             Text("可能是导入时内容解析失败。可以返回书架重新导入这本书。")
                 .font(.system(size: 12))
-                .foregroundStyle(effectiveSurface.secondary)
+                .foregroundStyle(readerColor(effectiveSurface.secondary))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 36)
             Button {
@@ -502,16 +510,16 @@ struct ReaderView: View {
                 ProgressView().themedProgress()
                 Text("正在加载在线章节…")
                     .font(.system(size: 12))
-                    .foregroundStyle(effectiveSurface.secondary)
+                    .foregroundStyle(readerColor(effectiveSurface.secondary))
             }
         } else if let networkError, pageCount == 0 {
             VStack(spacing: 10) {
                 Image(systemName: "wifi.exclamationmark")
                     .font(.system(size: 24, weight: .light))
-                    .foregroundStyle(effectiveSurface.secondary)
+                    .foregroundStyle(readerColor(effectiveSurface.secondary))
                 Text(networkError)
                     .font(.system(size: 12))
-                    .foregroundStyle(effectiveSurface.secondary)
+                    .foregroundStyle(readerColor(effectiveSurface.secondary))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
 
@@ -649,7 +657,7 @@ struct ReaderView: View {
 
                     Text(currentChapterTitle)
                         .font(.system(size: 10))
-                        .foregroundStyle(effectiveSurface.secondary)
+                        .foregroundStyle(readerColor(effectiveSurface.secondary))
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 18)
@@ -755,19 +763,19 @@ struct ReaderView: View {
                 HStack(spacing: 9) {
                     Text(settings.pageMode == .scroll ? "滚动" : "\(pageIndex + 1) / \(pageCount)")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundStyle(effectiveSurface.secondary)
+                        .foregroundStyle(readerColor(effectiveSurface.secondary))
                         .monospacedDigit()
 
                     ProgressBar(
                         value: progress,
-                        tint: effectiveSurface.accent,
-                        track: effectiveSurface.text.opacity(0.16),
+                        tint: readerColor(effectiveSurface.accent),
+                        track: readerColor(effectiveSurface.text).opacity(0.16),
                         height: 2.5
                     )
 
                     Text("\(Int(progress * 100))%")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundStyle(effectiveSurface.secondary)
+                        .foregroundStyle(readerColor(effectiveSurface.secondary))
                         .monospacedDigit()
                 }
                 .padding(.horizontal, 18)
@@ -1486,6 +1494,7 @@ struct PageFlipReader: View {
 /// 段评胶囊是叠在绘制层上的独立按钮：CoreText 画出来的字拿不到 SwiftUI
 /// 的点击，所以位置由 `PageParagraphBox` 算好，按钮绝对定位到那一行。
 struct ReaderPageView: View {
+    @Environment(\.theme) private var appTheme
     @Environment(\.readerTextColor) private var readerTextColor
     let pagination: PaginatedBook
     let page: ReadingPage
@@ -1626,6 +1635,7 @@ struct ReaderPageView: View {
 }
 
 struct ParagraphView: View {
+    @Environment(\.theme) private var appTheme
     let paragraph: Paragraph
     let settings: ReaderSettings
     let onComment: (Paragraph) -> Void
@@ -1697,6 +1707,7 @@ struct ParagraphView: View {
 }
 
 struct ScrollReaderView: View {
+    @Environment(\.theme) private var appTheme
     let chapters: [Chapter]
     let settings: ReaderSettings
     @Binding var visibleParagraphID: String?
@@ -2365,7 +2376,7 @@ struct ReaderSettingsSheet: View {
             .padding(.vertical, 16)
             .padding(.horizontal, min(settings.sideMargin, 28))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(appTheme.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(appTheme.reader.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(appTheme.text.opacity(0.1), lineWidth: 0.8)
@@ -2712,7 +2723,7 @@ struct ReaderSettingsSheet: View {
 
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(appTheme.background)
+                    .fill(appTheme.reader.background)
 
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(appTheme.text.opacity(0.055))
@@ -3062,7 +3073,7 @@ struct SegmentCommentsSheet: View {
     private func commentCard(_ comment: SegmentComment, index: Int) -> some View {
         let idx = abs(index) % theme.covers.count
         let colors = (theme.covers[idx], theme.coversDeep[idx])
-        VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 // 头像色块
                 Text(String(comment.author.prefix(1)))

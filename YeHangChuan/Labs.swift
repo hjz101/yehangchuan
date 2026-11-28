@@ -523,7 +523,7 @@ struct AIStudioSheet: View {
                 HStack(spacing: 8) {
                     Text(aiTTS.state.label)
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(aiTTS.state.isFailure ? theme.coral : theme.secondary)
+                        .foregroundStyle(aiTTS.state.isFailure ? theme.accent : theme.secondary)
                     if aiTTS.isPlaying || aiTTS.state == .paused {
                         Button(aiTTS.isPlaying ? "暂停" : "继续") {
                             aiTTS.togglePlayback()

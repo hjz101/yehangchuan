@@ -276,8 +276,8 @@ private struct MeshAnchorEditor: View {
     var body: some View {
         Group {
             if case let .mesh(points, colors) = theme.backdrop {
-                let rows = points.count
-                let cols = points.first?.count ?? 0
+                let rows = Self.sideCount(points.count)
+                let cols = rows
                 VStack(alignment: .leading, spacing: 8) {
                     Text("当前 \(rows)×\(cols) 网格，\(colors.count) 个配色点")
                         .font(.caption)
@@ -301,28 +301,29 @@ private struct MeshAnchorEditor: View {
                             Path { path in
                                 for r in 0..<rows {
                                     for c in 0..<cols {
-                                        guard points.indices.contains(r),
-                                              points[r].indices.contains(c),
-                                              points[r][c].count >= 2 else { continue }
+                                        let index = r * cols + c
+                                        guard points.indices.contains(index),
+                                              points[index].count >= 2 else { continue }
                                         let p = CGPoint(
-                                            x: CGFloat(points[r][c][0]) * geo.size.width,
-                                            y: CGFloat(points[r][c][1]) * geo.size.height
+                                            x: CGFloat(points[index][0]) * geo.size.width,
+                                            y: CGFloat(points[index][1]) * geo.size.height
                                         )
-                                        if c + 1 < cols, points[r].indices.contains(c + 1),
-                                           points[r][c + 1].count >= 2 {
+                                        let right = index + 1
+                                        if c + 1 < cols, points.indices.contains(right),
+                                           points[right].count >= 2 {
                                             let next = CGPoint(
-                                                x: CGFloat(points[r][c + 1][0]) * geo.size.width,
-                                                y: CGFloat(points[r][c + 1][1]) * geo.size.height
+                                                x: CGFloat(points[right][0]) * geo.size.width,
+                                                y: CGFloat(points[right][1]) * geo.size.height
                                             )
                                             path.move(to: p)
                                             path.addLine(to: next)
                                         }
-                                        if r + 1 < rows, points.indices.contains(r + 1),
-                                           points[r + 1].indices.contains(c),
-                                           points[r + 1][c].count >= 2 {
+                                        let down = index + cols
+                                        if r + 1 < rows, points.indices.contains(down),
+                                           points[down].count >= 2 {
                                             let next = CGPoint(
-                                                x: CGFloat(points[r + 1][c][0]) * geo.size.width,
-                                                y: CGFloat(points[r + 1][c][1]) * geo.size.height
+                                                x: CGFloat(points[down][0]) * geo.size.width,
+                                                y: CGFloat(points[down][1]) * geo.size.height
                                             )
                                             path.move(to: p)
                                             path.addLine(to: next)
@@ -332,28 +333,24 @@ private struct MeshAnchorEditor: View {
                             }
                             .stroke(Color.secondary.opacity(0.35), lineWidth: 1)
 
-                            ForEach(0..<rows, id: \.self) { r in
-                                ForEach(0..<cols, id: \.self) { c in
-                                    if points.indices.contains(r), points[r].indices.contains(c),
-                                       points[r][c].count >= 2 {
-                                        let index = r * cols + c
-                                        let spec = colors.indices.contains(index)
-                                            ? colors[index] : ColorSpec.system
-                                        Circle()
-                                            .fill(Color(hex: spec.editorLightHex))
-                                            .overlay {
-                                                Circle()
-                                                    .stroke(
-                                                        selectedIndex == index ? Color.primary : Color.clear,
-                                                        lineWidth: 2
-                                                    )
-                                            }
-                                            .frame(width: 14, height: 14)
-                                            .position(
-                                                x: CGFloat(points[r][c][0]) * geo.size.width,
-                                                y: CGFloat(points[r][c][1]) * geo.size.height
-                                            )
-                                    }
+                            ForEach(0..<(rows * cols), id: \.self) { index in
+                                if points.indices.contains(index), points[index].count >= 2 {
+                                    let spec = colors.indices.contains(index)
+                                        ? colors[index] : ColorSpec.system
+                                    Circle()
+                                        .fill(Color(hex: spec.editorLightHex))
+                                        .overlay {
+                                            Circle()
+                                                .stroke(
+                                                    selectedIndex == index ? Color.primary : Color.clear,
+                                                    lineWidth: 2
+                                                )
+                                        }
+                                        .frame(width: 14, height: 14)
+                                        .position(
+                                            x: CGFloat(points[index][0]) * geo.size.width,
+                                            y: CGFloat(points[index][1]) * geo.size.height
+                                        )
                                 }
                             }
 
@@ -404,9 +401,11 @@ private struct MeshAnchorEditor: View {
     /// 拖拽锚点：边界点固定一维（上/下固定 y、左/右固定 x），可动维度 clamp 到 0.02...0.98。
     private func moveAnchor(location: CGPoint, start: CGPoint, size: CGSize) {
         guard case let .mesh(originalPoints, colors) = theme.backdrop,
-              !originalPoints.isEmpty, let cols = originalPoints.first?.count, cols > 0 else { return }
+              !originalPoints.isEmpty else { return }
+        let cols = Self.sideCount(originalPoints.count)
+        guard cols > 0 else { return }
+        let rows = originalPoints.count / cols
         var points = originalPoints
-        let rows = points.count
         let index: Int
         if let draggingIndex {
             index = draggingIndex
@@ -416,17 +415,14 @@ private struct MeshAnchorEditor: View {
             let sy = start.y / max(size.height, 1)
             var best = 0
             var bestDistance = Double.greatestFiniteMagnitude
-            for r in 0..<rows {
-                for c in 0..<cols {
-                    guard points.indices.contains(r), points[r].indices.contains(c),
-                          points[r][c].count >= 2 else { continue }
-                    let dx = points[r][c][0] - sx
-                    let dy = points[r][c][1] - sy
-                    let distance = dx * dx + dy * dy
-                    if distance < bestDistance {
-                        bestDistance = distance
-                        best = r * cols + c
-                    }
+            for candidate in points.indices {
+                guard points[candidate].count >= 2 else { continue }
+                let dx = points[candidate][0] - sx
+                let dy = points[candidate][1] - sy
+                let distance = dx * dx + dy * dy
+                if distance < bestDistance {
+                    bestDistance = distance
+                    best = candidate
                 }
             }
             index = best
@@ -435,29 +431,35 @@ private struct MeshAnchorEditor: View {
         }
         let r = index / cols
         let c = index % cols
-        guard points.indices.contains(r), points[r].indices.contains(c),
-              points[r][c].count >= 2 else { return }
+        guard points.indices.contains(index), points[index].count >= 2 else { return }
         let x = min(max(location.x / max(size.width, 1), 0.02), 0.98)
         let y = min(max(location.y / max(size.height, 1), 0.02), 0.98)
         let atTop = r == 0
         let atBottom = r == rows - 1
         let atLeft = c == 0
         let atRight = c == cols - 1
-        if !atLeft && !atRight { points[r][c][0] = x }
-        if !atTop && !atBottom { points[r][c][1] = y }
+        if !atLeft && !atRight { points[index][0] = x }
+        if !atTop && !atBottom { points[index][1] = y }
         theme.backdrop = .mesh(points: points, colors: colors)
     }
 
     /// 逐点取色：保留原深色档/透明度，只替换浅档 hex（ColorSpec 是 mesh 的实际配色类型）。
     private func updateColor(at index: Int, from spec: ColorSpec, hex: UInt32) {
-        guard case let .mesh(points, var colors) = theme.backdrop,
-              colors.indices.contains(index) else { return }
+        guard case let .mesh(points, matchedColors) = theme.backdrop,
+              matchedColors.indices.contains(index) else { return }
+        var colors = matchedColors
         colors[index] = spec.editorReplacingLight(hex)
         theme.backdrop = .mesh(points: points, colors: colors)
     }
 
+    /// 编辑器仅生成方形网格；由点数反推行列数，兼容外部导入的非方形网格。
+    private static func sideCount(_ count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        return max(1, Int(sqrt(Double(count)).rounded()))
+    }
+
     private static func resized(rows: Int, cols: Int) -> BackgroundSpec {
-        let points = (0..<rows).map { r in
+        let points = (0..<rows).flatMap { r in
             (0..<cols).map { c -> [Double] in
                 [Double(c) / Double(max(1, cols - 1)), Double(r) / Double(max(1, rows - 1))]
             }
