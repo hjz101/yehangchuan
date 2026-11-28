@@ -927,6 +927,8 @@ final class AppStore {
     var readRecords: [ReadRecord] = []
     var goalMinutes: Int = 60
     var appearance: AppAppearance = .dark
+    /// 主题选择桥接（P0-06）：只存 ID + 版本，主题本体在 ThemeStore。
+    var themeSelection: ThemeSelection?
     /// 底部标签栏是否显示「摘录」。
     /// 摘录是低频入口，不是每个人都想要它占一格标签 —— 默认仍然显示，
     /// 不擅自改变老用户已经习惯的布局。
@@ -1724,10 +1726,13 @@ final class AppStore {
         var customChapters: [String: [Chapter]]
         var eyeCare: EyeCareSettings
         var showExcerptsTab: Bool
+        /// 主题桥接字段：只存选择，不存主题本体（P0-06）。老快照缺字段时 nil。
+        var themeSelection: ThemeSelection?
 
         private enum CodingKeys: String, CodingKey {
             case books, sources, excerpts, settings, goalMinutes, appearance
             case bookmarks, positions, groups, customChapters, eyeCare, showExcerptsTab
+            case themeSelection
         }
 
         /// 逐分区兜底解码。整份快照是「用户书库的唯一副本」：
@@ -1747,6 +1752,8 @@ final class AppStore {
             customChapters = try c.decodeIfPresent([String: [Chapter]].self, forKey: .customChapters) ?? [:]
             eyeCare = try c.decodeIfPresent(EyeCareSettings.self, forKey: .eyeCare) ?? EyeCareSettings()
             showExcerptsTab = try c.decodeIfPresent(Bool.self, forKey: .showExcerptsTab) ?? true
+            // 逐字段兜底：缺字段保持 nil，老快照外观不变。
+            themeSelection = try c.decodeIfPresent(ThemeSelection.self, forKey: .themeSelection)
         }
 
         init(
@@ -1761,7 +1768,8 @@ final class AppStore {
             groups: [String],
             customChapters: [String: [Chapter]],
             eyeCare: EyeCareSettings,
-            showExcerptsTab: Bool
+            showExcerptsTab: Bool,
+            themeSelection: ThemeSelection? = nil
         ) {
             self.books = books
             self.sources = sources
@@ -1775,6 +1783,7 @@ final class AppStore {
             self.customChapters = customChapters
             self.eyeCare = eyeCare
             self.showExcerptsTab = showExcerptsTab
+            self.themeSelection = themeSelection
         }
     }
 
@@ -1791,7 +1800,8 @@ final class AppStore {
             groups: groups,
             customChapters: customChapters,
             eyeCare: eyeCare,
-            showExcerptsTab: showExcerptsTab
+            showExcerptsTab: showExcerptsTab,
+            themeSelection: themeSelection
         )
     }
 
@@ -1961,6 +1971,7 @@ final class AppStore {
         appearance = decode("appearance", as: AppAppearance.self) ?? appearance
         eyeCare = decode("eyeCare", as: EyeCareSettings.self) ?? eyeCare
         showExcerptsTab = decode("showExcerptsTab", as: Bool.self) ?? showExcerptsTab
+        themeSelection = decode("themeSelection", as: ThemeSelection.self)
 
         if let readerSettings = decode("settings", as: ReaderSnapshot.self) {
             settings.apply(readerSettings)
@@ -2054,6 +2065,8 @@ final class AppStore {
         groups = snapshot.groups
         customChapters = snapshot.customChapters
         eyeCare = snapshot.eyeCare
+        // 只设置选择，不加载主题本体（体在 ThemeStore 独立读取）。
+        themeSelection = snapshot.themeSelection
         #if DEBUG
         ensureBuiltinDemoSource()
         #endif
