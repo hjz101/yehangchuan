@@ -136,6 +136,11 @@ struct ReaderView: View {
             readerBackground
 
             readingContent
+                // 调版心时正文还在底下，只是被遮罩盖住了。触摸照旧会落到
+                // 正文层的翻页热区与长按上：点一下框外就悄悄翻了页，松手
+                // 还停在旧页上，看起来像「拖完边界书跳了」。这段时间干脆
+                // 不接受正文触摸，翻页和选段都等退出微调之后再说。
+                .allowsHitTesting(!showFrameAdjust)
 
             // 顶部浮层
             VStack {
@@ -1485,7 +1490,10 @@ struct ReaderPageView: View {
                     .tracking(0.9)
                     .foregroundStyle(settings.theme.secondary)
                     .padding(.horizontal, settings.sideMargin)
-                    .padding(.top, max(settings.topMargin - 32, 8))
+                    // 页眉始终落在正文起点之前：上边界拖小后，固定减 32 会把
+                    // 页眉推进第一行里，看起来像版心线没生效。留 14 点至少
+                    // 容下一行小字的高度。
+                    .padding(.top, min(max(settings.topMargin - 32, 8), max(settings.topMargin - 18, 8)))
                 }
             }
             .overlay(alignment: .bottom) {
@@ -1498,7 +1506,7 @@ struct ReaderPageView: View {
                     .font(.system(size: 9.5))
                     .foregroundStyle(settings.theme.secondary.opacity(0.55))
                     .padding(.horizontal, settings.sideMargin)
-                    .padding(.bottom, max(settings.bottomMargin - 30, 8))
+                    .padding(.bottom, min(max(settings.bottomMargin - 30, 8), max(settings.bottomMargin - 14, 8)))
                 }
             }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -1837,14 +1845,27 @@ struct ReaderFrameAdjustOverlay: View {
             VStack(spacing: 8) {
                 Spacer()
 
-                // 底边推得再低，也不能压到底部浮层：微调时工具栏收起来了，
-                // 但点一下正文它就会回来，线路仍要留够。
-                if page.height - bottomMargin < ReaderMetrics.defaultBottom {
-                    Label("底边已压到工具栏，退出时会恢复浮层", systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(theme.secondary)
-                        .padding(.bottom, 2)
+                // 先给三个整档，再留抓手微调。整档落地的是一次完整重排，
+                // 抓手适合「就差一点」，两者混在一起时读者往往会拖到放弃。
+                HStack(spacing: 6) {
+                    ForEach(FramePreset.allCases, id: \.self) { preset in
+                        Button {
+                            applyPreset(preset)
+                        } label: {
+                            Text(preset.title)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(isActive(preset) ? Palette.onAccent : theme.text)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .glassCapsule(
+                                    tint: isActive(preset) ? Palette.accentSolid : theme.text.opacity(0.06),
+                                    interactive: true
+                                )
+                        }
+                        .buttonStyle(PressableStyle(scale: 0.97))
+                    }
                 }
+                .frame(maxWidth: 250)
 
                 HStack(spacing: 14) {
                     Label("上 \(Int(topMargin))", systemImage: "arrow.up.and.down")
@@ -1976,13 +1997,13 @@ struct ReaderFrameAdjustOverlay: View {
                 case .left:
                     let next = clamp(
                         (sideDrag?.start ?? initialSideMargin) + value.translation.width,
-                        to: 16...46
+                        to: Double(ReaderMetrics.minSide)...Double(ReaderMetrics.maxSide)
                     )
                     sideDrag = (sideDrag?.start ?? initialSideMargin, next)
                 case .right:
                     let next = clamp(
                         (sideDrag?.start ?? initialSideMargin) - value.translation.width,
-                        to: 16...46
+                        to: Double(ReaderMetrics.minSide)...Double(ReaderMetrics.maxSide)
                     )
                     sideDrag = (sideDrag?.start ?? initialSideMargin, next)
                 case .top:
@@ -2052,11 +2073,65 @@ struct ReaderFrameAdjustOverlay: View {
         onCommit(sideMargin, topMargin, bottomMargin)
     }
 
+    /// 三个整档：紧凑贴着工具栏把每页字数拉满，宽栏牺牲一些字换行长，
+    /// 适中是默认值。左右放宽时同时收紧上下，保证一行不至于太短。
+    private func applyPreset(_ preset: FramePreset) {
+        sideDrag = nil
+        topDrag = (Double(preset.top), Double(preset.top))
+        bottomDrag = (Double(preset.bottom), Double(preset.bottom))
+        onCommit(Double(preset.side), Double(preset.top), Double(preset.bottom))
+    }
+
+    private func isActive(_ preset: FramePreset) -> Bool {
+        abs(sideMargin - Double(preset.side)) < 0.5
+            && abs(topMargin - Double(preset.top)) < 0.5
+            && abs(bottomMargin - Double(preset.bottom)) < 0.5
+    }
+
     private func resetFrame() {
-        sideDrag = (28, 28)
+        sideDrag = (Double(ReaderMetrics.defaultSide), Double(ReaderMetrics.defaultSide))
         topDrag = (Double(ReaderMetrics.defaultTop), Double(ReaderMetrics.defaultTop))
         bottomDrag = (Double(ReaderMetrics.defaultBottom), Double(ReaderMetrics.defaultBottom))
-        onCommit(28, Double(ReaderMetrics.defaultTop), Double(ReaderMetrics.defaultBottom))
+        onCommit(Double(ReaderMetrics.defaultSide), Double(ReaderMetrics.defaultTop), Double(ReaderMetrics.defaultBottom))
+    }
+}
+
+/// 版心的三个整档。左右是读者抱怨「太空」时最该改的刻度：
+/// 默认 28 让一行排到三十多个字，一屏十来行，短章很容易只剩半页。
+/// 窄栏把一行收到二十字上下，行数立刻变多，页面就不空。
+enum FramePreset: CaseIterable {
+    case compact, balanced, wide
+
+    var title: String {
+        switch self {
+        case .compact: "紧凑"
+        case .balanced: "适中"
+        case .wide: "宽栏"
+        }
+    }
+
+    var side: CGFloat {
+        switch self {
+        case .compact: 44
+        case .balanced: ReaderMetrics.defaultSide
+        case .wide: 64
+        }
+    }
+
+    var top: CGFloat {
+        switch self {
+        case .compact: ReaderMetrics.minTop
+        case .balanced: ReaderMetrics.defaultTop
+        case .wide: 112
+        }
+    }
+
+    var bottom: CGFloat {
+        switch self {
+        case .compact: ReaderMetrics.minBottom
+        case .balanced: ReaderMetrics.defaultBottom
+        case .wide: 184
+        }
     }
 }
 
@@ -2418,8 +2493,6 @@ struct ReaderSettingsSheet: View {
                     selection: $settings.fontWeight
                 )
 
-                frameSlider("左右留白", value: $settings.sideMargin, range: 16...46)
-
                 Toggle("首行缩进", isOn: $settings.indent)
                     .font(.system(size: 13))
                     .tint(Palette.accent)
@@ -2530,8 +2603,29 @@ struct ReaderSettingsSheet: View {
             VStack(spacing: 12) {
                 framePreview
 
+                HStack(spacing: 6) {
+                    ForEach(FramePreset.allCases, id: \.self) { preset in
+                        Button {
+                            settings.sideMargin = Double(preset.side)
+                            settings.topMargin = Double(preset.top)
+                            settings.bottomMargin = Double(preset.bottom)
+                        } label: {
+                            Text(preset.title)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(isFramePresetActive(preset) ? Palette.onAccent : Palette.text)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .glassCapsule(
+                                    tint: isFramePresetActive(preset) ? Palette.accentSolid : Palette.text.opacity(0.06),
+                                    interactive: true
+                                )
+                        }
+                        .buttonStyle(PressableStyle(scale: 0.97))
+                    }
+                }
+
                 frameSlider("上边界", value: $settings.topMargin, range: ReaderMetrics.minTop...ReaderMetrics.maxTop)
-                frameSlider("左右", value: $settings.sideMargin, range: 16...46)
+                frameSlider("左右", value: $settings.sideMargin, range: ReaderMetrics.minSide...ReaderMetrics.maxSide)
                 frameSlider("下边界", value: $settings.bottomMargin, range: ReaderMetrics.minBottom...ReaderMetrics.maxBottom)
 
                 if let onAdjustFrame {
@@ -2592,6 +2686,12 @@ struct ReaderSettingsSheet: View {
 
     /// 预览按 iPhone 竖屏比例缩放，与阅读页上看到的画面同一套几何。
     private var previewViewport: CGSize { CGSize(width: 390, height: 844) }
+
+    private func isFramePresetActive(_ preset: FramePreset) -> Bool {
+        abs(settings.sideMargin - Double(preset.side)) < 0.5
+            && abs(settings.topMargin - Double(preset.top)) < 0.5
+            && abs(settings.bottomMargin - Double(preset.bottom)) < 0.5
+    }
 
     private func frameSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
         HStack(spacing: 10) {
