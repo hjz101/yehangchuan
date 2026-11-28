@@ -252,6 +252,7 @@ struct AIStudioSheet: View {
     @State private var isBusy = false
     @State private var message = ""
     @State private var showTTS = false
+    @State private var aiTTS = AITTSPlayer()
 
     struct AICoverIdea: Identifiable {
         let id = UUID()
@@ -316,11 +317,17 @@ struct AIStudioSheet: View {
                 ListenSheet(
                     book: store.books.first ?? .labSample,
                     chapterTitle: "AI 摘要试听",
-                    text: summary.isEmpty ? "夜航船在水面上缓慢前行，灯影落在书页上。" : summary
+                    text: summary
                 )
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
                 .themedChrome(store)
+            }
+            .task {
+                await aiTTS.loadEngines()
+            }
+            .onDisappear {
+                aiTTS.stop()
             }
         }
     }
@@ -472,18 +479,65 @@ struct AIStudioSheet: View {
 
     private var ttsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeading(text: "AI 朗读", trailing: "系统语音真实播放")
+            SectionHeading(
+                text: "AI 朗读",
+                trailing: aiTTS.hasEngine ? "HTTP TTS" : "未配置 HTTP TTS"
+            )
 
-            Text("把摘要交给系统语音试听。AI 摘要由你配置的兼容服务生成，朗读始终使用设备上的系统语音。")
+            Text("系统语音与 HTTP TTS 分开播放。HTTP TTS 会把摘要发送到已配置的引擎并播放返回音频。")
                 .font(.system(size: 11.5))
                 .foregroundStyle(theme.secondary)
 
-            Button {
-                showTTS = true
-            } label: {
-                actionLabel("试听摘要", symbol: "speaker.wave.2", tint: theme.gold)
+            if !aiTTS.engines.isEmpty {
+                Picker("HTTP TTS 引擎", selection: $aiTTS.selectedEngineID) {
+                    ForEach(aiTTS.engines) { engine in
+                        Text(engine.name).tag(Optional(engine.id))
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(theme.jade)
             }
-            .buttonStyle(PressableStyle(scale: 0.97))
+
+            HStack(spacing: 10) {
+                Button {
+                    aiTTS.start(text: summary)
+                } label: {
+                    actionLabel("AI TTS 试听", symbol: "waveform", tint: theme.jade)
+                }
+                .buttonStyle(PressableStyle(scale: 0.97))
+                .disabled(aiTTS.isBusy)
+
+                Button {
+                    guard !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        message = "请先生成摘要，再使用系统语音"
+                        return
+                    }
+                    showTTS = true
+                } label: {
+                    actionLabel("系统语音", symbol: "speaker.wave.2", tint: theme.gold)
+                }
+                .buttonStyle(PressableStyle(scale: 0.97))
+            }
+
+            if aiTTS.state != .idle {
+                HStack(spacing: 8) {
+                    Text(aiTTS.state.label)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(aiTTS.state.isFailure ? theme.coral : theme.secondary)
+                    if aiTTS.isPlaying || aiTTS.state == .paused {
+                        Button(aiTTS.isPlaying ? "暂停" : "继续") {
+                            aiTTS.togglePlayback()
+                        }
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(theme.jade)
+                    }
+                    if aiTTS.state != .loading {
+                        Button("停止") { aiTTS.stop() }
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(theme.secondary)
+                    }
+                }
+            }
         }
         .padding(14)
         .glassSurface(cornerRadius: 22)
@@ -496,7 +550,7 @@ struct AIStudioSheet: View {
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(theme.jade)
             }
-            Text("摘要与封面会向自配的兼容服务发起真实 HTTP 请求，并只上传当前书正文前 4000 字；Key 存系统 Keychain、费用自付。私网地址默认被拦截，需显式放行。试听仍用系统语音，不调用 AI TTS。")
+            Text("摘要与封面会向自配的兼容服务发起真实 HTTP 请求，并只上传当前书正文前 4000 字；AI TTS 会向已选 HTTP TTS 引擎请求音频。Key 存系统 Keychain、费用自付。")
                 .font(.system(size: 10))
                 .foregroundStyle(theme.tertiary)
         }
@@ -553,6 +607,13 @@ struct AIStudioSheet: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .background(tint, in: Capsule())
+    }
+}
+
+private extension AITTSPlaybackState {
+    var isFailure: Bool {
+        if case .failed = self { return true }
+        return false
     }
 }
 
