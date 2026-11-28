@@ -16,8 +16,15 @@ public struct ComicArchiveSet {
     private let backend: Backend
     private let report: ComicBookReport
     private static let maximumContainerSize = 200 * 1_024 * 1_024
+    /// 7z 没有「只读头部」的公开 API，`SevenZipContainer.open` 会把所有条目解压出来。
+    /// 解压后再按条目声明大小拒绝解压炸弹，避免整本数据继续被复制保留。
+    private static let maximumSevenZipUncompressedSize = 1_024 * 1_024 * 1_024
 
     public init(url: URL) throws {
+        try self.init(url: url, pageLimit: ComicArchive.pageLimit, maximumUncompressedSize: Self.maximumSevenZipUncompressedSize)
+    }
+
+    init(url: URL, pageLimit: Int, maximumUncompressedSize: Int) throws {
         let ext = url.pathExtension.lowercased()
         let title = url.deletingPathExtension().lastPathComponent
         switch ext {
@@ -44,12 +51,28 @@ public struct ComicArchiveSet {
             }
             let data = try Data(contentsOf: url, options: .mappedIfSafe)
             let entries = try SevenZipContainer.open(container: data)
+            // 先看条目声明的未压缩总量，超过上限直接拒绝，不再逐条保留数据。
+            var declaredTotal = 0
+            var totalOverflow = false
+            for entry in entries where entry.info.type == .regular {
+                guard let entrySize = entry.info.size else { continue }
+                let (sum, overflow) = declaredTotal.addingReportingOverflow(entrySize)
+                declaredTotal = overflow ? Int.max : sum
+                totalOverflow = totalOverflow || overflow
+            }
+            guard !totalOverflow, declaredTotal <= maximumUncompressedSize else {
+                throw ComicBookError.resourceTooLarge
+            }
             var pages: [String: Data] = [:]
+            var retained = 0
             for entry in entries where entry.info.type == .regular && ComicArchive.isImage(entry.info.name)
                 && ComicArchive.safePath(entry.info.name) {
-                guard let bytes = entry.data, bytes.count <= ComicArchive.pageLimit, pages[entry.info.name] == nil else {
-                    throw ComicBookError.resourceTooLarge
-                }
+                guard pages[entry.info.name] == nil else { continue }
+                // 单页超限就跳过这一页，不再让整本漫画失败。
+                guard let entrySize = entry.info.size, entrySize <= pageLimit,
+                      let bytes = entry.data, bytes.count <= pageLimit else { continue }
+                retained += bytes.count
+                guard retained <= maximumUncompressedSize else { throw ComicBookError.resourceTooLarge }
                 pages[entry.info.name] = bytes
             }
             guard !pages.isEmpty else { throw ComicBookError.noImages }
