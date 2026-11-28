@@ -359,6 +359,16 @@ enum ThemeEngine {
         return 0.2126 * r + 0.7152 * g + 0.0722 * b
     }
 
+    /// 在白/黑两个候选前景里挑与背景对比度更高的一档，供「一键修正」使用。
+    /// 纯函数：只依赖 hex，不读 token、不写状态；并列时优先白字（深色背景更常见）。
+    static func suggestedTextColor(background bg: UInt32) -> UInt32 {
+        let white = 0xFFFFFF as UInt32
+        let black = 0x111111 as UInt32
+        let whiteRatio = contrastRatio(foreground: white, background: bg)
+        let blackRatio = contrastRatio(foreground: black, background: bg)
+        return whiteRatio >= blackRatio ? white : black
+    }
+
     /// 只输出警告列表，不拒绝配置（与 P3-04「一键修正」配合）。
     /// tokens 侧不留存配置 hex，真实校验由编辑器/门禁调用 `warnings(pairs:)`，
     /// 传入主题配置里的具体色对（含护眼叠加后的最坏值）。

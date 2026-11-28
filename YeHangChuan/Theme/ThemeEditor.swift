@@ -17,10 +17,15 @@ struct ThemeEditor: View {
     /// 原始主题（用于取消/对比）。
     private let original: Theme
     let onApply: (Theme) -> Void
+    /// 5 秒撤销窗口到期后真正从 catalog 移除并落盘（由 SettingsView 注入）。
+    let onDeleteTheme: (Theme) -> Void
 
     @State private var showApplyConfirm = false
     @State private var pendingDelete: Theme?
     @State private var showRestoreToast = false
+    /// 删除定时器：撤销/重复删除时取消旧任务，UUID 双重防误删。
+    @State private var deleteTask: Task<Void, Never>?
+    @State private var deleteToken = UUID()
     @State private var selectedGroup: EditorGroup = .colors
 
     enum EditorGroup: String, CaseIterable, Identifiable {
@@ -35,10 +40,15 @@ struct ThemeEditor: View {
         var id: String { rawValue }
     }
 
-    init(theme: Theme, onApply: @escaping (Theme) -> Void) {
+    init(
+        theme: Theme,
+        onApply: @escaping (Theme) -> Void,
+        onDeleteTheme: @escaping (Theme) -> Void
+    ) {
         self.original = theme
         self._draft = State(initialValue: theme)
         self.onApply = onApply
+        self.onDeleteTheme = onDeleteTheme
     }
 
     var body: some View {
@@ -86,13 +96,18 @@ struct ThemeEditor: View {
             }
             .overlay(alignment: .bottom) {
                 if showRestoreToast {
-                    Text("已删除主题，5 秒内可撤销")
-                        .font(.caption)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(.regularMaterial, in: Capsule())
-                        .padding(.bottom, 16)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    HStack(spacing: 12) {
+                        Text("已删除主题，5 秒内可撤销")
+                            .font(.caption)
+                        Button("撤销") { undoDelete() }
+                            .font(.caption)
+                            .buttonStyle(.borderedProminent)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.bottom, 16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
         }
@@ -119,7 +134,12 @@ struct ThemeEditor: View {
             ThemeLibraryView(
                 draft: $draft,
                 original: original,
-                onDelete: { pendingDelete = $0 },
+                onPreset: { preset in
+                    // onApply 已负责 catalog 更新 + selectTheme，无需再改 SettingsView 的应用回调。
+                    onApply(preset)
+                    dismiss()
+                },
+                onDelete: { scheduleDelete($0) },
                 onRestore: { showRestoreToast = true }
             )
         }
@@ -157,6 +177,38 @@ struct ThemeEditor: View {
             }
         }
         .padding(16)
+    }
+
+    /// 删除进入 5 秒待确认期：先只记 pendingDelete，到期才真正移除。
+    private func scheduleDelete(_ theme: Theme) {
+        guard !theme.builtin else { return }
+        deleteTask?.cancel()
+        let token = UUID()
+        deleteToken = token
+        pendingDelete = theme
+        showRestoreToast = true
+        deleteTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .seconds(5))
+            } catch {
+                return  // 撤销或重复删除时旧任务被取消
+            }
+            guard deleteToken == token,
+                  let target = pendingDelete, target.id == theme.id else { return }
+            onDeleteTheme(target)
+            pendingDelete = nil
+            showRestoreToast = false
+            deleteTask = nil
+        }
+    }
+
+    /// 撤销：取消定时、清掉待删目标，Task 检查到 nil 后不会删库。
+    private func undoDelete() {
+        deleteTask?.cancel()
+        deleteTask = nil
+        deleteToken = UUID()
+        pendingDelete = nil
+        showRestoreToast = false
     }
 
     private func icon(for group: EditorGroup) -> String {

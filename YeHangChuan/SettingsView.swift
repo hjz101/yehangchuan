@@ -288,11 +288,23 @@ struct SettingsView: View {
             .toolbarTitleDisplayMode(.inlineLarge)
         }
         .sheet(isPresented: $showThemeEditor) {
-            ThemeEditor(theme: ThemeStore.shared.activeTheme) { applied in
-                ThemeStore.shared.catalog.themes.removeAll { $0.id == applied.id }
-                ThemeStore.shared.catalog.themes.append(applied)
-                ThemeStore.shared.selectTheme(id: applied.id)
-            }
+            ThemeEditor(
+                theme: ThemeStore.shared.activeTheme,
+                onApply: { applied in
+                    ThemeStore.shared.catalog.themes.removeAll { $0.id == applied.id }
+                    ThemeStore.shared.catalog.themes.append(applied)
+                    ThemeStore.shared.selectTheme(id: applied.id)
+                },
+                onDeleteTheme: { deleted in
+                    guard !deleted.builtin else { return }
+                    ThemeStore.shared.catalog.themes.removeAll { $0.id == deleted.id }
+                    // 删掉当前正在用的主题时回退内置默认，避免 activeThemeID 悬空。
+                    if ThemeStore.shared.catalog.activeThemeID == deleted.id {
+                        ThemeStore.shared.catalog.activeThemeID = BuiltinThemes.defaultID
+                    }
+                    ThemeStore.shared.flush()
+                }
+            )
             .presentationDetents([.large])
             .presentationCornerRadius(38)
         }
