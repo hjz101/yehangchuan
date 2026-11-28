@@ -1841,6 +1841,23 @@ final class AppStore {
     func importSnapshotData(_ data: Data) throws {
         let snapshot = try JSONDecoder().decode(Snapshot.self, from: data)
         apply(snapshot)
+
+        // P5-01（一期 activeThemeID 同步）：apply 只设置 themeSelection（P0-06 明确
+        // 不加载主题本体），这里补上「应用到 ThemeStore + 缺失 ID 回退默认 + 提示」触发链。
+        if let selection = snapshot.themeSelection {
+            let store = ThemeStore.shared
+            if store.catalog.themes.contains(where: { $0.id == selection.activeThemeID }) {
+                store.catalog.activeThemeID = selection.activeThemeID
+                store.requestWrite()
+            } else if !BuiltinThemes.isBuiltin(selection.activeThemeID) {
+                // 指向本机不存在的自定义主题：回退内置默认并一次性提示（不静默、不白屏）。
+                store.catalog.activeThemeID = BuiltinThemes.defaultID
+                store.decodeError = "同步的主题在本机不存在，已回退默认；请导入 .yhthm 或开启二期同步"
+                toast = "同步的主题在本机不存在，已回退默认"
+                store.requestWrite()
+            }
+        }
+
         saveSnapshot()
     }
 
