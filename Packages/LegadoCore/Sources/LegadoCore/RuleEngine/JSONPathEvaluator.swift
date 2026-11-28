@@ -106,6 +106,9 @@ public struct JSONPathEvaluator: Sendable {
                     index = next
                 } else if rule[next] == "." {
                     index = rule.index(after: next)
+                    guard index < rule.endIndex else {
+                        throw RuleEngineError.malformedRule(rule: path, detail: "JSONPath 递归选择器缺少属性名")
+                    }
                     let parsed = try parseDotSelector(rule, from: index, original: path)
                     segments.append(.recursive(parsed.selector))
                     index = parsed.next
@@ -134,6 +137,9 @@ public struct JSONPathEvaluator: Sendable {
         from start: String.Index,
         original: String
     ) throws -> (selector: Selector, next: String.Index) {
+        guard start < rule.endIndex else {
+            throw RuleEngineError.malformedRule(rule: original, detail: "JSONPath 属性名不能为空")
+        }
         if rule[start] == "*" {
             return (.wildcard, rule.index(after: start))
         }
