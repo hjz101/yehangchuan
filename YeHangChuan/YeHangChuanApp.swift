@@ -42,7 +42,13 @@ private struct ThemeApplicator: View {
                 if phase != .active { ThemeStore.shared.flush() }
             }
             .onAppear {
-                // P2-04 落点：FontRegistry.registerAll() 在 catalog 解码后触发。
+                // P2-04：字体注册在 catalog 解码取得 assetIDs 之后触发
+                // （App.init() 拿不到 @State store，故不在此注册）。
+                // 首帧以系统 serif 占位，注册完成后刷新一次，不阻塞冷启动。
+                let store = ThemeStore.shared
+                FontRegistry.registerAll(assets: store.catalog.assets) { asset in
+                    store.assetURL(id: asset.id, ext: asset.ext)
+                }
             }
     }
 }

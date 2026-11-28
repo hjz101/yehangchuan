@@ -86,13 +86,12 @@ struct FontRoleResolver: Equatable {
         case .appBody, .appCaption, .readerBody: family = uiFamily
         }
         let scaled = size * CGFloat(uiScale)
-        switch family {
-        case let .system(design):
-            return Font.system(size: scaled, weight: weight, design: Self.design(design))
-        case let .imported(_, postScriptName):
-            // 注册失败时 Font.custom 会回退系统字体，不会空白（P2-04 保证注册链）。
-            return Font.custom(postScriptName, size: scaled).weight(weight)
+        let resolved = FontRegistry.resolvedName(for: family)
+        if let name = resolved.postScript {
+            // 与 CoreText 用同一个 PostScript 名（P2-04）；注册失败已回退到 design。
+            return Font.custom(name, size: scaled).weight(weight)
         }
+        return Font.system(size: scaled, weight: weight, design: Self.design(resolved.systemDesign))
     }
 
     private static func design(_ spec: FontDesignSpec) -> Font.Design {
