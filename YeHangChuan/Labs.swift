@@ -26,6 +26,7 @@ extension Book {
 // MARK: - Export
 
 struct DataExportSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -116,7 +117,7 @@ struct DataExportSheet: View {
 
                         Text(content)
                             .font(.system(size: 10.5, design: .monospaced))
-                            .foregroundStyle(Palette.secondary)
+                            .foregroundStyle(theme.secondary)
                             .textSelection(.enabled)
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -129,10 +130,10 @@ struct DataExportSheet: View {
                             } label: {
                                 Label("复制", systemImage: "doc.on.doc")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Palette.text)
+                                    .foregroundStyle(theme.text)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
-                                    .glassSurface(cornerRadius: 18, tint: Palette.glassTint, interactive: true)
+                                    .glassSurface(cornerRadius: 18, tint: theme.glassTint, interactive: true)
                             }
                             .buttonStyle(PressableStyle())
 
@@ -140,10 +141,10 @@ struct DataExportSheet: View {
                                 ShareLink(item: fileURL) {
                                     Label("分享文件", systemImage: "square.and.arrow.up")
                                         .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(Palette.onAccent)
+                                        .foregroundStyle(theme.onAccent)
                                         .frame(maxWidth: .infinity)
                                         .padding(.vertical, 12)
-                                        .background(Palette.accentSolid, in: Capsule())
+                                        .background(theme.accentSolid, in: Capsule())
                                 }
                                 .buttonStyle(PressableStyle())
                             }
@@ -154,10 +155,10 @@ struct DataExportSheet: View {
                         } label: {
                             Label("打包为 ZIP（三个文件）", systemImage: "doc.zipper")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Palette.jade)
+                                .foregroundStyle(theme.jade)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
-                                .glassSurface(cornerRadius: 18, tint: Palette.glassTint, interactive: true)
+                                .glassSurface(cornerRadius: 18, tint: theme.glassTint, interactive: true)
                         }
                         .buttonStyle(PressableStyle())
 
@@ -165,10 +166,10 @@ struct DataExportSheet: View {
                             ShareLink(item: zipURL) {
                                 Label("分享 ZIP 包", systemImage: "square.and.arrow.up")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Palette.onAccent)
+                                    .foregroundStyle(theme.onAccent)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
-                                    .background(Palette.accentSolid, in: Capsule())
+                                    .background(theme.accentSolid, in: Capsule())
                             }
                             .buttonStyle(PressableStyle())
                         }
@@ -176,12 +177,12 @@ struct DataExportSheet: View {
                         if !message.isEmpty {
                             Text(message)
                                 .font(.system(size: 10.5))
-                                .foregroundStyle(Palette.tertiary)
+                                .foregroundStyle(theme.tertiary)
                         }
 
                         Text("books.json、notes.md、annotations.md 可单独预览或复制；「打包为 ZIP」会把三份内容写成真正的 zip 文件，分享到临时目录，不修改书架数据。")
                             .font(.system(size: 10))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                     }
                     .padding(18)
                 }
@@ -223,10 +224,10 @@ struct DataExportSheet: View {
         VStack(spacing: 4) {
             Text(value)
                 .font(.system(size: 19, weight: .semibold, design: .rounded))
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
             Text(title)
                 .font(.system(size: 9.5))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
@@ -237,6 +238,7 @@ struct DataExportSheet: View {
 // MARK: - AI studio
 
 struct AIStudioSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -351,7 +353,7 @@ struct AIStudioSheet: View {
                     message = "已放行本机地址；私网其他地址仍需单独放行"
                 }
                 .font(.system(size: 11))
-                .foregroundStyle(Palette.jade)
+                .foregroundStyle(theme.jade)
             }
 
             HStack(spacing: 9) {
@@ -367,7 +369,7 @@ struct AIStudioSheet: View {
                 } label: {
                     Image(systemName: showKey ? "eye.slash" : "eye")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Palette.secondary)
+                        .foregroundStyle(theme.secondary)
                         .glassCircle(diameter: 36)
                 }
                 .buttonStyle(PressableStyle())
@@ -398,7 +400,7 @@ struct AIStudioSheet: View {
             if summary.isEmpty {
                 Text("选择一个片段，生成 3 句话的阅读摘要与人物关系提示。")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .glassSurface(cornerRadius: 16)
@@ -406,16 +408,16 @@ struct AIStudioSheet: View {
                 Text(summary)
                     .font(.system(size: 13, design: .serif))
                     .lineSpacing(5)
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .glassSurface(cornerRadius: 16, tint: Palette.accent.opacity(0.06))
+                    .glassSurface(cornerRadius: 16, tint: theme.accent.opacity(0.06))
             }
 
             Button {
                 Task { @MainActor in await generateSummary() }
             } label: {
-                actionLabel("生成摘要", symbol: "sparkles", tint: Palette.accentSolid)
+                actionLabel("生成摘要", symbol: "sparkles", tint: theme.accentSolid)
             }
             .buttonStyle(PressableStyle(scale: 0.97))
             .disabled(isBusy)
@@ -434,19 +436,19 @@ struct AIStudioSheet: View {
             if coverIdeas.isEmpty {
                 Text("服务按书名、作者与正文氛围给出三个封面方向。这里只展示文字方案，不会生成或下载封面图片。")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(coverIdeas.enumerated()), id: \.element.id) { index, idea in
                         HStack(spacing: 10) {
                             Text("\(index + 1)")
                                 .font(.system(size: 10, weight: .bold, design: .rounded))
-                                .foregroundStyle(Palette.gold)
+                                .foregroundStyle(theme.gold)
                                 .frame(width: 20, height: 20)
-                                .background(Palette.gold.opacity(0.12), in: Circle())
+                                .background(theme.gold.opacity(0.12), in: Circle())
                             Text(idea.name)
                                 .font(.system(size: 12, design: .serif))
-                                .foregroundStyle(Palette.text)
+                                .foregroundStyle(theme.text)
                                 .fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 0)
                         }
@@ -460,7 +462,7 @@ struct AIStudioSheet: View {
             Button {
                 Task { @MainActor in await generateCovers() }
             } label: {
-                actionLabel("生成封面方案", symbol: "text.badge.plus", tint: Palette.jade)
+                actionLabel("生成封面方案", symbol: "text.badge.plus", tint: theme.jade)
             }
             .buttonStyle(PressableStyle(scale: 0.97))
         }
@@ -474,12 +476,12 @@ struct AIStudioSheet: View {
 
             Text("把摘要交给系统语音试听。AI 摘要由你配置的兼容服务生成，朗读始终使用设备上的系统语音。")
                 .font(.system(size: 11.5))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
 
             Button {
                 showTTS = true
             } label: {
-                actionLabel("试听摘要", symbol: "speaker.wave.2", tint: Palette.gold)
+                actionLabel("试听摘要", symbol: "speaker.wave.2", tint: theme.gold)
             }
             .buttonStyle(PressableStyle(scale: 0.97))
         }
@@ -492,11 +494,11 @@ struct AIStudioSheet: View {
             if !message.isEmpty {
                 Text(message)
                     .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(Palette.jade)
+                    .foregroundStyle(theme.jade)
             }
             Text("摘要与封面会向自配的兼容服务发起真实 HTTP 请求，并只上传当前书正文前 4000 字；Key 存系统 Keychain、费用自付。私网地址默认被拦截，需显式放行。试听仍用系统语音，不调用 AI TTS。")
                 .font(.system(size: 10))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
         }
     }
 
@@ -547,7 +549,7 @@ struct AIStudioSheet: View {
     private func actionLabel(_ title: String, symbol: String, tint: Color) -> some View {
         Label(title, systemImage: symbol)
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Palette.onAccent)
+            .foregroundStyle(theme.onAccent)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .background(tint, in: Capsule())
@@ -562,6 +564,7 @@ struct AIStudioSheet: View {
 /// 书目来自 `MockData.searchResults`，跟书源毫无关系。
 /// 现在分类从书源的 `exploreUrl` 里解析出来，书目是真发请求拿的。
 struct DiscoverSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -657,18 +660,18 @@ struct DiscoverSheet: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "safari")
                 .font(.system(size: 20, weight: .light))
-                .foregroundStyle(Palette.jade)
+                .foregroundStyle(theme.jade)
                 .frame(width: 40, height: 40)
-                .glassCircle(diameter: 40, tint: Palette.jade.opacity(0.1))
+                .glassCircle(diameter: 40, tint: theme.jade.opacity(0.1))
 
             VStack(alignment: .leading, spacing: 3) {
                 // 这里没有订阅功能，标题就别写「发现与订阅」。
                 Text("在线发现")
                     .font(.system(size: 16, weight: .semibold, design: .serif))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                 Text(subtitle)
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             }
             Spacer()
         }
@@ -696,18 +699,18 @@ struct DiscoverSheet: View {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(entry.kind.title)
                                 .font(.system(size: 12, weight: selected ? .semibold : .medium))
-                                .foregroundStyle(selected ? Palette.onAccent : Palette.secondary)
+                                .foregroundStyle(selected ? theme.onAccent : theme.secondary)
                             // 同名分类在不同书源里意思可能不同，标出来源。
                             Text(entry.sourceName)
                                 .font(.system(size: 8.5))
-                                .foregroundStyle(selected ? Palette.onAccent.opacity(0.75) : Palette.tertiary)
+                                .foregroundStyle(selected ? theme.onAccent.opacity(0.75) : theme.tertiary)
                         }
                         .padding(.horizontal, 13)
                         .padding(.vertical, 7)
                         .background {
-                            if selected { Capsule().fill(Palette.jade) }
+                            if selected { Capsule().fill(theme.jade) }
                         }
-                        .glassCapsule(tint: selected ? nil : Palette.glassTint, interactive: true)
+                        .glassCapsule(tint: selected ? nil : theme.glassTint, interactive: true)
                     }
                     .buttonStyle(PressableStyle())
                 }
@@ -724,14 +727,14 @@ struct DiscoverSheet: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(hit.book.title)
                     .font(.system(size: 15, weight: .semibold, design: .serif))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                     .lineLimit(1)
                 Text("\(hit.book.author) · \(hit.book.kind.rawValue) · \(hit.book.chapterCountLabel)")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                 Text(hit.sourceName)
                     .font(.system(size: 9.5))
-                    .foregroundStyle(Palette.jade)
+                    .foregroundStyle(theme.jade)
             }
 
             Spacer()
@@ -741,10 +744,10 @@ struct DiscoverSheet: View {
             } label: {
                 Image(systemName: store.isOnShelf(hit.book.id) ? "checkmark" : "plus")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(store.isOnShelf(hit.book.id) ? Palette.jade : Palette.onAccent)
+                    .foregroundStyle(store.isOnShelf(hit.book.id) ? theme.jade : theme.onAccent)
                     .frame(width: 34, height: 34)
                     .background(
-                        store.isOnShelf(hit.book.id) ? Palette.jade.opacity(0.14) : Palette.accentSolid,
+                        store.isOnShelf(hit.book.id) ? theme.jade.opacity(0.14) : theme.accentSolid,
                         in: Circle()
                     )
             }
@@ -763,11 +766,11 @@ struct DiscoverSheet: View {
                 if isLoadingMore { ProgressView().themedProgress() }
                 Text(isLoadingMore ? "正在加载第 \(page + 1) 页" : "加载更多")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Palette.jade)
+                    .foregroundStyle(theme.jade)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .glassSurface(cornerRadius: 16, tint: Palette.jade.opacity(0.08), interactive: true)
+            .glassSurface(cornerRadius: 16, tint: theme.jade.opacity(0.08), interactive: true)
         }
         .buttonStyle(PressableStyle())
         .disabled(isLoadingMore)
@@ -777,16 +780,16 @@ struct DiscoverSheet: View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.accent)
+                .foregroundStyle(theme.accent)
             Text(errorMessage)
                 .font(.system(size: 11))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassSurface(cornerRadius: 16, tint: Palette.accent.opacity(0.06))
+        .glassSurface(cornerRadius: 16, tint: theme.accent.opacity(0.06))
     }
 
     private func loadingHint(_ text: String) -> some View {
@@ -794,7 +797,7 @@ struct DiscoverSheet: View {
             ProgressView().themedProgress()
             Text(text)
                 .font(.system(size: 11.5))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
         }
         .padding(.top, 30)
     }
@@ -803,13 +806,13 @@ struct DiscoverSheet: View {
         VStack(spacing: 7) {
             Image(systemName: "safari")
                 .font(.system(size: 24, weight: .light))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
             Text(title)
                 .font(.system(size: 13))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
             Text(detail)
                 .font(.system(size: 10))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -909,6 +912,7 @@ struct DiscoverSheet: View {
 // MARK: - Voice lab
 
 struct VoiceLabSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -985,17 +989,17 @@ struct VoiceLabSheet: View {
                 HStack(spacing: 10) {
                     Image(systemName: store.speech.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Palette.onAccent)
+                        .foregroundStyle(theme.onAccent)
                         .frame(width: 42, height: 42)
-                        .background(Palette.accentSolid, in: Circle())
+                        .background(theme.accentSolid, in: Circle())
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("多角色段落试听")
                             .font(.system(size: 13.5, weight: .semibold))
-                            .foregroundStyle(Palette.text)
+                            .foregroundStyle(theme.text)
                         Text("系统语音真实发声 · 进度 \(Int(store.speech.progress * 100))%")
                             .font(.system(size: 10.5))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                     }
 
                     Spacer()
@@ -1008,15 +1012,15 @@ struct VoiceLabSheet: View {
             HStack {
                 Text("语速")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
                 Slider(value: $speed, in: 0.75...1.75, step: 0.25)
-                    .tint(Palette.accent)
+                    .tint(theme.accent)
                     .onChange(of: speed) { _, newValue in
                         store.speech.setSpeed(newValue)
                     }
                 Text(SpeedLabel.text(speed))
                     .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                     .monospacedDigit()
             }
         }
@@ -1033,7 +1037,7 @@ struct VoiceLabSheet: View {
                     HStack {
                         Text(role)
                             .font(.system(size: 12.5))
-                            .foregroundStyle(Palette.text)
+                            .foregroundStyle(theme.text)
                         Spacer()
                         Menu {
                             ForEach(voices) { voice in
@@ -1049,10 +1053,10 @@ struct VoiceLabSheet: View {
                                     .font(.system(size: 8, weight: .bold))
                             }
                             .font(.system(size: 11))
-                            .foregroundStyle(Palette.jade)
+                            .foregroundStyle(theme.jade)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .glassCapsule(tint: Palette.jade.opacity(0.1), interactive: true)
+                            .glassCapsule(tint: theme.jade.opacity(0.1), interactive: true)
                         }
                     }
                     .padding(.horizontal, 12)
@@ -1060,7 +1064,7 @@ struct VoiceLabSheet: View {
 
                     if role != VoiceCatalog.roles.last {
                         Rectangle()
-                            .fill(Palette.hairline)
+                            .fill(theme.hairline)
                             .frame(height: 0.6)
                             .padding(.leading, 12)
                     }
@@ -1077,26 +1081,26 @@ struct VoiceLabSheet: View {
             VStack(alignment: .leading, spacing: 12) {
                 Toggle("CarPlay", isOn: $carPlay)
                     .font(.system(size: 12.5))
-                    .tint(Palette.accent)
+                    .tint(theme.accent)
                     .onChange(of: carPlay) { _, newValue in CarPlaySupport.enabled = newValue }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Label("后台播放与锁屏信息始终开启", systemImage: "checkmark.circle")
                         .font(.system(size: 12))
-                        .foregroundStyle(Palette.secondary)
+                        .foregroundStyle(theme.secondary)
                     Text("系统语音播放会持续到锁屏与后台，锁屏显示章节与进度，并支持播放、暂停与跳转。")
                         .font(.system(size: 10))
-                        .foregroundStyle(Palette.tertiary)
+                        .foregroundStyle(theme.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Label("音频缓存不存在", systemImage: "minus.circle")
                         .font(.system(size: 12))
-                        .foregroundStyle(Palette.secondary)
+                        .foregroundStyle(theme.secondary)
                     Text("系统语音不产生音频文件；有声书播放的是你导入的本机音频。")
                         .font(.system(size: 10))
-                        .foregroundStyle(Palette.tertiary)
+                        .foregroundStyle(theme.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1108,13 +1112,14 @@ struct VoiceLabSheet: View {
     private var boundaryNote: some View {
         Text("系统语音真实发声，各角色切换系统已安装的真实声线，映射保存在本机；对话切分基于引号的启发式规则，不是语义分析。后台播放与锁屏信息随系统语音播放自动生效，没有单独开关。CarPlay 开关控制真实场景是否挂载；车机显示依赖设备已配对且工程开启 CarPlay capability。")
             .font(.system(size: 10))
-            .foregroundStyle(Palette.tertiary)
+            .foregroundStyle(theme.tertiary)
     }
 }
 
 // MARK: - Compliance
 
 struct ComplianceSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -1164,11 +1169,11 @@ struct ComplianceSheet: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
                 .font(.system(size: 13.5, weight: .semibold, design: .serif))
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
             Text(body)
                 .font(.system(size: 11.5))
                 .lineSpacing(3)
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(14)

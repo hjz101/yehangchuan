@@ -145,7 +145,7 @@ struct ReaderView: View {
     }
 
     private var chromeColor: Color {
-        effectiveSurface.isDark ? .white : Palette.text
+        effectiveSurface.isDark ? .white : themeTokens.text
     }
 
     var body: some View {
@@ -415,10 +415,10 @@ struct ReaderView: View {
             } label: {
                 Text("返回书架")
                     .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(Palette.onAccent)
+                    .foregroundStyle(themeTokens.onAccent)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 9)
-                    .background(Palette.accentSolid, in: Capsule())
+                    .background(themeTokens.accentSolid, in: Capsule())
             }
             .buttonStyle(PressableStyle(scale: 0.97))
         }
@@ -504,10 +504,10 @@ struct ReaderView: View {
                 } label: {
                     Text("重试")
                         .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(Palette.onAccent)
+                        .foregroundStyle(themeTokens.onAccent)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 9)
-                        .background(Palette.accentSolid, in: Capsule())
+                        .background(themeTokens.accentSolid, in: Capsule())
                 }
                 .buttonStyle(PressableStyle(scale: 0.97))
             }
@@ -654,7 +654,7 @@ struct ReaderView: View {
                 } label: {
                     Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(isBookmarked ? Palette.accent : chromeColor)
+                        .foregroundStyle(isBookmarked ? themeTokens.accent : chromeColor)
                         .glassCircle(diameter: 40)
                 }
                 .buttonStyle(PressableStyle())
@@ -1761,6 +1761,7 @@ struct ScrollReaderView: View {
 /// 做真正的跨段选字需要自己实现一整套选择手柄，而读者在这里要的
 /// 往往就是「把这一段留下」。
 struct ParagraphActionsSheet: View {
+    @Environment(\.theme) private var theme
     let paragraph: Paragraph
     let onExcerpt: () -> Void
     let onComment: () -> Void
@@ -1770,7 +1771,7 @@ struct ParagraphActionsSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(paragraph.text)
                 .font(.system(size: 13))
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
                 .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -1799,7 +1800,7 @@ struct ParagraphActionsSheet: View {
                 Text(title)
                     .font(.system(size: 10.5, weight: .medium))
             }
-            .foregroundStyle(Palette.text)
+            .foregroundStyle(theme.text)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
             .glassSurface(cornerRadius: 16)
@@ -1816,6 +1817,7 @@ struct ParagraphActionsSheet: View {
 /// 拖动过程只改本地值并画一层遮罩，正文一次都不重排；松手才把结果交给阅读页，
 /// 由它统一改设置、重排、落盘。这样拖一次最多排一次版，字也不会在指头下跳来跳去。
 struct ReaderFrameAdjustOverlay: View {
+    @Environment(\.theme) private var appTheme
     let viewport: CGSize
     let theme: ReaderTheme
     let initialSideMargin: Double
@@ -1881,11 +1883,11 @@ struct ReaderFrameAdjustOverlay: View {
                         } label: {
                             Text(preset.title)
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(isActive(preset) ? Palette.onAccent : theme.text)
+                                .foregroundStyle(isActive(preset) ? appTheme.onAccent : theme.text)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 8)
                                 .glassCapsule(
-                                    tint: isActive(preset) ? Palette.accentSolid : theme.text.opacity(0.06),
+                                    tint: isActive(preset) ? appTheme.accentSolid : theme.text.opacity(0.06),
                                     interactive: true
                                 )
                         }
@@ -1921,10 +1923,10 @@ struct ReaderFrameAdjustOverlay: View {
                     } label: {
                         Text("完成")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Palette.onAccent)
+                            .foregroundStyle(appTheme.onAccent)
                             .frame(maxWidth: 160)
                             .padding(.vertical, 12)
-                            .glassCapsule(tint: Palette.accentSolid.opacity(0.9), interactive: true)
+                            .glassCapsule(tint: appTheme.accentSolid.opacity(0.9), interactive: true)
                     }
                     .buttonStyle(PressableStyle(scale: 0.97))
                 }
@@ -1999,7 +2001,7 @@ struct ReaderFrameAdjustOverlay: View {
         // 抓手本身画得很小，可点区域放大到 44pt 以上，手指才不会总是抓空。
         ZStack {
             Capsule()
-                .fill(Palette.accentSolid)
+                .fill(appTheme.accentSolid)
                 .frame(
                     width: isVertical ? 34 : 6,
                     height: isVertical ? 6 : 34
@@ -2008,7 +2010,7 @@ struct ReaderFrameAdjustOverlay: View {
 
             Image(systemName: isVertical ? "arrow.up.and.down" : "arrow.left.and.right")
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Palette.onAccent)
+                .foregroundStyle(appTheme.onAccent)
                 .opacity(isDragging ? 1 : 0)
         }
         .frame(width: size.width, height: size.height)
@@ -2165,6 +2167,7 @@ enum FramePreset: CaseIterable {
 // MARK: - TOC
 
 struct TOCSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
 
     let chapters: [Chapter]
@@ -2196,11 +2199,11 @@ struct TOCSheet: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(chapter.title)
                                             .font(.system(size: 15, weight: .medium))
-                                            .foregroundStyle(Palette.text)
+                                            .foregroundStyle(theme.text)
 
                                         Text("\(chapter.paragraphs.count) 段 · \(chapter.paragraphs.reduce(0) { $0 + $1.text.count }) 字")
                                             .font(.system(size: 10.5))
-                                            .foregroundStyle(Palette.tertiary)
+                                            .foregroundStyle(theme.tertiary)
                                     }
 
                                     Spacer()
@@ -2208,23 +2211,23 @@ struct TOCSheet: View {
                                     if chapter.title == currentTitle {
                                         HStack(spacing: 4) {
                                             Circle()
-                                                .fill(Palette.accent)
+                                                .fill(theme.accent)
                                                 .frame(width: 5, height: 5)
                                             Text("在读")
                                                 .font(.system(size: 10, weight: .semibold))
-                                                .foregroundStyle(Palette.accent)
+                                                .foregroundStyle(theme.accent)
                                         }
                                     } else {
                                         Image(systemName: "chevron.right")
                                             .font(.system(size: 11, weight: .bold))
-                                            .foregroundStyle(Palette.tertiary.opacity(0.5))
+                                            .foregroundStyle(theme.tertiary.opacity(0.5))
                                     }
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 12)
                                 .glassSurface(
                                     cornerRadius: 18,
-                                    tint: chapter.title == currentTitle ? Palette.accent.opacity(0.1) : nil
+                                    tint: chapter.title == currentTitle ? theme.accent.opacity(0.1) : nil
                                 )
                                 .contentShape(Rectangle())
                             }
@@ -2262,6 +2265,7 @@ struct TOCSheet: View {
 // MARK: - Reader Settings
 
 struct ReaderSettingsSheet: View {
+    @Environment(\.theme) private var appTheme
     @Bindable var settings: ReaderSettings
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -2290,13 +2294,13 @@ struct ReaderSettingsSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("屏蔽书源段评")
                                     .font(.system(size: 14, weight: .medium))
-                                    .foregroundStyle(Palette.text)
+                                    .foregroundStyle(appTheme.text)
                                 Text("只保留干净的正文")
                                     .font(.system(size: 10.5))
-                                    .foregroundStyle(Palette.tertiary)
+                                    .foregroundStyle(appTheme.tertiary)
                             }
                         }
-                        .tint(Palette.accent)
+                        .tint(appTheme.accent)
                         .padding(.horizontal, 15)
                         .padding(.vertical, 12)
                         .glassSurface(cornerRadius: 18)
@@ -2305,13 +2309,13 @@ struct ReaderSettingsSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("正文净化")
                                     .font(.system(size: 14, weight: .medium))
-                                    .foregroundStyle(Palette.text)
+                                    .foregroundStyle(appTheme.text)
                                 Text("移除「本章完」、作者说等干扰行")
                                     .font(.system(size: 10.5))
-                                    .foregroundStyle(Palette.tertiary)
+                                    .foregroundStyle(appTheme.tertiary)
                             }
                         }
-                        .tint(Palette.accent)
+                        .tint(appTheme.accent)
                         .padding(.horizontal, 15)
                         .padding(.vertical, 12)
                         .glassSurface(cornerRadius: 18)
@@ -2367,14 +2371,14 @@ struct ReaderSettingsSheet: View {
             HStack(spacing: 14) {
                 Text("A")
                     .font(.system(size: 12, design: .serif))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(appTheme.tertiary)
 
                 Slider(value: $settings.fontSize, in: 14...28, step: 1)
-                    .tint(Palette.accent)
+                    .tint(appTheme.accent)
 
                 Text("A")
                     .font(.system(size: 22, design: .serif))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(appTheme.text)
             }
             .padding(.horizontal, 15)
             .padding(.vertical, 12)
@@ -2387,7 +2391,7 @@ struct ReaderSettingsSheet: View {
             SectionHeading(text: "行距", trailing: String(format: "%.1f×", 1 + settings.lineSpacing))
 
             Slider(value: $settings.lineSpacing, in: 0.3...1.6, step: 0.1)
-                .tint(Palette.accent)
+                .tint(appTheme.accent)
                 .padding(.horizontal, 15)
                 .padding(.vertical, 14)
                 .glassSurface(cornerRadius: 18)
@@ -2441,14 +2445,14 @@ struct ReaderSettingsSheet: View {
                             .overlay {
                                 RoundedRectangle(cornerRadius: 13, style: .continuous)
                                     .strokeBorder(
-                                        selected ? theme.accent : Palette.hairline,
+                                        selected ? theme.accent : appTheme.hairline,
                                         lineWidth: selected ? 1.8 : 0.8
                                     )
                             }
 
                             Text(theme.rawValue)
                                 .font(.system(size: 10.5, weight: selected ? .semibold : .regular))
-                                .foregroundStyle(selected ? Palette.text : Palette.tertiary)
+                                .foregroundStyle(selected ? appTheme.text : appTheme.tertiary)
                         }
                     }
                     .buttonStyle(PressableStyle())
@@ -2506,7 +2510,7 @@ struct ReaderSettingsSheet: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("字体")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(appTheme.tertiary)
 
                 GlassSegmented(
                     items: ReaderFontDesign.allCases,
@@ -2522,19 +2526,19 @@ struct ReaderSettingsSheet: View {
 
                 Toggle("首行缩进", isOn: $settings.indent)
                     .font(.system(size: 13))
-                    .tint(Palette.accent)
+                    .tint(appTheme.accent)
 
                 Toggle("显示页眉页脚", isOn: $settings.showHeaderFooter)
                     .font(.system(size: 13))
-                    .tint(Palette.accent)
+                    .tint(appTheme.accent)
 
                 Toggle("音量键翻页", isOn: $settings.volumeKeyTurn)
                     .font(.system(size: 13))
-                    .tint(Palette.accent)
+                    .tint(appTheme.accent)
 
                 Text("真机连接后生效；模拟器可用硬件音量键测试。")
                     .font(.system(size: 9.5))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(appTheme.tertiary)
             }
             .padding(14)
             .glassSurface(cornerRadius: 20)
@@ -2553,13 +2557,13 @@ struct ReaderSettingsSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("暖色滤光")
                             .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Palette.text)
+                            .foregroundStyle(appTheme.text)
                         Text("降低蓝光刺激，阅读页与书架同步生效")
                             .font(.system(size: 10.5))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(appTheme.tertiary)
                     }
                 }
-                .tint(Palette.jade)
+                .tint(appTheme.jade)
 
                 sliderRow(
                     title: "暖度",
@@ -2584,7 +2588,7 @@ struct ReaderSettingsSheet: View {
                     set: { store.eyeCare.restReminder = $0; store.saveSnapshot() }
                 ))
                 .font(.system(size: 13))
-                .tint(Palette.jade)
+                .tint(appTheme.jade)
 
                 Button {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -2596,20 +2600,20 @@ struct ReaderSettingsSheet: View {
                         Text("预览休息提醒")
                     }
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Palette.jade)
+                    .foregroundStyle(appTheme.jade)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
-                    .glassCapsule(tint: Palette.jade.opacity(0.1), interactive: true)
+                    .glassCapsule(tint: appTheme.jade.opacity(0.1), interactive: true)
                 }
                 .buttonStyle(PressableStyle())
 
                 if eyePreview {
                     Text("已读 20 分钟。看看 6 米外，让眼睛休息 20 秒。")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(Palette.secondary)
+                        .foregroundStyle(appTheme.secondary)
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .glassSurface(cornerRadius: 14, tint: Palette.jade.opacity(0.08))
+                        .glassSurface(cornerRadius: 14, tint: appTheme.jade.opacity(0.08))
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
@@ -2639,11 +2643,11 @@ struct ReaderSettingsSheet: View {
                         } label: {
                             Text(preset.title)
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(isFramePresetActive(preset) ? Palette.onAccent : Palette.text)
+                                .foregroundStyle(isFramePresetActive(preset) ? appTheme.onAccent : appTheme.text)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 8)
                                 .glassCapsule(
-                                    tint: isFramePresetActive(preset) ? Palette.accentSolid : Palette.text.opacity(0.06),
+                                    tint: isFramePresetActive(preset) ? appTheme.accentSolid : appTheme.text.opacity(0.06),
                                     interactive: true
                                 )
                         }
@@ -2664,10 +2668,10 @@ struct ReaderSettingsSheet: View {
                             Text("在正文上直接拖边界")
                         }
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Palette.accent)
+                        .foregroundStyle(appTheme.accent)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .glassCapsule(tint: Palette.accent.opacity(0.1), interactive: true)
+                        .glassCapsule(tint: appTheme.accent.opacity(0.1), interactive: true)
                     }
                     .buttonStyle(PressableStyle())
                 }
@@ -2705,7 +2709,7 @@ struct ReaderSettingsSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Palette.text.opacity(0.1), lineWidth: 0.8)
+                    .strokeBorder(appTheme.text.opacity(0.1), lineWidth: 0.8)
             }
         }
         .frame(height: 150)
@@ -2724,13 +2728,13 @@ struct ReaderSettingsSheet: View {
         HStack(spacing: 10) {
             Text(title)
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(appTheme.secondary)
                 .frame(width: 52, alignment: .leading)
             Slider(value: value, in: range, step: 1)
-                .tint(Palette.accent)
+                .tint(appTheme.accent)
             Text("\(Int(value.wrappedValue))")
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(appTheme.tertiary)
                 .monospacedDigit()
                 .frame(width: 26, alignment: .trailing)
         }
@@ -2749,12 +2753,12 @@ struct ReaderSettingsSheet: View {
                 Text(title)
                     .font(.system(size: 12, weight: selected ? .semibold : .medium))
             }
-            .foregroundStyle(selected ? Palette.text : Palette.secondary)
+            .foregroundStyle(selected ? appTheme.text : appTheme.secondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 11)
             .glassSurface(
                 cornerRadius: 15,
-                tint: selected ? Palette.accent.opacity(0.16) : nil,
+                tint: selected ? appTheme.accent.opacity(0.16) : nil,
                 interactive: true
             )
         }
@@ -2765,13 +2769,13 @@ struct ReaderSettingsSheet: View {
         HStack {
             Text(title)
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(appTheme.secondary)
                 .frame(width: 42, alignment: .leading)
             Slider(value: value, in: range)
-                .tint(Palette.jade)
+                .tint(appTheme.jade)
             Text("\(Int(value.wrappedValue * 100))%")
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(appTheme.tertiary)
                 .monospacedDigit()
                 .frame(width: 32)
         }
@@ -2781,6 +2785,7 @@ struct ReaderSettingsSheet: View {
 // MARK: - Segment Comments
 
 struct SegmentCommentsSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -2817,23 +2822,23 @@ struct SegmentCommentsSheet: View {
                             Spacer()
                             Text(isRemote ? (isChapterWide ? "只读 · 来自书源 · 整章" : "只读 · 来自书源") : "演示评论")
                                 .font(.system(size: 9.5, weight: .medium))
-                                .foregroundStyle(isRemote ? Palette.jade : Palette.tertiary)
+                                .foregroundStyle(isRemote ? theme.jade : theme.tertiary)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
-                                .glassCapsule(tint: (isRemote ? Palette.jade : Palette.faint).opacity(0.12))
+                                .glassCapsule(tint: (isRemote ? theme.jade : theme.faint).opacity(0.12))
                         }
 
                         if isChapterWide {
                             Text("书源的评论规则只提供章级粒度，下面是这一章的评论，不是单独针对这一段。")
                                 .font(.system(size: 10))
-                                .foregroundStyle(Palette.tertiary)
+                                .foregroundStyle(theme.tertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
                         if hiddenCount > 0 {
                             Text("已按本地词表隐藏 \(hiddenCount) 条内容")
                                 .font(.system(size: 10))
-                                .foregroundStyle(Palette.tertiary)
+                                .foregroundStyle(theme.tertiary)
                         }
 
                         if isLoading {
@@ -2841,7 +2846,7 @@ struct SegmentCommentsSheet: View {
                                 ProgressView().themedProgress()
                                 Text("正在向书源请求段评…")
                                     .font(.system(size: 11.5))
-                                    .foregroundStyle(Palette.tertiary)
+                                    .foregroundStyle(theme.tertiary)
                             }
                             .padding(.top, 24)
                         } else if !remoteError.isEmpty && comments.isEmpty {
@@ -2850,31 +2855,31 @@ struct SegmentCommentsSheet: View {
                                 HStack(spacing: 7) {
                                     Image(systemName: "exclamationmark.triangle.fill")
                                         .font(.system(size: 11))
-                                        .foregroundStyle(Palette.accent)
+                                        .foregroundStyle(theme.accent)
                                     Text("段评获取失败")
                                         .font(.system(size: 11.5, weight: .semibold))
-                                        .foregroundStyle(Palette.text)
+                                        .foregroundStyle(theme.text)
                                 }
                                 Text(remoteError)
                                     .font(.system(size: 10.5))
-                                    .foregroundStyle(Palette.secondary)
+                                    .foregroundStyle(theme.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Button {
                                     Task { await loadRemote() }
                                 } label: {
                                     Text("重试")
                                         .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(Palette.jade)
+                                        .foregroundStyle(theme.jade)
                                 }
                                 .buttonStyle(PressableStyle())
                             }
                             .padding(13)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .glassSurface(cornerRadius: 18, tint: Palette.accent.opacity(0.06))
+                            .glassSurface(cornerRadius: 18, tint: theme.accent.opacity(0.06))
                         } else if comments.isEmpty {
                             Text(remoteError.isEmpty ? "这一段还没有段评。" : remoteError)
                                 .font(.system(size: 11))
-                                .foregroundStyle(Palette.tertiary)
+                                .foregroundStyle(theme.tertiary)
                                 .padding(.top, 18)
                         }
 
@@ -2889,10 +2894,10 @@ struct SegmentCommentsSheet: View {
                         } label: {
                             Label("屏蔽此源段评", systemImage: "eye.slash")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Palette.accent)
+                                .foregroundStyle(theme.accent)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
-                                .glassSurface(cornerRadius: 18, tint: Palette.accent.opacity(0.06), interactive: true)
+                                .glassSurface(cornerRadius: 18, tint: theme.accent.opacity(0.06), interactive: true)
                         }
                         .buttonStyle(PressableStyle())
                     }
@@ -3025,19 +3030,21 @@ struct SegmentCommentsSheet: View {
                     .font(.system(size: 9.5, weight: .semibold))
                     .tracking(1.2)
             }
-            .foregroundStyle(Palette.accent)
+            .foregroundStyle(theme.accent)
 
             Text(paragraph.text)
                 .font(.system(size: 14, design: .serif))
                 .lineSpacing(5)
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
         }
         .padding(15)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassSurface(cornerRadius: 20, tint: Palette.accent.opacity(0.07))
+        .glassSurface(cornerRadius: 20, tint: theme.accent.opacity(0.07))
     }
 
     private func commentCard(_ comment: SegmentComment, index: Int) -> some View {
+        let idx = abs(index) % theme.covers.count
+        let colors = (theme.covers[idx], theme.coversDeep[idx])
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 // 头像色块
@@ -3047,7 +3054,7 @@ struct SegmentCommentsSheet: View {
                     .frame(width: 26, height: 26)
                     .background(
                         LinearGradient(
-                            colors: [Palette.cover(index).0, Palette.cover(index).1],
+                            colors: [colors.0, colors.1],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -3057,11 +3064,11 @@ struct SegmentCommentsSheet: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(comment.author)
                         .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(theme.text)
 
                     Text(relativeTime(comment.minutesAgo))
                         .font(.system(size: 9.5))
-                        .foregroundStyle(Palette.tertiary)
+                        .foregroundStyle(theme.tertiary)
                 }
 
                 Spacer()
@@ -3074,17 +3081,17 @@ struct SegmentCommentsSheet: View {
                             .font(.system(size: 10, weight: .medium))
                             .monospacedDigit()
                     }
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .glassCapsule(tint: Palette.glassTint)
+                    .glassCapsule(tint: theme.glassTint)
                 }
             }
 
             Text(comment.text)
                 .font(.system(size: 14, design: .serif))
                 .lineSpacing(4)
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
@@ -3110,6 +3117,7 @@ struct ExportedTextFile: Identifiable {
 }
 
 struct ExportSheet: View {
+    @Environment(\.theme) private var theme
     let file: ExportedTextFile
     let bookTitle: String
     @Environment(\.dismiss) private var dismiss
@@ -3118,31 +3126,31 @@ struct ExportSheet: View {
         VStack(spacing: 14) {
             Image(systemName: "doc.text")
                 .font(.system(size: 34, weight: .light))
-                .foregroundStyle(Palette.accent)
+                .foregroundStyle(theme.accent)
 
             Text("已生成《\(bookTitle)》正文")
                 .font(.system(size: 16, weight: .semibold, design: .serif))
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
 
             Text(summary)
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
                 .multilineTextAlignment(.center)
 
             ShareLink(item: file.url, preview: SharePreview(bookTitle + ".txt")) {
                 Label("分享 TXT 文件", systemImage: "square.and.arrow.up")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Palette.onAccent)
+                    .foregroundStyle(theme.onAccent)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(Palette.accentSolid, in: Capsule())
+                    .background(theme.accentSolid, in: Capsule())
             }
             .buttonStyle(PressableStyle())
             .padding(.horizontal, 24)
 
             Button("完成") { dismiss() }
                 .font(.system(size: 13))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
                 .buttonStyle(PressableStyle())
         }
         .padding(.top, 26)
