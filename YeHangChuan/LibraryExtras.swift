@@ -36,6 +36,9 @@ struct SmartImportSheet: View {
     @State private var message: String?
     @State private var isParsing = false
     @State private var linkText = "https://books.example/夜航船.txt"
+    /// 草稿加入书架后才算「已落库」，关闭面板时不能删它的音频 / 漫画副本。
+    @State private var didImportDraft = false
+    @State private var importTask: Task<Void, Never>?
 
     /// 选择器接受「任何文件」，格式判断放到 `LocalImportReader` 里按扩展名做。
     ///
@@ -82,7 +85,10 @@ struct SmartImportSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") { dismiss() }
+                    Button("取消") {
+                        discardPendingDraft()
+                        dismiss()
+                    }
                 }
             }
         }
@@ -104,6 +110,12 @@ struct SmartImportSheet: View {
         }
         .task {
             if let initialFile { startImport(initialFile) }
+        }
+        // 下拉关闭面板不会走「取消」按钮，这里兜底清理尚未入架的副本。
+        .onDisappear {
+            importTask?.cancel()
+            importTask = nil
+            discardPendingDraft()
         }
     }
 
@@ -254,7 +266,8 @@ struct SmartImportSheet: View {
             .glassSurface(cornerRadius: 18)
 
             Button {
-                store.importBook(draft)
+                guard store.importBook(draft) else { return }
+                didImportDraft = true
                 dismiss()
             } label: {
                 Text("加入书架")
@@ -297,15 +310,21 @@ struct SmartImportSheet: View {
     /// 点了没反应。现在先置 `isParsing`，让转圈先上屏，再把活丢到后台。
     private func startImport(_ url: URL) {
         guard !isParsing else { return }
-        draft = nil
+        discardPendingDraft()
         message = nil
         isParsing = true
-        Task { @MainActor in
+        importTask = Task { @MainActor in
             let outcome = await LocalImportReader.read(url)
             isParsing = false
             switch outcome {
             case .draft(let value):
-                draft = value.makeDraft()
+                let draft = value.makeDraft()
+                if Task.isCancelled {
+                    // 解析期间面板已关闭：这份副本没有草稿认领，直接清掉。
+                    LocalImportReader.discardImportCopy(for: draft)
+                } else {
+                    self.draft = draft
+                }
             case .failure(let reason):
                 message = reason
             }
@@ -319,11 +338,12 @@ struct SmartImportSheet: View {
             message = "请输入有效的 http(s) 链接。"
             return
         }
+        discardPendingDraft()
         isParsing = true
         message = nil
-        draft = nil
-        Task { @MainActor in
+        importTask = Task { @MainActor in
             let outcome = await Self.fetchLink(url)
+            guard !Task.isCancelled else { return }
             isParsing = false
             switch outcome {
             case .draft(let box):
@@ -332,6 +352,13 @@ struct SmartImportSheet: View {
                 message = reason
             }
         }
+    }
+
+    /// 草稿还没加入书架就关闭面板时，删掉它复制进沙箱的音频 / 漫画副本。
+    private func discardPendingDraft() {
+        guard !didImportDraft, let draft else { return }
+        LocalImportReader.discardImportCopy(for: draft)
+        self.draft = nil
     }
 
     /// 链接导入的真实实现：直接下载，按内容类型与扩展名判断能否真的导入。
@@ -395,6 +422,7 @@ struct SmartImportSheet: View {
             message = "剪贴板里没有可识别的文字。"
             return
         }
+        discardPendingDraft()
         let parsed = Self.parse(text: text, fallbackTitle: "剪贴板书稿")
         draft = ImportDraft(
             title: parsed.title,

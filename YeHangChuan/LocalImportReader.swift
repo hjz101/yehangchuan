@@ -89,9 +89,41 @@ enum LocalImportReader {
             defer { try? FileManager.default.removeItem(at: local) }
             return try readEPUB(local, name: name)
         case let value where audioExtensions.contains(value):
-            return try readAudio(local, name: name, ext: ext)
+            return try readAndClean(local) { try readAudio(local, name: name, ext: ext) }
         default:
-            return try readComic(local, name: name, ext: ext)
+            return try readAndClean(local) { try readComic(local, name: name, ext: ext) }
+        }
+    }
+
+    /// 音频 / 漫画导入失败时，刚复制进沙箱的副本没有任何草稿引用，留着就是垃圾。
+    /// 成功时必须保留：草稿（以及加入书架后的书）要靠这份文件播放 / 翻页。
+    private static func readAndClean(_ local: URL, _ body: () throws -> Outcome) throws -> Outcome {
+        do {
+            let outcome = try body()
+            if case .failure = outcome {
+                try? FileManager.default.removeItem(at: local)
+            }
+            return outcome
+        } catch {
+            try? FileManager.default.removeItem(at: local)
+            throw error
+        }
+    }
+
+    /// 删除草稿引用、但还没有加入书架的沙箱副本（音频 / 漫画）。
+    /// TXT / EPUB 解析完就删了临时文件，不会在目录里留下副本。
+    static func discardImportCopy(for draft: ImportDraft) {
+        guard let base = LibraryStore.shared.directory else { return }
+        let manager = FileManager.default
+        if let name = draft.audioFileName {
+            let url = base.appendingPathComponent(Kind.audio.rawValue, isDirectory: true)
+                .appendingPathComponent(name)
+            try? manager.removeItem(at: url)
+        }
+        if let name = draft.comicFileName {
+            let url = base.appendingPathComponent(Kind.comics.rawValue, isDirectory: true)
+                .appendingPathComponent(name)
+            try? manager.removeItem(at: url)
         }
     }
 
