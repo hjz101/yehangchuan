@@ -962,6 +962,7 @@ struct SourceDetailSheet: View {
     @State private var isBusy = false
     @State private var ruleMessage = ""
     @State private var enableWarning = ""
+    @State private var loginTarget: BookSource?
     /// 取消过就不再回写，避免「点了取消却仍然被保存」。
     /// 手势下滑关闭没有按钮可点，仍按「保存」处理。
     @State private var cancelled = false
@@ -1017,6 +1018,15 @@ struct SourceDetailSheet: View {
             .onDisappear {
                 guard !cancelled else { return }
                 store.updateSource(source)
+            }
+            .sheet(item: $loginTarget) { target in
+                SourceLoginSheet(
+                    source: target,
+                    engineSource: LegadoBridge.engineSource(from: target)
+                ) { state in
+                    source.login = state
+                    store.updateSource(source)
+                }
             }
         }
     }
@@ -1239,11 +1249,22 @@ struct SourceDetailSheet: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(hasLoginScript
-                     ? "这条书源声明了登录脚本，但 App 不会代你执行站点登录、也不保存站点密码。需要登录态的源，请在书源规则里用 Cookie / header 自行配置。"
-                     : "这条书源没有登录脚本。搜索、目录与正文按规则匿名请求；需要账号的源请在书源规则里配置 Cookie 或 header。")
+                     ? "这条书源声明了登录入口。你可以在 App 内完成登录，会话只保存在本机的书源 Cookie / 登录头中。"
+                     : "这条书源没有声明登录入口。需要账号时可在下方手动打开登录页，或在书源规则里配置 Cookie / header。")
                     .font(.system(size: 10.5))
                     .foregroundStyle(theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    loginTarget = source
+                } label: {
+                    Label("打开登录页面", systemImage: "person.badge.key")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PressableStyle())
+                .padding(.vertical, 9)
+                .glassCapsule(tint: theme.jade.opacity(0.12), interactive: true)
 
                 Text("App 从不伪造登录成功，也不会把账号密码写进书源。")
                     .font(.system(size: 10))

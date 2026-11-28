@@ -3,6 +3,12 @@ import CommonCrypto
 import Foundation
 import JavaScriptCore
 import SwiftSoup
+import WebKit
+
+public extension Notification.Name {
+    /// 书源 JS 调 `java.toast` / `java.longToast` 时发出，`userInfo["message"]` 是文案。
+    static let legadoToast = Notification.Name("LegadoCore.legadoToast")
+}
 
 public struct RuleExecutionContext: Sendable {
     var nestedRuleDepth = 0
@@ -577,6 +583,24 @@ public struct JavaScriptRuleEvaluator: Sendable {
                 if let object = context?.objectForKeyedSubscript("rssArticle") {
                     self.setRSSArticleFields(article, on: object)
                 }
+            },
+            webView: { rawURL, rawBase, rawScript in
+                let address = Self.stringify(rawURL).isEmpty
+                    ? Self.stringify(rawBase)
+                    : Self.stringify(rawURL)
+                guard let url = URL(string: address), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+                    return ""
+                }
+                do {
+                    let response = try self.networkLoader.load(URLRequest(url: url))
+                    return try WebViewSyncBridge.evaluate(
+                        html: response.decodedText,
+                        script: Self.stringify(rawScript)
+                    )
+                } catch {
+                    DiagnosticLog.shared.record(.warning, category: "JS", message: "java.webView 失败：\(error.localizedDescription)")
+                    return ""
+                }
             }
         )
     }
@@ -696,7 +720,8 @@ public struct JavaScriptRuleEvaluator: Sendable {
         result: JSONValue,
         executionContext: RuleExecutionContext,
         currentContext: @escaping () throws -> RuleExecutionContext,
-        applyState: @escaping ([String: String], RssArticle?) -> Void
+        applyState: @escaping ([String: String], RssArticle?) -> Void,
+        webView: @escaping (Any?, Any?, Any?) -> String
     ) {
         let java = JSValue(newObjectIn: context)
         let getBlock: @convention(block) (String) -> String = { key in get(key) }
@@ -926,6 +951,32 @@ public struct JavaScriptRuleEvaluator: Sendable {
         java?.setObject(ajaxAll, forKeyedSubscript: "ajaxAll" as NSString)
         java?.setObject(connect, forKeyedSubscript: "connect" as NSString)
         java?.setObject(directRequest, forKeyedSubscript: "__directRequest" as NSString)
+
+        // 阅读 3.0 书源里这些是平台 UI 能力。iOS 上没有对应窗口，但规则会在
+        // 发现页 / 登录脚本里直接调用；缺方法会抛 JS 异常把整条规则打断。
+        // 保留同名入口并记一条日志，界面动作交给 App 层实现。
+        let longToast: @convention(block) (Any?) -> Void = { value in
+            NotificationCenter.default.post(
+                name: .legadoToast,
+                object: nil,
+                userInfo: ["message": Self.stringify(value)]
+            )
+        }
+        java?.setObject(longToast, forKeyedSubscript: "longToast" as NSString)
+        java?.setObject(longToast, forKeyedSubscript: "toast" as NSString)
+        java?.setObject(deviceID, forKeyedSubscript: "deviceID" as NSString)
+        let browserAction: @convention(block) (Any?) -> Bool = { value in
+            DiagnosticLog.shared.record(.info, category: "JS", message: "书源请求打开页面：\(Self.stringify(value))")
+            return true
+        }
+        for name in ["startBrowser", "startBrowserAwait", "startBrowserDp",
+                     "showBrowser", "showReadingBrowser", "refreshExplore"] {
+            java?.setObject(browserAction, forKeyedSubscript: name as NSString)
+        }
+        let webViewBridge: @convention(block) (Any?, Any?, Any?) -> String = { url, base, script in
+            webView(url, base, script)
+        }
+        java?.setObject(webViewBridge, forKeyedSubscript: "webView" as NSString)
         context.setObject(java, forKeyedSubscript: "java" as NSString)
         context.evaluateScript("""
             (function () {
@@ -1205,6 +1256,8 @@ public struct JavaScriptRuleEvaluator: Sendable {
         }
         object?.setObject(get, forKeyedSubscript: "get" as NSString)
         object?.setObject(put, forKeyedSubscript: "put" as NSString)
+        object?.setObject(get, forKeyedSubscript: "__get" as NSString)
+        object?.setObject(put, forKeyedSubscript: "__put" as NSString)
         object?.setObject(getLoginHeader, forKeyedSubscript: "getLoginHeader" as NSString)
         object?.setObject(putLoginHeader, forKeyedSubscript: "putLoginHeader" as NSString)
         object?.setObject(getLoginInfo, forKeyedSubscript: "__getLoginInfoMap" as NSString)
@@ -1236,6 +1289,14 @@ public struct JavaScriptRuleEvaluator: Sendable {
                 map.putAll = function (other) { for (var key in other) if (typeof other[key] !== 'function') map[key] = other[key]; };
                 return map;
               };
+              source.getLoginInfo = function () { return JSON.stringify(source.__getLoginInfoMap() || {}); };
+              source.getVariable = function () {
+                var raw = source.__get('variable') || '';
+                if (!arguments.length) return raw;
+                try { var map = JSON.parse(raw); return map[String(arguments[0])] || ''; }
+                catch (e) { return ''; }
+              };
+              source.setVariable = function (value) { return source.__put('variable', String(value)); };
               source.login = function () {
                 if (!source.loginUrl) return null;
                 (0, eval)(String(source.loginUrl));

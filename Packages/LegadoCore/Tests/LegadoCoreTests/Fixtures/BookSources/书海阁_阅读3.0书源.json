@@ -1,0 +1,57 @@
+[
+  {
+    "bookSourceName": "书海阁",
+    "bookSourceUrl": "https://book.washai.net",
+    "bookSourceType": 0,
+    "bookSourceGroup": "小说",
+    "bookSourceComment": "书海阁 book.washai.net。正文页有 SHA256 反爬挑战(token+challenge+proof)，正文规则改用 WebView 加载，让站点自身JS完成解锁后读取正文。若正文空白请更新阅读App到最新版。2026-11-18",
+    "enabled": true,
+    "enabledExplore": true,
+    "enabledCookieJar": true,
+    "concurrentRate": "",
+    "header": "{\"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\", \"Accept\": \"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\", \"Accept-Language\": \"zh-CN,zh;q=0.9,en;q=0.8\", \"sec-ch-ua\": \"\\\"Not:A-Brand\\\";v=\\\"8\\\", \\\"Chromium\\\";v=\\\"120\\\", \\\"Google Chrome\\\";v=\\\"120\\\"\", \"sec-ch-ua-mobile\": \"?0\", \"sec-ch-ua-platform\": \"\\\"Windows\\\"\", \"Sec-Fetch-Dest\": \"document\", \"Sec-Fetch-Mode\": \"navigate\", \"Sec-Fetch-Site\": \"none\", \"Upgrade-Insecure-Requests\": \"1\"}",
+    "searchUrl": "https://book.washai.net/book/bookclass.html?k={{key}}",
+    "exploreUrl": "",
+    "ruleExplore": {},
+    "ruleSearch": {
+      "bookList": "#bookList .classBookCard",
+      "name": "h3.classBookTitle a@text",
+      "author": "p.classBookAuthor a@text",
+      "bookUrl": "h3.classBookTitle a@href",
+      "coverUrl": "span.classBookCover img@src",
+      "intro": "p.classBookDesc@text",
+      "kind": "a.classCoverCat@text",
+      "wordCount": "p.classBookMeta@text##.*·\\s*##",
+      "lastChapter": "p.classBookChapter a@text"
+    },
+    "ruleBookInfo": {
+      "init": "",
+      "name": "#bookName@text",
+      "author": "#bookAuthor@text",
+      "kind": "#bookCatBadge@text",
+      "wordCount": "#bookWordCount@text##[^\\d.]##",
+      "lastChapter": "#lastIndexLink@text",
+      "intro": "#bookDesc@text",
+      "coverUrl": "#bookCoverImg@src",
+      "tocUrl": "#allIndexLink@href",
+      "bookStatus": "#bookStatus@text"
+    },
+    "ruleToc": {
+      "chapterList": "#bookIndexList li[data-index-id]",
+      "chapterName": "a@text##\\s*\\[免费\\]\\s*$##",
+      "chapterUrl": "a@href",
+      "isVip": "",
+      "nextTocUrl": "a.pgBtn@href",
+      "updateTime": ""
+    },
+    "ruleContent": {
+      "content": "@js:(function(){\n  // 用 WebView 加载章节页，让站点自身的 JS 完成反爬挑战(challenge->unlock->正文)\n  // BackstageWebView 会在 onPageFinished 后每秒执行本 JS 一次，返回空则重试(最多约30s)\n  var js = \"(function(){\"\n        + \"var box=document.querySelector('#showReading .readChapterAppendBody');\"\n        + \"if(!box){var b=document.querySelector('#showReading');box=b;}\"\n        + \"if(!box)return '';\"\n        + \"var t=box.innerHTML||'';\"\n        + \"if(!t||t.indexOf('readGateLoading')>=0)return '';\"\n        + \"if(t.indexOf('<p')<0&&t.replace(/<[^>]*>/g,'').trim().length<20)return '';\"\n        + \"return t;\"\n        + \"})()\";\n  return java.webView(null, baseUrl, js);\n})()",
+      "nextContentUrl": "",
+      "webViewJs": "",
+      "isVip": ""
+    },
+    "customOrder": 0,
+    "lastUpdateTime": 1795000000000,
+    "respondOrder": 0
+  }
+]

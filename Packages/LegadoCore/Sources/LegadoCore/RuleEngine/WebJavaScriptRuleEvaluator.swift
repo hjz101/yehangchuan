@@ -39,6 +39,10 @@ public final class WebJavaScriptRuleEvaluator: NSObject, WKScriptMessageHandler 
     private var documentReady: Task<Void, Error>?
     /// 导航代理必须被强引用，否则回调可能落在已经释放的对象上。
     private var documentSession: BlankDocumentLoader?
+    /// 当前页面装的是哪一份 HTML 书源（"" 表示空白沙箱页）。
+    private var loadedSourceID = ""
+    /// `flutter_inappwebview.callHandler` 需要知道缓存/Cookie 属于哪条书源。
+    private var currentSourceID = ""
 
     private static let timeoutSeconds: Double = 10
 
@@ -68,7 +72,7 @@ public final class WebJavaScriptRuleEvaluator: NSObject, WKScriptMessageHandler 
         guard script.utf8.count <= 64 * 1_024 else {
             throw RuleEngineError.resourceLimit(rule: "webjs", detail: "WKWebView 脚本超过 64 KB")
         }
-        try await documentReady?.value
+        try await ensureDocument(for: executionContext.source?.bookSourceUrl ?? "")
         let value = try await run(script: script, result: result.foundationObject)
         let text = value.stringValue
         guard text.utf8.count <= 2 * 1_024 * 1_024 else {
@@ -87,6 +91,27 @@ public final class WebJavaScriptRuleEvaluator: NSObject, WKScriptMessageHandler 
     ///   `document`/`window`，正好对上 `<webjs>` 的语义。
     ///
     /// `result` 以参数形式传入，不再拼进脚本文本，省掉一整轮转义。
+    /// 把 HTML 书源装进沙箱页，并返回它自己的设置 / 登录页地址。
+    public func prepareHTMLSource(_ source: BookSource) async throws -> String {
+        try await ensureDocument(for: source.bookSourceUrl)
+        let value = try await run(script: "return await getloginurl();", result: JSONValue.null.foundationObject)
+        return value.stringValue
+    }
+
+    /// 供 App 的登录页直接展示同一只 WebView；页面里的桥接与规则执行共用一份。
+    public func hostedView() -> WKWebView {
+        webView
+    }
+
+    /// 设置页把当前配置写进 `#payloadStore`，这里按书源自己的 `login()` 语义提交。
+    public func commitHTMLSourceLogin(_ source: BookSource) async throws {
+        try await ensureDocument(for: source.bookSourceUrl)
+        _ = try await run(
+            script: "return await login(document.getElementById('payloadStore') ? document.getElementById('payloadStore').textContent : '');",
+            result: JSONValue.null.foundationObject
+        )
+    }
+
     private func run(script: String, result: Any) async throws -> JSONValue {
         // 尾部分号在书源里很常见（`<webjs>document.body.innerText;</webjs>`），
         // 直接塞进 `return await (…)` 会变成语法错误，先摘掉。
@@ -178,6 +203,31 @@ public final class WebJavaScriptRuleEvaluator: NSObject, WKScriptMessageHandler 
         }
     }
 
+    /// 需要整段 HTML 的书源（起点中文这类）在这里换页。
+    /// 没有注册 HTML 时回到空白沙箱页；同一条书源不重复加载。
+    private func ensureDocument(for sourceID: String) async throws {
+        // init 里那次空白页加载是异步启动的；先等它结束，否则它会把下面
+        // 换页用的 navigationDelegate 覆盖掉，自定义 HTML 永远等不到 didFinish。
+        try await documentReady?.value
+        let html = HTMLSourceRegistry.shared.html(for: sourceID)
+        let targetID = html == nil ? "" : sourceID
+        if loadedSourceID != targetID {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                let loader = BlankDocumentLoader(continuation: continuation)
+                documentSession = loader
+                webView.navigationDelegate = loader
+                webView.loadHTMLString(
+                    html ?? "<!doctype html><html><head><meta charset=\"utf-8\"></head><body></body></html>",
+                    baseURL: nil
+                )
+            }
+            loadedSourceID = targetID
+        } else if targetID.isEmpty {
+            try await documentReady?.value
+        }
+        currentSourceID = sourceID
+    }
+
     /// 把 http/https 子资源全部拦掉。规则编译失败时如实记一条日志，
     /// 不静默降级 —— 没有这一层，页面脚本就能直接用 `fetch` 出去。
     private static func installBlockingRules(into webView: WKWebView) {
@@ -255,6 +305,21 @@ public final class WebJavaScriptRuleEvaluator: NSObject, WKScriptMessageHandler 
             throw new Error('network disabled in webjs sandbox: ' + url);
           };
         })();
+        // 起点中文这类书源整段 HTML 依赖 flutter_inappwebview.callHandler。
+        // 这里用同一条原生桥接把它的 15 个 handler 接过来；页面自己的网络
+        // 出口仍然是 __legadoFetch，私网闸门不会因为换了页面而失效。
+        window.flutter_inappwebview = {
+          callHandler: function (name) {
+            var args = Array.prototype.slice.call(arguments, 1);
+            return new Promise(function (resolve, reject) {
+              var id = 'h-' + String(Date.now()) + '-' + Math.random();
+              window.__legadoPending[id] = { resolve: resolve, reject: reject };
+              window.webkit.messageHandlers.legadoBridge.postMessage(
+                { id: id, op: 'htmlHandler', name: String(name), args: args });
+            });
+          }
+        };
+        window.dispatchEvent(new Event('flutterInAppWebViewPlatformReady'));
         """
         return WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: false)
     }
@@ -269,6 +334,10 @@ public final class WebJavaScriptRuleEvaluator: NSObject, WKScriptMessageHandler 
         guard let body = message.body as? [String: Any],
               let id = body["id"] as? String,
               let op = body["op"] as? String else { return }
+        if op == "htmlHandler" {
+            await handleHTMLHandler(id: id, body: body)
+            return
+        }
         guard op == "fetch", let urlString = body["url"] as? String, let url = URL(string: urlString) else {
             callback(id, ok: false, value: WebJavaScriptError.invalidMessage.errorDescription ?? "无效消息")
             return
@@ -284,6 +353,88 @@ public final class WebJavaScriptRuleEvaluator: NSObject, WKScriptMessageHandler 
         } catch {
             callback(id, ok: false, value: error.localizedDescription)
         }
+    }
+
+    private func handleHTMLHandler(id: String, body: [String: Any]) async {
+        let name = body["name"] as? String ?? ""
+        let args = body["args"] as? [Any] ?? []
+        let text = { (index: Int) -> String in
+            guard args.indices.contains(index) else { return "" }
+            return Self.stringifyAny(args[index])
+        }
+        switch name {
+        case "http":
+            guard let url = URL(string: text(1)), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+                callbackJSON(id, value: .object(["statusCode": .number(0), "data": .string(""), "headers": .object([:])]))
+                return
+            }
+            var request = URLRequest(url: url)
+            request.httpMethod = text(0).lowercased() == "post" ? "POST" : "GET"
+            if request.httpMethod == "POST" { request.httpBody = Data(text(2).utf8) }
+            if let headerText = text(3).data(using: .utf8),
+               let headers = try? JSONSerialization.jsonObject(with: headerText) as? [String: Any] {
+                for (key, value) in headers { request.setValue(String(describing: value), forHTTPHeaderField: key) }
+            }
+            do {
+                let response = try await transport.data(for: request)
+                callbackJSON(id, value: .object([
+                    "statusCode": .number(Double(response.statusCode)),
+                    "data": .string(response.decodedText),
+                    "headers": .object([:])
+                ]))
+            } catch {
+                callbackJSON(id, value: .object([
+                    "statusCode": .number(0), "data": .string(error.localizedDescription), "headers": .object([:])
+                ]))
+            }
+        case "cache.get":
+            let value = BookSourceRuntimeStore.shared.get(
+                sourceID: currentSourceID, key: "html.cache.\(text(0))"
+            )
+            callback(id, ok: true, value: value)
+        case "cache.set":
+            BookSourceRuntimeStore.shared.put(
+                sourceID: currentSourceID, key: "html.cache.\(text(0))", value: text(1)
+            )
+            callback(id, ok: true, value: "true")
+        case "cookie.get":
+            callback(id, ok: true, value: LegadoCookieStore.shared.cookieHeader(for: text(0)))
+        case "cookie.getCookie":
+            callback(id, ok: true, value: LegadoCookieStore.shared.cookie(for: text(0), key: text(1)))
+        case "CookieJar", "refreshExplore", "refreshContent":
+            callback(id, ok: true, value: "true")
+        case "showToast", "showLongToast":
+            NotificationCenter.default.post(name: .legadoToast, object: nil, userInfo: ["message": text(0)])
+            callback(id, ok: true, value: "true")
+        case "log":
+            DiagnosticLog.shared.record(.info, category: "htmljs", message: text(0))
+            callback(id, ok: true, value: "true")
+        case "base64encode":
+            callback(id, ok: true, value: Data(text(0).utf8).base64EncodedString())
+        case "startBrowser", "startBrowserDp":
+            callback(id, ok: true, value: "")
+        default:
+            DiagnosticLog.shared.record(.warning, category: "htmljs", message: "未实现的桥接：\(name)")
+            callback(id, ok: true, value: "")
+        }
+    }
+
+    private func callbackJSON(_ id: String, value: JSONValue) {
+        guard let data = try? JSONEncoder().encode(value),
+              let literal = String(data: data, encoding: .utf8) else {
+            callback(id, ok: false, value: "null")
+            return
+        }
+        webView.evaluateJavaScript("window.__legadoResolve(\(Self.jsonLiteral(id)), true, \(literal));")
+    }
+
+    private static func stringifyAny(_ value: Any) -> String {
+        if let text = value as? String { return text }
+        if let number = value as? NSNumber { return number.stringValue }
+        if let data = try? JSONEncoder().encode(JSONValue.bridge(value)) {
+            return String(decoding: data, as: UTF8.self)
+        }
+        return String(describing: value)
     }
 
     private func callback(_ id: String, ok: Bool, value: String) {
@@ -310,8 +461,14 @@ private final class BlankDocumentLoader: NSObject, WKNavigationDelegate {
     private var continuation: CheckedContinuation<Void, Error>?
     private var settled = false
 
-    init(continuation: CheckedContinuation<Void, Error>) {
+    init(continuation: CheckedContinuation<Void, Error>? = nil) {
         self.continuation = continuation
+    }
+
+    func wait() async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+        }
     }
 
     private func settle(_ result: Result<Void, Error>) {

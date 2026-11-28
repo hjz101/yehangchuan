@@ -15,6 +15,11 @@ enum LegadoBridge {
         let raw = source.rule.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty, let data = raw.data(using: .utf8) else { return nil }
 
+        // 起点中文这类整段 HTML 书源不是阅读 3.0 规则，先单独认出来。
+        if let htmlSource = htmlSource(from: raw, name: source.name, enabled: source.enabled) {
+            return htmlSource
+        }
+
         // 单条对象和「数组里一条」都认，用户粘贴哪种都行。
         guard let parsed = try? BookSourceImporter().decode(data),
               let decoded = parsed.first else {
@@ -31,6 +36,17 @@ enum LegadoBridge {
             result.bookSourceUrl = source.host
         }
         return result
+    }
+
+    /// 起点中文 JSON 里装的是一整段 HTML + JS，而不是阅读 3.0 规则。
+    /// 把它注册给 WebJS 执行器，再合成一组 `<webjs>` 规则接到现有流水线上。
+    private static func htmlSource(
+        from raw: String,
+        name: String,
+        enabled: Bool
+    ) -> LegadoCore.BookSource? {
+        guard let data = raw.data(using: .utf8) else { return nil }
+        return HTMLBookSourceConverter.convert(jsonData: data, name: name, enabled: enabled)
     }
 
     /// 规则不是合法 Legado JSON 时的兜底：只有地址，没有解析规则。
