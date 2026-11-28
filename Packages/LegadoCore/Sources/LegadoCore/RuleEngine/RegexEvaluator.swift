@@ -86,8 +86,7 @@ public struct RegexEvaluator: Sendable {
         do {
             expression = try NSRegularExpression(pattern: pattern)
         } catch {
-            if firstOnly { return replacement }
-            return input.replacingOccurrences(of: pattern, with: replacement)
+            throw RuleEngineError.malformedRule(rule: pattern, detail: error.localizedDescription)
         }
         let range = NSRange(input.startIndex..<input.endIndex, in: input)
         if firstOnly {
@@ -104,7 +103,7 @@ public struct RegexEvaluator: Sendable {
                 }
             }
             if timedOut { throw RuleEngineError.resourceLimit(rule: pattern, detail: "正则匹配超时（3000 ms）") }
-            guard let first else { return "" }
+            guard let first else { return input }
             return expression.replacementString(for: first, in: input, offset: 0, template: replacement)
         }
         return try replacingStrict(pattern: pattern, in: input, with: replacement)
