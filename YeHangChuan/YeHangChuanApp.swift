@@ -170,7 +170,7 @@ struct RootView: View {
         if arguments.contains("-openCache") { tab = .settings }
         if arguments.contains("-openSourceDetail") { tab = .source }
         if arguments.contains("-openAI") { tab = .settings }
-        if arguments.contains("-openSandbox") { tab = .settings }
+        if arguments.contains("-openSandbox") { tab = .source }
         if arguments.contains("-openDiscover") { tab = .settings }
         if arguments.contains("-openVoice") { tab = .settings }
         if arguments.contains("-openCompliance") { tab = .settings }

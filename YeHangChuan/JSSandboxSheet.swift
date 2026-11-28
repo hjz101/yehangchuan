@@ -6,10 +6,9 @@ import LegadoCore
 /// 「JS 书源沙箱」：把阅读 3.0 书源里靠 WebView 渲染的那条链路，
 /// 摊开来一步一步跑给你看。
 ///
-/// 原来这一页是用一段硬编码脚本演示 `WebKit` 是否可用 —— 跟书源毫无关系，
-/// 界面上却写着「沙箱测试」。现在它只做一件事：拿**你书库里的书源**、
-/// 书源自己的地址规则，真发一次请求，把「规则怎么展开、用的是原生请求还是
-/// WKWebView、脚本执行没有、资源正则命中没有、拿到多少字」如实列出来。
+/// 现在它和书源页是一体的：先列出书库里所有可解析的 3.0 书源，选中后既能
+/// 打开书源自己的登录 / 设置页面，也能按搜索 / 详情 / 目录 / 正文分步调试。
+/// 地址规则取自书源本身，请求走与阅读时同一条传输层和私网闸门。
 struct JSSandboxSheet: View {
     @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
@@ -17,6 +16,7 @@ struct JSSandboxSheet: View {
 
     /// 沙箱目前瞄准的书源。默认取第一个能解析成 Legado 书源、且已启用的。
     @State private var sourceID: String?
+    @State private var pane: Pane = .sources
     @State private var stage: Stage = .content
     @State private var keyword = "长风"
     @State private var customRule = ""
@@ -29,6 +29,15 @@ struct JSSandboxSheet: View {
     @State private var message = ""
     @State private var sampleNote = ""
     @State private var traces: [WebViewTraceEntry] = []
+    @State private var pageModel: SourceLoginModel?
+
+    enum Pane: String, CaseIterable, Identifiable {
+        case sources = "书源"
+        case page = "页面"
+        case debug = "调试"
+
+        var id: String { rawValue }
+    }
 
     enum Stage: String, CaseIterable, Identifiable {
         case search = "搜索"
@@ -44,17 +53,36 @@ struct JSSandboxSheet: View {
             ZStack {
                 AppBackdrop()
 
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 16) {
-                        boundaryCard
-                        sourceCard
-                        addressCard
-                        scriptCard
-                        resultCard
+                VStack(spacing: 0) {
+                    Picker("沙箱分区", selection: $pane) {
+                        ForEach(Pane.allCases) { value in
+                            Text(value.rawValue).tag(value)
+                        }
                     }
-                    .padding(18)
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 8)
+                    .padding(.bottom, 10)
+
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 16) {
+                            switch pane {
+                            case .sources:
+                                boundaryCard
+                                sourceListCard
+                            case .page:
+                                pageCard
+                            case .debug:
+                                boundaryCard
+                                addressCard
+                                scriptCard
+                                resultCard
+                            }
+                        }
+                        .padding(18)
+                    }
+                    .scrollIndicators(.hidden)
                 }
-                .scrollIndicators(.hidden)
             }
             .navigationTitle("JS 书源沙箱")
             .navigationBarTitleDisplayMode(.inline)
@@ -67,6 +95,20 @@ struct JSSandboxSheet: View {
             .task {
                 selectDefaultSource()
                 await loadSampleIfNeeded()
+            }
+            .task(id: "\(selection?.app.id ?? "")-\(pane.rawValue)") {
+                guard pane == .page, let selected = selection else {
+                    pageModel = nil
+                    return
+                }
+                let model = SourceLoginModel(
+                    source: selected.app,
+                    engineSource: selected.engine
+                ) { state in
+                    message = "页面会话已保存：\(state.rawValue)"
+                }
+                pageModel = model
+                await model.prepare()
             }
         }
     }
@@ -91,6 +133,14 @@ struct JSSandboxSheet: View {
         guard sourceID == nil else { return }
         sourceID = candidateSources.first(where: { $0.app.enabled })?.app.id
             ?? candidateSources.first?.app.id
+    }
+
+    private func select(_ entry: (app: BookSource, engine: LegadoCore.BookSource)) {
+        sourceID = entry.app.id
+        customRule = ""
+        pageModel = nil
+        message = ""
+        Task { await loadSampleIfNeeded() }
     }
 
     private func effectiveRule(_ engine: LegadoCore.BookSource) -> String {
@@ -121,7 +171,6 @@ struct JSSandboxSheet: View {
     private func loadSampleIfNeeded() async {
         guard let source = selection?.engine, !isLoadingSample else { return }
         isLoadingSample = true
-        message = ""
         let sample = await store.engine.sampleAddresses(source: source, keyword: keyword)
         applySample(sample)
         isLoadingSample = false
@@ -140,7 +189,7 @@ struct JSSandboxSheet: View {
                 Text("这里跑的是真书源")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(theme.text)
-                Text("地址规则取自下面这个书源，请求走与阅读时同一条传输层和私网闸门；书源要求 WebView 的地址由真实的 WKWebView 打开（不落盘 cookie、子资源私网地址被拦截），不要求的就走原生请求。自定义脚本只在这一步替换书源的 webJs，其余规则不变。")
+                Text("地址规则取自你选中的 3.0 书源，请求走与阅读时同一条传输层和私网闸门；书源要求 WebView 的地址由真实的 WKWebView 打开，不要求的走原生请求。")
                     .font(.system(size: 10.5))
                     .foregroundStyle(theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -150,59 +199,128 @@ struct JSSandboxSheet: View {
         .glassSurface(cornerRadius: 20, tint: theme.accent.opacity(0.08))
     }
 
-    private var sourceCard: some View {
+    private var sourceListCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeading(text: "书源", trailing: "\(candidateSources.count) 个可解析")
+            SectionHeading(text: "书库里的 3.0 书源", trailing: "\(candidateSources.count) 个可解析")
 
             if candidateSources.isEmpty {
-                Text("书库里还没有能解析成 Legado 3.0 规则的书源。先在「书源」页导入一条书源 JSON。")
+                Text("书库里还没有能解析成 Legado 3.0 规则的书源。回到「书源」页导入一条书源 JSON，或从书源详情里打开登录页。")
                     .font(.system(size: 11))
                     .foregroundStyle(theme.tertiary)
                     .padding(13)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .glassSurface(cornerRadius: 18)
             } else {
-                Menu {
+                VStack(spacing: 8) {
                     ForEach(candidateSources, id: \.app.id) { entry in
+                        let isSelected = selection?.app.id == entry.app.id
                         Button {
-                            sourceID = entry.app.id
-                            customRule = ""
-                            Task { await loadSampleIfNeeded() }
+                            select(entry)
                         } label: {
-                            Text("\(entry.app.name)\(entry.app.enabled ? "" : "（未启用）")")
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(isSelected ? theme.jade : theme.tertiary)
+                                    .padding(.top, 2)
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 6) {
+                                        Text(entry.app.name)
+                                            .font(.system(size: 12.5, weight: .semibold))
+                                            .foregroundStyle(theme.text)
+                                            .lineLimit(1)
+                                        if entry.app.enabled {
+                                            Text("已启用")
+                                                .font(.system(size: 8.5, weight: .semibold))
+                                                .foregroundStyle(theme.jade)
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 2)
+                                                .glassCapsule(tint: theme.jade.opacity(0.12))
+                                        }
+                                    }
+                                    Text(entry.engine.bookSourceName)
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(theme.secondary)
+                                        .lineLimit(1)
+                                    Text(entry.engine.bookSourceUrl)
+                                        .font(.system(size: 9.5, design: .monospaced))
+                                        .foregroundStyle(theme.tertiary)
+                                        .lineLimit(1)
+                                }
+
+                                Spacer(minLength: 0)
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(theme.tertiary.opacity(0.6))
+                                    .padding(.top, 3)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .glassSurface(
+                                cornerRadius: 18,
+                                tint: isSelected ? theme.jade.opacity(0.12) : nil,
+                                interactive: true
+                            )
                         }
+                        .buttonStyle(PressableStyle(scale: 0.99))
                     }
-                } label: {
-                    HStack {
-                        Text(selection?.app.name ?? "选择书源")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(theme.text)
-                        Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(theme.tertiary)
-                    }
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 11)
-                    .glassSurface(cornerRadius: 16, interactive: true)
                 }
 
-                if let selection {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(selection.engine.bookSourceName)
-                            .font(.system(size: 11))
-                            .foregroundStyle(theme.secondary)
-                        Text(selection.engine.bookSourceUrl)
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(theme.tertiary)
-                            .lineLimit(1)
-                    }
-                    if !sampleNote.isEmpty {
-                        Text(sampleNote)
+                if selection != nil {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("样本：\(sampleNote.isEmpty ? "正在从书源取真实地址…" : sampleNote)")
                             .font(.system(size: 10))
                             .foregroundStyle(theme.tertiary)
+                        Text("搜索 \(sampleSearch.isEmpty ? "—" : sampleSearch)")
+                            .font(.system(size: 9.5, design: .monospaced))
+                            .foregroundStyle(theme.secondary)
+                            .lineLimit(1)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+            }
+        }
+        .padding(14)
+        .glassSurface(cornerRadius: 20)
+    }
+
+    private var pageCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeading(
+                text: "书源页面",
+                trailing: selection?.app.name ?? "未选择"
+            )
+
+            if selection == nil {
+                Text("先在「书源」页签选中一条可解析的书源。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.tertiary)
+                    .padding(13)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .glassSurface(cornerRadius: 18)
+            } else if let pageModel {
+                SourceLoginContent(model: pageModel, embedded: true)
+
+                Button {
+                    pageModel.finish()
+                } label: {
+                    Label("保存会话到本机", systemImage: "key.viewfinder")
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(theme.onAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(theme.accentSolid, in: Capsule())
+                }
+                .buttonStyle(PressableStyle(scale: 0.98))
+
+                if !message.isEmpty {
+                    Text(message)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(theme.accent)
+                }
+            } else {
+                ProgressView("正在生成书源页面…")
             }
         }
         .padding(14)

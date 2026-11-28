@@ -29,7 +29,6 @@ struct SettingsView: View {
     @State private var showNetworkLogs = false
     @State private var showExport = false
     @State private var showAI = false
-    @State private var showSandbox = false
     @State private var showDiscover = false
     @State private var showVoice = false
     @State private var showCompliance = false
@@ -185,9 +184,6 @@ struct SettingsView: View {
                                 ) {
                                     labTile("AI 阅读助手", "摘要 · 封面 · 语音", "sparkles", theme.accent) {
                                         showAI = true
-                                    }
-                                    labTile("JS 书源沙箱", "不预装脚本 · 私网拦截", "curlybraces.square", theme.jade) {
-                                        showSandbox = true
                                     }
                                     labTile("在线发现", "只用已启用书源", "safari", theme.blue) {
                                         showDiscover = true
@@ -391,12 +387,6 @@ struct SettingsView: View {
                 .presentationCornerRadius(38)
                 .themedChrome(store)
         }
-        .sheet(isPresented: $showSandbox) {
-            JSSandboxSheet()
-                .presentationDetents([.large])
-                .presentationCornerRadius(38)
-                .themedChrome(store)
-        }
         .sheet(isPresented: $showDiscover) {
             DiscoverSheet()
                 .presentationDetents([.large])
@@ -424,7 +414,6 @@ struct SettingsView: View {
             if arguments.contains("-openNetworkLogs") { showNetworkLogs = true }
             if arguments.contains("-openExport") { showExport = true }
             if arguments.contains("-openAI") { showAI = true }
-            if arguments.contains("-openSandbox") { showSandbox = true }
             if arguments.contains("-openDiscover") { showDiscover = true }
             if arguments.contains("-openVoice") { showVoice = true }
             if arguments.contains("-openCompliance") { showCompliance = true }

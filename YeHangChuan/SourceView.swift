@@ -11,6 +11,7 @@ struct SourceView: View {
     @State private var showSearch = false
     @State private var showImportExport = false
     @State private var showLogs = false
+    @State private var showSandbox = false
     @State private var detailSource: BookSource?
     @State private var enablePrompt: SourceEnablePrompt?
 
@@ -27,6 +28,7 @@ struct SourceView: View {
                     LazyVStack(alignment: .leading, spacing: 20) {
                         summaryCard
                         searchEntry
+                        sandboxEntry
                         sourceSection
                         footerNote
                     }
@@ -90,6 +92,12 @@ struct SourceView: View {
                 .presentationCornerRadius(38)
                 .themedChrome(store)
         }
+        .sheet(isPresented: $showSandbox) {
+            JSSandboxSheet()
+                .presentationDetents([.large])
+                .presentationCornerRadius(38)
+                .themedChrome(store)
+        }
         .sheet(item: $detailSource) { source in
             SourceDetailSheet(source: source)
                 .presentationDetents([.large])
@@ -137,6 +145,8 @@ struct SourceView: View {
                 showImportExport = true
             } else if arguments.contains("-openSourceDetail"), let source = store.sources.first {
                 detailSource = source
+            } else if arguments.contains("-openSandbox") {
+                showSandbox = true
             }
             #endif
         }
@@ -222,6 +232,42 @@ struct SourceView: View {
             }
             .padding(14)
             .glassSurface(cornerRadius: 24, tint: theme.accent.opacity(0.08), interactive: true)
+            .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        }
+        .buttonStyle(PressableStyle(scale: 0.985))
+    }
+
+    // MARK: JS 书源沙箱
+
+    private var sandboxEntry: some View {
+        Button {
+            showSandbox = true
+        } label: {
+            HStack(spacing: 13) {
+                Image(systemName: "curlybraces.square")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(theme.onAccent)
+                    .frame(width: 40, height: 40)
+                    .background(theme.jade.opacity(0.85), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("JS 书源沙箱")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(theme.text)
+
+                    Text("列出 3.0 书源 · 打开页面 · 分步调试")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(theme.tertiary.opacity(0.6))
+            }
+            .padding(14)
+            .glassSurface(cornerRadius: 24, tint: theme.jade.opacity(0.08), interactive: true)
             .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
         .buttonStyle(PressableStyle(scale: 0.985))
