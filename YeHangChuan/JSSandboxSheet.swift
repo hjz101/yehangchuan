@@ -11,6 +11,7 @@ import LegadoCore
 /// 书源自己的地址规则，真发一次请求，把「规则怎么展开、用的是原生请求还是
 /// WKWebView、脚本执行没有、资源正则命中没有、拿到多少字」如实列出来。
 struct JSSandboxSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -132,21 +133,21 @@ struct JSSandboxSheet: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.shield")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Palette.accent)
+                .foregroundStyle(theme.accent)
                 .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("这里跑的是真书源")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                 Text("地址规则取自下面这个书源，请求走与阅读时同一条传输层和私网闸门；书源要求 WebView 的地址由真实的 WKWebView 打开（不落盘 cookie、子资源私网地址被拦截），不要求的就走原生请求。自定义脚本只在这一步替换书源的 webJs，其余规则不变。")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(13)
-        .glassSurface(cornerRadius: 20, tint: Palette.accent.opacity(0.08))
+        .glassSurface(cornerRadius: 20, tint: theme.accent.opacity(0.08))
     }
 
     private var sourceCard: some View {
@@ -156,7 +157,7 @@ struct JSSandboxSheet: View {
             if candidateSources.isEmpty {
                 Text("书库里还没有能解析成 Legado 3.0 规则的书源。先在「书源」页导入一条书源 JSON。")
                     .font(.system(size: 11))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                     .padding(13)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .glassSurface(cornerRadius: 18)
@@ -175,11 +176,11 @@ struct JSSandboxSheet: View {
                     HStack {
                         Text(selection?.app.name ?? "选择书源")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Palette.text)
+                            .foregroundStyle(theme.text)
                         Spacer()
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                     }
                     .padding(.horizontal, 13)
                     .padding(.vertical, 11)
@@ -190,16 +191,16 @@ struct JSSandboxSheet: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(selection.engine.bookSourceName)
                             .font(.system(size: 11))
-                            .foregroundStyle(Palette.secondary)
+                            .foregroundStyle(theme.secondary)
                         Text(selection.engine.bookSourceUrl)
                             .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                             .lineLimit(1)
                     }
                     if !sampleNote.isEmpty {
                         Text(sampleNote)
                             .font(.system(size: 10))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                     }
                 }
             }
@@ -222,7 +223,7 @@ struct JSSandboxSheet: View {
             if let engine = selection?.engine {
                 Text(effectiveRule(engine).isEmpty ? "这个书源没有配置该阶段的地址规则" : effectiveRule(engine))
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(effectiveRule(engine).isEmpty ? Palette.tertiary : Palette.secondary)
+                    .foregroundStyle(effectiveRule(engine).isEmpty ? theme.tertiary : theme.secondary)
                     .lineLimit(4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(11)
@@ -257,12 +258,12 @@ struct JSSandboxSheet: View {
 
             Toggle("用下面的脚本替换书源的 webJs", isOn: $useOverrideScript)
                 .font(.system(size: 12))
-                .tint(Palette.jade)
+                .tint(theme.jade)
 
             if useOverrideScript {
                 TextEditor(text: $overrideScript)
                     .font(.system(size: 10.5, design: .monospaced))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
                     .scrollContentBackground(.hidden)
                     .padding(10)
                     .frame(height: 130)
@@ -270,7 +271,7 @@ struct JSSandboxSheet: View {
 
                 Text("脚本在真实页面里执行，`return` 的结果就是这一步的响应体。页面里 document / window 都可用；需要页面脚本自己发请求时，私网地址会被拦。")
                     .font(.system(size: 9.5))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -280,10 +281,10 @@ struct JSSandboxSheet: View {
                 } label: {
                     Label("运行这一步", systemImage: "play.fill")
                         .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(Palette.onAccent)
+                        .foregroundStyle(theme.onAccent)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Palette.accentSolid, in: Capsule())
+                        .background(theme.accentSolid, in: Capsule())
                 }
                 .buttonStyle(PressableStyle(scale: 0.97))
                 .disabled(isRunning || selection == nil)
@@ -294,7 +295,7 @@ struct JSSandboxSheet: View {
             if !message.isEmpty {
                 Text(message)
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.accent)
+                    .foregroundStyle(theme.accent)
             }
         }
         .padding(14)
@@ -308,7 +309,7 @@ struct JSSandboxSheet: View {
             if logs.isEmpty {
                 Text("尚未运行。运行时会按上面这条地址规则真的发一次请求；书源写了 webView / webJs / 资源正则，都会在这一步如实生效。")
                     .font(.system(size: 11))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                     .padding(13)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .glassSurface(cornerRadius: 18)
@@ -318,20 +319,20 @@ struct JSSandboxSheet: View {
                         HStack(spacing: 9) {
                             Image(systemName: line.ok ? "checkmark.circle.fill" : "xmark.shield.fill")
                                 .font(.system(size: 11))
-                                .foregroundStyle(line.ok ? Palette.jade : Palette.accent)
+                                .foregroundStyle(line.ok ? theme.jade : theme.accent)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(line.step)
                                     .font(.system(size: 11.5, weight: .semibold))
-                                    .foregroundStyle(Palette.text)
+                                    .foregroundStyle(theme.text)
                                 Text(line.detail)
                                     .font(.system(size: 10))
-                                    .foregroundStyle(Palette.secondary)
+                                    .foregroundStyle(theme.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer(minLength: 6)
                             Text("\(line.milliseconds) ms")
                                 .font(.system(size: 9, design: .rounded))
-                                .foregroundStyle(Palette.tertiary)
+                                .foregroundStyle(theme.tertiary)
                                 .monospacedDigit()
                         }
                         .padding(.horizontal, 12)
@@ -346,7 +347,7 @@ struct JSSandboxSheet: View {
                     SectionHeading(text: "响应预览", trailing: "\(preview.count) 字")
                     Text(preview)
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Palette.secondary)
+                        .foregroundStyle(theme.secondary)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -361,14 +362,14 @@ struct JSSandboxSheet: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(trace.mode.title) · HTTP \(trace.statusCode)\(trace.error == nil ? "" : " · 失败")")
                                 .font(.system(size: 10.5, weight: .semibold))
-                                .foregroundStyle(trace.error == nil ? Palette.text : Palette.accent)
+                                .foregroundStyle(trace.error == nil ? theme.text : theme.accent)
                             Text(trace.url)
                                 .font(.system(size: 9.5, design: .monospaced))
-                                .foregroundStyle(Palette.tertiary)
+                                .foregroundStyle(theme.tertiary)
                                 .lineLimit(1)
                             Text(describe(trace))
                                 .font(.system(size: 9.5))
-                                .foregroundStyle(Palette.secondary)
+                                .foregroundStyle(theme.secondary)
                         }
                         .padding(.vertical, 4)
                     }

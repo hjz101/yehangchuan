@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ExcerptView: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
 
     @State private var selectedBook: String?
@@ -74,7 +75,7 @@ struct ExcerptView: View {
                     } label: {
                         Image(systemName: showOnlyLiked ? "heart.fill" : "heart")
                     }
-                    .tint(showOnlyLiked ? Palette.accent : Palette.text)
+                    .tint(showOnlyLiked ? theme.accent : theme.text)
                     .accessibilityLabel("只看收藏")
                 }
             }
@@ -93,11 +94,11 @@ struct ExcerptView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(store.excerpts.count)")
                     .font(.system(size: 30, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
 
                 Text("条摘录 · \(store.excerpts.filter(\.liked).count) 条收藏")
                     .font(.system(size: 11))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             }
 
             Spacer()
@@ -139,13 +140,13 @@ struct ExcerptView: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 12, weight: selected ? .semibold : .medium))
-                .foregroundStyle(selected ? Palette.onAccent : Palette.secondary)
+                .foregroundStyle(selected ? theme.onAccent : theme.secondary)
                 .padding(.horizontal, 13)
                 .padding(.vertical, 7)
                 .background {
-                    if selected { Capsule().fill(Palette.accentSolid) }
+                    if selected { Capsule().fill(theme.accentSolid) }
                 }
-                .glassCapsule(tint: selected ? nil : Palette.glassTint, interactive: true)
+                .glassCapsule(tint: selected ? nil : theme.glassTint, interactive: true)
                 .contentShape(Capsule())
         }
         .buttonStyle(PressableStyle())
@@ -155,15 +156,15 @@ struct ExcerptView: View {
         VStack(spacing: 10) {
             Image(systemName: "quote.opening")
                 .font(.system(size: 26, weight: .light))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
 
             Text(showOnlyLiked ? "还没有收藏的摘录" : "还没有摘录")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
 
             Text("阅读时长按段落即可摘录")
                 .font(.system(size: 11.5))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
@@ -171,6 +172,7 @@ struct ExcerptView: View {
 }
 
 struct ExcerptCard: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
 
     let excerpt: Excerpt
@@ -190,23 +192,23 @@ struct ExcerptCard: View {
                 Text(excerpt.relativeDate)
                     .font(.system(size: 9.5))
             }
-            .foregroundStyle(Palette.tertiary)
+            .foregroundStyle(theme.tertiary)
 
             Text(excerpt.text)
                 .font(.system(size: 14.5, design: .serif))
                 .lineSpacing(5)
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .multilineTextAlignment(.leading)
 
             if !excerpt.note.isEmpty {
                 HStack(alignment: .top, spacing: 5) {
                     Rectangle()
-                        .fill(Palette.accent.opacity(0.5))
+                        .fill(theme.accent.opacity(0.5))
                         .frame(width: 2)
                     Text(excerpt.note)
                         .font(.system(size: 12))
-                        .foregroundStyle(Palette.secondary)
+                        .foregroundStyle(theme.secondary)
                         .lineSpacing(3)
                 }
                 .padding(.top, 1)
@@ -220,7 +222,7 @@ struct ExcerptCard: View {
                 } label: {
                     Image(systemName: excerpt.liked ? "heart.fill" : "heart")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(excerpt.liked ? Palette.accent : Palette.tertiary)
+                        .foregroundStyle(excerpt.liked ? theme.accent : theme.tertiary)
                 }
                 .buttonStyle(PressableStyle(scale: 0.9))
 
@@ -228,19 +230,20 @@ struct ExcerptCard: View {
 
                 Text("编辑")
                     .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             }
         }
         .padding(14)
         .glassSurface(
             cornerRadius: 22,
-            tint: excerpt.liked ? Palette.accent.opacity(0.06) : nil
+            tint: excerpt.liked ? theme.accent.opacity(0.06) : nil
         )
         .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 }
 
 struct ExcerptDetailSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -267,12 +270,12 @@ struct ExcerptDetailSheet: View {
                                 Text(excerpt.relativeDate)
                                     .font(.system(size: 10))
                             }
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
 
                             Text(excerpt.text)
                                 .font(.system(size: 17, design: .serif))
                                 .lineSpacing(7)
-                                .foregroundStyle(Palette.text)
+                                .foregroundStyle(theme.text)
                         }
                         .padding(16)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -283,7 +286,7 @@ struct ExcerptDetailSheet: View {
 
                             TextEditor(text: $note)
                                 .font(.system(size: 14))
-                                .foregroundStyle(Palette.text)
+                                .foregroundStyle(theme.text)
                                 .scrollContentBackground(.hidden)
                                 .frame(height: 120)
                                 .padding(12)
@@ -292,7 +295,7 @@ struct ExcerptDetailSheet: View {
                                     if note.isEmpty {
                                         Text("写点什么…")
                                             .font(.system(size: 14))
-                                            .foregroundStyle(Palette.tertiary)
+                                            .foregroundStyle(theme.tertiary)
                                             .padding(.horizontal, 17)
                                             .padding(.top, 20)
                                             .allowsHitTesting(false)
@@ -307,7 +310,7 @@ struct ExcerptDetailSheet: View {
                             } label: {
                                 Image(systemName: excerpt.liked ? "heart.fill" : "heart")
                                     .font(.system(size: 16, weight: .medium))
-                                    .foregroundStyle(excerpt.liked ? Palette.accent : Palette.secondary)
+                                    .foregroundStyle(excerpt.liked ? theme.accent : theme.secondary)
                                     .glassCircle(diameter: 50)
                             }
                             .buttonStyle(PressableStyle())
@@ -318,7 +321,7 @@ struct ExcerptDetailSheet: View {
                             } label: {
                                 Image(systemName: "doc.on.doc")
                                     .font(.system(size: 15, weight: .medium))
-                                    .foregroundStyle(Palette.secondary)
+                                    .foregroundStyle(theme.secondary)
                                     .glassCircle(diameter: 50)
                             }
                             .buttonStyle(PressableStyle())
@@ -330,10 +333,10 @@ struct ExcerptDetailSheet: View {
                             } label: {
                                 Text("保存笔记")
                                     .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(Palette.onAccent)
+                                    .foregroundStyle(theme.onAccent)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 15)
-                                    .background(Palette.accentSolid, in: Capsule())
+                                    .background(theme.accentSolid, in: Capsule())
                             }
                             .buttonStyle(PressableStyle(scale: 0.97))
                         }

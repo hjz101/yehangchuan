@@ -9,6 +9,7 @@ enum ShelfStatus: String, CaseIterable, Identifiable {
 }
 
 struct ShelfView: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
 
     @State private var filter: BookKind?
@@ -194,31 +195,31 @@ struct ShelfView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(Palette.accent)
+                            .fill(theme.accent)
                             .frame(width: 5, height: 5)
 
                         Text("继续阅读")
                             .font(.system(size: 10, weight: .semibold))
                             .tracking(1.4)
-                            .foregroundStyle(Palette.accent)
+                            .foregroundStyle(theme.accent)
                     }
 
                     Text(book.title)
                         .font(.system(size: 21, weight: .semibold, design: .serif))
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(theme.text)
                         .lineLimit(1)
 
                     Text(book.lastPosition)
                         .font(.system(size: 11.5))
-                        .foregroundStyle(Palette.secondary)
+                        .foregroundStyle(theme.secondary)
                         .lineLimit(1)
 
                     HStack(spacing: 8) {
-                        ProgressBar(value: book.progress, tint: Palette.accent, height: 3)
+                        ProgressBar(value: book.progress, tint: theme.accent, height: 3)
 
                         Text("\(Int(book.progress * 100))%")
                             .font(.system(size: 10, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                             .monospacedDigit()
                     }
                     .padding(.top, 2)
@@ -226,10 +227,10 @@ struct ShelfView: View {
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Palette.tertiary.opacity(0.6))
+                    .foregroundStyle(theme.tertiary.opacity(0.6))
             }
             .padding(15)
-            .glassSurface(cornerRadius: 26, tint: Palette.accent.opacity(0.10), interactive: true)
+            .glassSurface(cornerRadius: 26, tint: theme.accent.opacity(0.10), interactive: true)
             .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         }
         .buttonStyle(PressableStyle(scale: 0.985))
@@ -241,7 +242,7 @@ struct ShelfView: View {
         HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    chip("全部", selected: filter == nil, tint: Palette.accent) {
+                    chip("全部", selected: filter == nil, tint: theme.accent) {
                         filter = nil
                     }
 
@@ -252,7 +253,7 @@ struct ShelfView: View {
                     }
 
                     if let groupFilter {
-                        chip(groupFilter, selected: true, tint: Palette.jade) {
+                        chip(groupFilter, selected: true, tint: theme.jade) {
                             self.groupFilter = nil
                         }
                     }
@@ -270,9 +271,9 @@ struct ShelfView: View {
             } label: {
                 Image(systemName: status == .all ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(status == .all ? Palette.secondary : Palette.jade)
+                    .foregroundStyle(status == .all ? theme.secondary : theme.jade)
                     .frame(width: 36, height: 36)
-                    .glassCircle(diameter: 36, tint: status == .all ? nil : Palette.jade.opacity(0.16))
+                    .glassCircle(diameter: 36, tint: status == .all ? nil : theme.jade.opacity(0.16))
             }
             .accessibilityLabel("阅读状态筛选")
         }
@@ -282,7 +283,7 @@ struct ShelfView: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 13, weight: selected ? .semibold : .medium))
-                .foregroundStyle(selected ? Palette.onAccent : Palette.secondary)
+                .foregroundStyle(selected ? theme.onAccent : theme.secondary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background {
@@ -290,7 +291,7 @@ struct ShelfView: View {
                         Capsule().fill(tint)
                     }
                 }
-                .glassCapsule(tint: selected ? nil : Palette.glassTint, interactive: true)
+                .glassCapsule(tint: selected ? nil : theme.glassTint, interactive: true)
                 .contentShape(Capsule())
         }
         .buttonStyle(PressableStyle())
@@ -354,20 +355,20 @@ struct ShelfView: View {
         VStack(spacing: 12) {
             Image(systemName: "books.vertical")
                 .font(.system(size: 28, weight: .light))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
 
             Text(query.isEmpty ? "这里还没有书" : "没有找到匹配的书")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
 
             Text(query.isEmpty ? "去书源页搜索并加入书架" : "换个关键词试试")
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
 
             if !query.isEmpty {
                 Button("清除搜索") { query = "" }
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Palette.accent)
+                    .foregroundStyle(theme.accent)
                     .padding(.top, 2)
             } else {
                 Button {
@@ -375,7 +376,7 @@ struct ShelfView: View {
                 } label: {
                     Label("导入本地书", systemImage: "square.and.arrow.down")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Palette.accent)
+                        .foregroundStyle(theme.accent)
                         .padding(.top, 4)
                 }
             }
@@ -399,6 +400,7 @@ struct ShelfView: View {
 // MARK: - Cell
 
 struct ShelfBookCell: View {
+    @Environment(\.theme) private var theme
     let book: Book
     var showProgress = false
 
@@ -409,9 +411,9 @@ struct ShelfBookCell: View {
                     if book.isFinished {
                         Image(systemName: "checkmark")
                             .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(Palette.onAccent)
+                            .foregroundStyle(theme.onAccent)
                             .frame(width: 18, height: 18)
-                            .background(Palette.jade, in: Circle())
+                            .background(theme.jade, in: Circle())
                             .padding(7)
                     }
                 }
@@ -436,12 +438,12 @@ struct ShelfBookCell: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(book.title)
                     .font(.system(size: showProgress ? 14 : 12.5, weight: .semibold, design: .serif))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                     .lineLimit(1)
 
                 Text(book.kind == .novel ? book.author : "\(book.kind.rawValue) · \(book.author)")
                     .font(.system(size: showProgress ? 11 : 10))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                     .lineLimit(1)
             }
         }
@@ -452,6 +454,7 @@ struct ShelfBookCell: View {
 // MARK: - Search
 
 struct ShelfSearchSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Binding var query: String
@@ -480,18 +483,18 @@ struct ShelfSearchSheet: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(book.title)
                                         .font(.system(size: 15, weight: .semibold, design: .serif))
-                                        .foregroundStyle(Palette.text)
+                                        .foregroundStyle(theme.text)
 
                                     Text("\(book.author) · \(book.kind.rawValue)")
                                         .font(.system(size: 11))
-                                        .foregroundStyle(Palette.secondary)
+                                        .foregroundStyle(theme.secondary)
                                 }
 
                                 Spacer()
 
                                 Text(book.lastPosition)
                                     .font(.system(size: 10))
-                                    .foregroundStyle(Palette.tertiary)
+                                    .foregroundStyle(theme.tertiary)
                                     .lineLimit(1)
                             }
                             .padding(11)
@@ -525,6 +528,7 @@ struct ShelfSearchSheet: View {
 // MARK: - Media Detail
 
 struct MediaDetailView: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -588,16 +592,16 @@ struct MediaDetailView: View {
 
                 Text(book.title)
                     .font(.system(size: 24, weight: .semibold, design: .serif))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                     .lineLimit(2)
 
                 Text("\(book.author) · \(book.chapterCountLabel)")
                     .font(.system(size: 12))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
 
                 Text(book.lastPosition)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Palette.jade)
+                    .foregroundStyle(theme.jade)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -617,7 +621,7 @@ struct MediaDetailView: View {
 
     private var metaDivider: some View {
         Rectangle()
-            .fill(Palette.hairline)
+            .fill(theme.hairline)
             .frame(width: 0.6, height: 26)
     }
 
@@ -625,10 +629,10 @@ struct MediaDetailView: View {
         VStack(spacing: 4) {
             Text(value)
                 .font(.system(size: 17, weight: .semibold, design: .rounded))
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
             Text(title)
                 .font(.system(size: 10))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
         }
         .frame(maxWidth: .infinity)
     }
@@ -650,7 +654,7 @@ struct MediaDetailView: View {
 
             Text("共 \(book.pageCount ?? 0) 页")
                 .font(.system(size: 11))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
         }
         .padding(16)
         .glassSurface(cornerRadius: 22)
@@ -663,7 +667,7 @@ struct MediaDetailView: View {
             HStack(alignment: .center, spacing: 3) {
                 ForEach(0..<40, id: \.self) { index in
                     Capsule()
-                        .fill(index < 14 ? Palette.accent : Palette.faint)
+                        .fill(index < 14 ? theme.accent : theme.faint)
                         .frame(width: 3, height: CGFloat(8 + (index * 11) % 28))
                 }
             }
@@ -671,7 +675,7 @@ struct MediaDetailView: View {
 
             Text("上次听到 01:12")
                 .font(.system(size: 11))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
         }
         .padding(16)
         .glassSurface(cornerRadius: 22)
@@ -684,7 +688,7 @@ struct MediaDetailView: View {
             } label: {
                 Image(systemName: "speaker.wave.2")
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                     .glassCircle(diameter: 50)
             }
             .buttonStyle(PressableStyle())
@@ -694,7 +698,7 @@ struct MediaDetailView: View {
             } label: {
                 Image(systemName: book.isFinished ? "checkmark.circle.fill" : "checkmark.circle")
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(book.isFinished ? Palette.jade : Palette.secondary)
+                    .foregroundStyle(book.isFinished ? theme.jade : theme.secondary)
                     .glassCircle(diameter: 50)
             }
             .buttonStyle(PressableStyle())
@@ -715,10 +719,10 @@ struct MediaDetailView: View {
                     Text(book.kind == .audio ? "开始收听" : "继续阅读")
                         .font(.system(size: 15, weight: .semibold))
                 }
-                .foregroundStyle(Palette.onAccent)
+                .foregroundStyle(theme.onAccent)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 15)
-                .background(Palette.accentSolid, in: Capsule())
+                .background(theme.accentSolid, in: Capsule())
             }
             .buttonStyle(PressableStyle(scale: 0.97))
         }

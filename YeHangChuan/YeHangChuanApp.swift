@@ -15,12 +15,13 @@ struct YeHangChuanApp: App {
 
     var body: some Scene {
         WindowGroup {
+            let tokens = ThemeStore.shared.resolvedTokens()
             RootView()
                 .environment(store)
                 // P0-07：根部立即注入主题令牌，首帧即用户主题；
                 // 不用 onAppear 切换、不加过渡动画（避免闪默认色）。
-                .environment(\.theme, ThemeStore.shared.resolvedTokens())
-                .tint(Palette.accent)
+                .environment(\.theme, tokens)
+                .tint(tokens.accent)
                 .background {
                     // 零尺寸叶子：落盘与字体注册都放这里，避免拖滑块重建 RootView。
                     ThemeApplicator()
@@ -253,6 +254,7 @@ struct AccessoryBar: View {
 }
 
 private struct ContinueReadingBar: View {
+    @Environment(\.theme) private var theme
     let book: Book
     let action: () -> Void
 
@@ -265,23 +267,23 @@ private struct ContinueReadingBar: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(book.title)
                         .font(.system(size: 13, weight: .semibold, design: .serif))
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(theme.text)
                         .lineLimit(1)
 
                     Text(book.lastPosition)
                         .font(.system(size: 10.5))
-                        .foregroundStyle(Palette.tertiary)
+                        .foregroundStyle(theme.tertiary)
                         .lineLimit(1)
                 }
 
                 Spacer(minLength: 6)
 
-                ProgressBar(value: book.progress, tint: Palette.accent, height: 2.5)
+                ProgressBar(value: book.progress, tint: theme.accent, height: 2.5)
                     .frame(width: 54)
 
                 Image(systemName: "play.fill")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Palette.accent)
+                    .foregroundStyle(theme.accent)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -292,6 +294,7 @@ private struct ContinueReadingBar: View {
 }
 
 struct MiniPlayerBar: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     let book: Book
 
@@ -306,16 +309,16 @@ struct MiniPlayerBar: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(book.title)
                     .font(.system(size: 13, weight: .semibold, design: .serif))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
-                    ProgressBar(value: player.progress, tint: Palette.accent, height: 2)
+                    ProgressBar(value: player.progress, tint: theme.accent, height: 2)
                         .frame(width: 62)
 
                     Text(player.elapsedLabel)
                         .font(.system(size: 9.5, weight: .medium, design: .rounded))
-                        .foregroundStyle(Palette.tertiary)
+                        .foregroundStyle(theme.tertiary)
                         .monospacedDigit()
                 }
             }
@@ -329,7 +332,7 @@ struct MiniPlayerBar: View {
             } label: {
                 Image(systemName: "gobackward.15")
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
             }
             .buttonStyle(PressableStyle())
 
@@ -338,9 +341,9 @@ struct MiniPlayerBar: View {
             } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Palette.onAccent)
+                    .foregroundStyle(theme.onAccent)
                     .frame(width: 30, height: 30)
-                    .background(Palette.accent, in: Circle())
+                    .background(theme.accent, in: Circle())
             }
             .buttonStyle(PressableStyle())
         }
@@ -352,6 +355,7 @@ struct MiniPlayerBar: View {
 // MARK: - Full Screen Player
 
 struct AudioPlayerView: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -412,7 +416,7 @@ struct AudioPlayerView: View {
             } label: {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                     .glassCircle(diameter: 38)
             }
             .buttonStyle(PressableStyle())
@@ -423,10 +427,10 @@ struct AudioPlayerView: View {
                 Text("正在播放")
                     .font(.system(size: 10, weight: .semibold))
                     .tracking(1.6)
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                 Text("潮汐电台 · 第 \(book.chapterCount) 期")
                     .font(.system(size: 11))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
             }
 
             Spacer()
@@ -437,7 +441,7 @@ struct AudioPlayerView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                     .glassCircle(diameter: 38)
             }
             .buttonStyle(PressableStyle())
@@ -466,11 +470,11 @@ struct AudioPlayerView: View {
         VStack(spacing: 5) {
             Text(book.title)
                 .font(.system(size: 24, weight: .semibold, design: .serif))
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
 
             Text("\(book.author) · 有声书")
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
         }
     }
 
@@ -484,7 +488,7 @@ struct AudioPlayerView: View {
                 ),
                 in: 0...max(player.duration, 1)
             )
-            .tint(Palette.accent)
+            .tint(theme.accent)
 
             HStack {
                 Text(player.elapsedLabel)
@@ -492,7 +496,7 @@ struct AudioPlayerView: View {
                 Text(player.remainingLabel)
             }
             .font(.system(size: 10.5, weight: .medium, design: .rounded))
-            .foregroundStyle(Palette.tertiary)
+            .foregroundStyle(theme.tertiary)
             .monospacedDigit()
         }
         .padding(.top, 20)
@@ -504,24 +508,24 @@ struct AudioPlayerView: View {
             Button { player.skip(-15) } label: {
                 Image(systemName: "gobackward.15")
                     .font(.system(size: 24, weight: .medium))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
             }
             .buttonStyle(PressableStyle())
 
             Button { player.toggle() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 26, weight: .bold))
-                    .foregroundStyle(Palette.onAccent)
+                    .foregroundStyle(theme.onAccent)
                     .frame(width: 72, height: 72)
-                    .background(Palette.accentSolid, in: Circle())
-                    .shadow(color: Palette.accentSolid.opacity(0.35), radius: 16, y: 8)
+                    .background(theme.accentSolid, in: Circle())
+                    .shadow(color: theme.accentSolid.opacity(0.35), radius: 16, y: 8)
             }
             .buttonStyle(PressableStyle(scale: 0.92))
 
             Button { player.skip(30) } label: {
                 Image(systemName: "goforward.30")
                     .font(.system(size: 24, weight: .medium))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
             }
             .buttonStyle(PressableStyle())
         }
@@ -547,7 +551,7 @@ struct AudioPlayerView: View {
                 Text(title)
                     .font(.system(size: 10))
             }
-            .foregroundStyle(Palette.secondary)
+            .foregroundStyle(theme.secondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 11)
             .glassSurface(cornerRadius: 18, interactive: true)
@@ -570,14 +574,14 @@ struct AudioPlayerView: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: index == store.player.chapterIndex ? "play.circle.fill" : "play.circle")
-                                    .foregroundStyle(index == store.player.chapterIndex ? Palette.accent : Palette.tertiary)
+                                    .foregroundStyle(index == store.player.chapterIndex ? theme.accent : theme.tertiary)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(chapter.title)
                                         .font(.system(size: 13, weight: .medium))
-                                        .foregroundStyle(Palette.text)
+                                        .foregroundStyle(theme.text)
                                     Text("\(chapter.paragraphs.count) 段")
                                         .font(.system(size: 10))
-                                        .foregroundStyle(Palette.tertiary)
+                                        .foregroundStyle(theme.tertiary)
                                 }
                                 Spacer()
                             }
@@ -615,10 +619,10 @@ struct AudioPlayerView: View {
                                 .font(.system(size: 13))
                             Spacer()
                             if store.player.sleepMinutes == minutes {
-                                Image(systemName: "checkmark").foregroundStyle(Palette.accent)
+                                Image(systemName: "checkmark").foregroundStyle(theme.accent)
                             }
                         }
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(theme.text)
                         .padding(14)
                         .glassSurface(cornerRadius: 16, interactive: true)
                     }
@@ -646,10 +650,10 @@ struct AudioPlayerView: View {
                     VStack(spacing: 12) {
                         Image(systemName: "text.bubble")
                             .font(.system(size: 34, weight: .light))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                         Text("本章暂无段评")
                             .font(.system(size: 13))
-                            .foregroundStyle(Palette.secondary)
+                            .foregroundStyle(theme.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -660,15 +664,15 @@ struct AudioPlayerView: View {
                                     HStack {
                                         Text(comment.author)
                                             .font(.system(size: 11, weight: .semibold))
-                                            .foregroundStyle(Palette.accent)
+                                            .foregroundStyle(theme.accent)
                                         Spacer()
                                         Text("\(comment.likes) 赞")
                                             .font(.system(size: 10))
-                                            .foregroundStyle(Palette.tertiary)
+                                            .foregroundStyle(theme.tertiary)
                                     }
                                     Text(comment.text)
                                         .font(.system(size: 13))
-                                        .foregroundStyle(Palette.text)
+                                        .foregroundStyle(theme.text)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(14)

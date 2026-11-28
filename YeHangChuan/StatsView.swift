@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct StatsView: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
 
     @State private var hoveredDay: DayStat?
@@ -36,7 +37,7 @@ struct StatsView: View {
             RingProgress(
                 value: store.goalProgress,
                 lineWidth: 9,
-                tint: Palette.accent,
+                tint: theme.accent,
                 label: "\(store.todayMinutes)",
                 caption: "/ \(store.goalMinutes) 分"
             )
@@ -46,27 +47,27 @@ struct StatsView: View {
                 HStack(spacing: 6) {
                     Text("今日阅读")
                         .font(.system(size: 16, weight: .semibold, design: .serif))
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(theme.text)
 
                     if store.todayMinutes >= store.goalMinutes {
                         Text("已达标")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Palette.onAccent)
+                            .foregroundStyle(theme.onAccent)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2.5)
-                            .background(Palette.jade, in: Capsule())
+                            .background(theme.jade, in: Capsule())
                     }
                 }
 
                 Text(goalMessage)
                     .font(.system(size: 11.5))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 14) {
-                    metric("连续", "\(store.streak) 天", tint: Palette.gold)
-                    metric("本周", formattedHours(store.weekMinutes), tint: Palette.jade)
-                    metric("日均", "\(store.weekAverage) 分", tint: Palette.accent)
+                    metric("连续", "\(store.streak) 天", tint: theme.gold)
+                    metric("本周", formattedHours(store.weekMinutes), tint: theme.jade)
+                    metric("日均", "\(store.weekAverage) 分", tint: theme.accent)
                 }
                 .padding(.top, 3)
             }
@@ -92,7 +93,7 @@ struct StatsView: View {
                 .foregroundStyle(tint)
             Text(title)
                 .font(.system(size: 9.5))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
         }
     }
 
@@ -107,7 +108,7 @@ struct StatsView: View {
 
                 Text("\(formattedHours(store.weekMinutes))")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
             }
 
             let peak = max(store.weekDays.map(\.minutes).max() ?? 1, 1)
@@ -125,7 +126,7 @@ struct StatsView: View {
 
                                 Text(day.minutes > 0 ? "\(day.minutes)" : "")
                                     .font(.system(size: 9, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(day.isToday ? Palette.accent : Palette.tertiary)
+                                    .foregroundStyle(day.isToday ? theme.accent : theme.tertiary)
                                     .monospacedDigit()
                                     .frame(height: labelHeight)
 
@@ -133,8 +134,8 @@ struct StatsView: View {
                                     .fill(
                                         LinearGradient(
                                             colors: day.isToday
-                                                ? [Palette.accent, Palette.accent.opacity(0.55)]
-                                                : [Palette.jade.opacity(0.75), Palette.jade.opacity(0.3)],
+                                                ? [theme.accent, theme.accent.opacity(0.55)]
+                                                : [theme.jade.opacity(0.75), theme.jade.opacity(0.3)],
                                             startPoint: .top,
                                             endPoint: .bottom
                                         )
@@ -146,19 +147,19 @@ struct StatsView: View {
 
                         Text(day.isToday ? "今" : day.weekdayLabel)
                             .font(.system(size: 10, weight: day.isToday ? .bold : .medium))
-                            .foregroundStyle(day.isToday ? Palette.accent : Palette.tertiary)
+                            .foregroundStyle(day.isToday ? theme.accent : theme.tertiary)
                     }
                     .frame(maxWidth: .infinity)
                 }
             }
 
             HStack(spacing: 14) {
-                legendItem(color: Palette.accent, text: "今天")
-                legendItem(color: Palette.jade, text: "其他日期")
+                legendItem(color: theme.accent, text: "今天")
+                legendItem(color: theme.jade, text: "其他日期")
                 Spacer()
                 Text("最高 \(peak) 分钟")
                     .font(.system(size: 9.5))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             }
         }
         .padding(16)
@@ -172,7 +173,7 @@ struct StatsView: View {
                 .frame(width: 7, height: 7)
             Text(text)
                 .font(.system(size: 9.5))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
         }
     }
 
@@ -187,7 +188,7 @@ struct StatsView: View {
             HStack(spacing: 9) {
                 Text("少")
                     .font(.system(size: 9))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
 
                 ForEach(0..<4, id: \.self) { level in
                     RoundedRectangle(cornerRadius: 2.5, style: .continuous)
@@ -197,13 +198,13 @@ struct StatsView: View {
 
                 Text("多")
                     .font(.system(size: 9))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
 
                 Spacer()
 
                 Text("平均 \(store.weekAverage) 分钟 / 天")
                     .font(.system(size: 9.5))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             }
         }
         .padding(16)
@@ -225,7 +226,7 @@ struct StatsView: View {
                             .overlay {
                                 if day.isToday {
                                     RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                        .strokeBorder(Palette.accent, lineWidth: 1.4)
+                                        .strokeBorder(theme.accent, lineWidth: 1.4)
                                 }
                             }
                     }
@@ -243,20 +244,20 @@ struct StatsView: View {
 
     private func heatColor(for minutes: Int) -> Color {
         switch minutes {
-        case 0: Palette.faint
-        case 1..<30: Palette.jade.opacity(0.22)
-        case 30..<60: Palette.jade.opacity(0.42)
-        case 60..<85: Palette.jade.opacity(0.66)
-        default: Palette.jade.opacity(0.92)
+        case 0: theme.faint
+        case 1..<30: theme.jade.opacity(0.22)
+        case 30..<60: theme.jade.opacity(0.42)
+        case 60..<85: theme.jade.opacity(0.66)
+        default: theme.jade.opacity(0.92)
         }
     }
 
     private func heatColor(level: Int) -> Color {
         switch level {
-        case 0: Palette.faint
-        case 1: Palette.jade.opacity(0.22)
-        case 2: Palette.jade.opacity(0.55)
-        default: Palette.jade.opacity(0.92)
+        case 0: theme.faint
+        case 1: theme.jade.opacity(0.22)
+        case 2: theme.jade.opacity(0.55)
+        default: theme.jade.opacity(0.92)
         }
     }
 
@@ -287,7 +288,7 @@ struct StatsView: View {
             Text(insightText)
                 .font(.system(size: 11.5))
                 .lineSpacing(4)
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
                 .padding(.top, 1)
         }
         .padding(16)
@@ -304,19 +305,19 @@ struct StatsView: View {
         VStack(alignment: .leading, spacing: 5) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Palette.accent)
+                .foregroundStyle(theme.accent)
 
             Text(value)
                 .font(.system(size: 17, weight: .semibold, design: .rounded))
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
 
             Text(caption)
                 .font(.system(size: 9.5))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(11)
-        .glassSurface(cornerRadius: 17, tint: Palette.glassTint)
+        .glassSurface(cornerRadius: 17, tint: theme.glassTint)
     }
 
     // MARK: Helpers

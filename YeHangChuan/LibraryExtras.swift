@@ -23,6 +23,7 @@ enum ImportMethod: String, CaseIterable, Identifiable {
 }
 
 struct SmartImportSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -111,7 +112,7 @@ struct SmartImportSheet: View {
             ProgressView().themedProgress()
             Text("正在识别编码与章节…")
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
         }
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -136,7 +137,7 @@ struct SmartImportSheet: View {
                 VStack(alignment: .leading, spacing: 10) {
                     TextField("https 链接", text: $linkText)
                         .font(.system(size: 14))
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(theme.text)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .padding(.horizontal, 14)
@@ -168,17 +169,17 @@ struct SmartImportSheet: View {
         HStack(spacing: 13) {
             Image(systemName: symbol)
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Palette.onAccent)
+                .foregroundStyle(theme.onAccent)
                 .frame(width: 42, height: 42)
-                .background(Palette.accentSolid, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .background(theme.accentSolid, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 14.5, weight: .semibold))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                 Text(detail)
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
                     .multilineTextAlignment(.leading)
             }
 
@@ -186,7 +187,7 @@ struct SmartImportSheet: View {
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Palette.tertiary.opacity(0.6))
+                .foregroundStyle(theme.tertiary.opacity(0.6))
         }
         .contentShape(Rectangle())
     }
@@ -217,16 +218,16 @@ struct SmartImportSheet: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(draft.title)
                         .font(.system(size: 19, weight: .semibold, design: .serif))
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(theme.text)
                         .lineLimit(2)
 
                     Text("\(draft.author) · \(draft.kind.rawValue)")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(Palette.secondary)
+                        .foregroundStyle(theme.secondary)
 
                     Text(draft.detail)
                         .font(.system(size: 10.5))
-                        .foregroundStyle(Palette.tertiary)
+                        .foregroundStyle(theme.tertiary)
                         .lineLimit(2)
                 }
 
@@ -238,12 +239,12 @@ struct SmartImportSheet: View {
                     HStack(spacing: 8) {
                         Text(chapter.title)
                             .font(.system(size: 12.5, weight: .medium))
-                            .foregroundStyle(Palette.text)
+                            .foregroundStyle(theme.text)
                             .lineLimit(1)
                         Spacer()
                         Text("\(chapter.paragraphs.reduce(0) { $0 + $1.text.count }) 字")
                             .font(.system(size: 10, design: .rounded))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                             .monospacedDigit()
                     }
                     .padding(.vertical, 3)
@@ -257,22 +258,22 @@ struct SmartImportSheet: View {
                 dismiss()
             } label: {
                 Text("加入书架")
-                    .readableButtonStyle(tint: Palette.accentSolid)
+                    .readableButtonStyle(tint: theme.accentSolid)
             }
             .buttonStyle(PressableStyle(scale: 0.97))
         }
         .padding(15)
-        .glassSurface(cornerRadius: 24, tint: Palette.accent.opacity(0.06))
+        .glassSurface(cornerRadius: 24, tint: theme.accent.opacity(0.06))
     }
 
     private func messagePanel(_ text: String) -> some View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: "info.circle")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Palette.gold)
+                .foregroundStyle(theme.gold)
             Text(text)
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(13)
@@ -283,7 +284,7 @@ struct SmartImportSheet: View {
     private var formatNote: some View {
         Text("TXT、EPUB 与 CBZ/ZIP 漫画为真实解析；音频会复制进沙箱按真实时长播放。所有内容只留在这台设备。")
             .font(.system(size: 10.5))
-            .foregroundStyle(Palette.tertiary)
+            .foregroundStyle(theme.tertiary)
             .padding(.horizontal, 2)
     }
 
@@ -586,6 +587,7 @@ final class ComicReaderModel {
 }
 
 struct ComicReaderView: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -713,7 +715,7 @@ struct ComicReaderView: View {
                 } label: {
                     Image(systemName: cached ? "arrow.down.circle.fill" : "arrow.down.circle")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(cached ? Palette.jade : .white)
+                        .foregroundStyle(cached ? theme.jade : .white)
                         .glassCircle(diameter: 40)
                 }
                 .buttonStyle(PressableStyle())
@@ -734,7 +736,7 @@ struct ComicReaderView: View {
                     ),
                     in: 0...Double(pageCount - 1)
                 )
-                .tint(Palette.accent)
+                .tint(theme.accent)
                 Text("\(pageCount)")
             }
             .font(.system(size: 10, weight: .semibold, design: .rounded))
@@ -860,6 +862,7 @@ struct ComicReaderView: View {
 
 /// 书架详情页的三页缩略。真漫画从沙箱压缩包取前三页，老演示书回落到占位图。
 struct ComicCoverStrip: View {
+    @Environment(\.theme) private var theme
     let book: Book
     @State private var images: [Int: UIImage] = [:]
     @State private var didLoad = false
@@ -874,7 +877,7 @@ struct ComicCoverStrip: View {
             ForEach(0..<3, id: \.self) { index in
                 ZStack {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(index == 0 ? Color(hex: 0x2C3A48) : Palette.faint)
+                        .fill(index == 0 ? Color(hex: 0x2C3A48) : theme.faint)
                     if let image = images[index] {
                         Image(uiImage: image)
                             .resizable()
@@ -882,7 +885,7 @@ struct ComicCoverStrip: View {
                     } else {
                         Image(systemName: index == 0 ? "cloud.moon" : "photo")
                             .font(.system(size: 17, weight: .light))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                     }
                 }
                 .frame(height: 96)
@@ -1001,11 +1004,15 @@ struct ComicPageView: View {
 }
 
 struct ComicPageArt: View {
+    @Environment(\.theme) private var theme
     let book: Book
     let page: Int
     let total: Int
 
-    private var colors: (Color, Color) { Palette.cover(book.coverStyle + page) }
+    private var colors: (Color, Color) {
+        let idx = abs(book.coverStyle + page) % theme.covers.count
+        return (theme.covers[idx], theme.coversDeep[idx])
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -1084,6 +1091,7 @@ struct ComicPageArt: View {
 // MARK: - Bookmarks
 
 struct BookmarkListSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -1117,24 +1125,24 @@ struct BookmarkListSheet: View {
                                     HStack(spacing: 12) {
                                         Image(systemName: "bookmark.fill")
                                             .font(.system(size: 13))
-                                            .foregroundStyle(Palette.accent)
+                                            .foregroundStyle(theme.accent)
                                             .frame(width: 30, height: 30)
-                                            .background(Palette.accent.opacity(0.12), in: Circle())
+                                            .background(theme.accent.opacity(0.12), in: Circle())
 
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(bookmark.chapterTitle)
                                                 .font(.system(size: 13.5, weight: .medium))
-                                                .foregroundStyle(Palette.text)
+                                                .foregroundStyle(theme.text)
                                                 .lineLimit(1)
 
                                             Text("\(bookmark.percentLabel) · \(bookmark.createdAt.formatted(date: .abbreviated, time: .shortened))")
                                                 .font(.system(size: 10))
-                                                .foregroundStyle(Palette.tertiary)
+                                                .foregroundStyle(theme.tertiary)
 
                                             if !bookmark.note.isEmpty {
                                                 Text(bookmark.note)
                                                     .font(.system(size: 10.5, design: .serif))
-                                                    .foregroundStyle(Palette.secondary)
+                                                    .foregroundStyle(theme.secondary)
                                                     .lineLimit(2)
                                             }
                                         }
@@ -1143,7 +1151,7 @@ struct BookmarkListSheet: View {
 
                                         Image(systemName: "chevron.right")
                                             .font(.system(size: 11, weight: .bold))
-                                            .foregroundStyle(Palette.tertiary.opacity(0.5))
+                                            .foregroundStyle(theme.tertiary.opacity(0.5))
                                     }
                                     .padding(12)
                                     .glassSurface(cornerRadius: 18)
@@ -1189,6 +1197,7 @@ struct BookmarkListSheet: View {
 }
 
 struct BookmarkNoteSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -1203,11 +1212,11 @@ struct BookmarkNoteSheet: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(bookmark.chapterTitle)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Palette.secondary)
+                        .foregroundStyle(theme.secondary)
 
                     TextEditor(text: $note)
                         .font(.system(size: 14, design: .serif))
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(theme.text)
                         .scrollContentBackground(.hidden)
                         .padding(10)
                         .frame(maxHeight: .infinity)
@@ -1218,7 +1227,7 @@ struct BookmarkNoteSheet: View {
                         dismiss()
                     } label: {
                         Text("保存备注")
-                            .readableButtonStyle(tint: Palette.accentSolid)
+                            .readableButtonStyle(tint: theme.accentSolid)
                     }
                     .buttonStyle(PressableStyle(scale: 0.97))
                 }
@@ -1239,6 +1248,7 @@ struct BookmarkNoteSheet: View {
 // MARK: - Spoken reading
 
 struct ListenSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -1293,7 +1303,7 @@ struct ListenSheet: View {
             } label: {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                     .glassCircle(diameter: 38)
             }
             .buttonStyle(PressableStyle())
@@ -1304,10 +1314,10 @@ struct ListenSheet: View {
                 Text("系统朗读")
                     .font(.system(size: 10, weight: .semibold))
                     .tracking(1.6)
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                 Text("真实语音 · 无需音频文件")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
             }
 
             Spacer()
@@ -1318,7 +1328,7 @@ struct ListenSheet: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                     .glassCircle(diameter: 38)
             }
             .buttonStyle(PressableStyle())
@@ -1329,19 +1339,19 @@ struct ListenSheet: View {
     private var cover: some View {
         BookCover(book: book, cornerRadius: 26, prominent: true)
             .frame(maxWidth: 180)
-            .shadow(color: Palette.accent.opacity(0.18), radius: 26, y: 14)
+            .shadow(color: theme.accent.opacity(0.18), radius: 26, y: 14)
     }
 
     private var titleBlock: some View {
         VStack(spacing: 5) {
             Text(chapterTitle)
                 .font(.system(size: 23, weight: .semibold, design: .serif))
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
                 .lineLimit(1)
 
             Text("\(book.title) · \(book.author)")
                 .font(.system(size: 11.5))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
         }
     }
 
@@ -1354,7 +1364,7 @@ struct ListenSheet: View {
                         ? 0.35 + abs(sin(phase * 2.4 + Double(index) * 0.42)) * 0.65
                         : 0.18
                     Capsule()
-                        .fill(index < Int(speech.progress * 44) ? Palette.accent : Palette.faint)
+                        .fill(index < Int(speech.progress * 44) ? theme.accent : theme.faint)
                         .frame(width: 3, height: 8 + CGFloat(value) * 30)
                 }
             }
@@ -1372,7 +1382,7 @@ struct ListenSheet: View {
                 ),
                 in: 0...1
             )
-            .tint(Palette.accent)
+            .tint(theme.accent)
 
             HStack {
                 Text(speech.elapsedLabel)
@@ -1380,7 +1390,7 @@ struct ListenSheet: View {
                 Text(speech.remainingLabel)
             }
             .font(.system(size: 10.5, weight: .medium, design: .rounded))
-            .foregroundStyle(Palette.tertiary)
+            .foregroundStyle(theme.tertiary)
             .monospacedDigit()
         }
         .padding(.top, 14)
@@ -1391,24 +1401,24 @@ struct ListenSheet: View {
             Button { speech.skip(-80) } label: {
                 Image(systemName: "gobackward.15")
                     .font(.system(size: 23, weight: .medium))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
             }
             .buttonStyle(PressableStyle())
 
             Button { speech.toggle() } label: {
                 Image(systemName: speech.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 26, weight: .bold))
-                    .foregroundStyle(Palette.onAccent)
+                    .foregroundStyle(theme.onAccent)
                     .frame(width: 72, height: 72)
-                    .background(Palette.accentSolid, in: Circle())
-                    .shadow(color: Palette.accentSolid.opacity(0.35), radius: 16, y: 8)
+                    .background(theme.accentSolid, in: Circle())
+                    .shadow(color: theme.accentSolid.opacity(0.35), radius: 16, y: 8)
             }
             .buttonStyle(PressableStyle(scale: 0.92))
 
             Button { speech.skip(120) } label: {
                 Image(systemName: "goforward.30")
                     .font(.system(size: 23, weight: .medium))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
             }
             .buttonStyle(PressableStyle())
         }
@@ -1441,10 +1451,10 @@ struct ListenSheet: View {
                 Text(speech.sleepMinutes > 0 ? "定时 \(speech.sleepMinutes) 分钟" : "睡眠定时")
             }
             .font(.system(size: 11.5, weight: .medium))
-            .foregroundStyle(Palette.secondary)
+            .foregroundStyle(theme.secondary)
             .padding(.horizontal, 13)
             .padding(.vertical, 8)
-            .glassCapsule(tint: Palette.glassTint, interactive: true)
+            .glassCapsule(tint: theme.glassTint, interactive: true)
         }
         .padding(.top, 14)
     }
@@ -1453,6 +1463,7 @@ struct ListenSheet: View {
 // MARK: - Source switch
 
 struct SourceSwitchSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -1483,14 +1494,14 @@ struct SourceSwitchSheet: View {
                                 HStack(spacing: 12) {
                                     Image(systemName: source.kind == .js ? "curlybraces" : "doc.text")
                                         .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(Palette.jade)
+                                        .foregroundStyle(theme.jade)
                                         .frame(width: 34, height: 34)
-                                        .background(Palette.jade.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                        .background(theme.jade.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(source.name)
                                             .font(.system(size: 14, weight: .medium))
-                                            .foregroundStyle(Palette.text)
+                                            .foregroundStyle(theme.text)
                                         Text(statusText(source: source, probe: probe, switching: switching))
                                             .font(.system(size: 10))
                                             .foregroundStyle(statusTint(source: source, probe: probe))
@@ -1507,14 +1518,14 @@ struct SourceSwitchSheet: View {
                                         } label: {
                                             Text(book.sourceID == source.id ? "当前" : "切换")
                                                 .font(.system(size: 11.5, weight: .semibold))
-                                                .foregroundStyle(book.sourceID == source.id ? Palette.secondary : Palette.onAccent)
+                                                .foregroundStyle(book.sourceID == source.id ? theme.secondary : theme.onAccent)
                                                 .padding(.horizontal, 12)
                                                 .padding(.vertical, 7)
                                                 .background {
                                                     if book.sourceID != source.id {
-                                                        Capsule().fill(Palette.accentSolid)
+                                                        Capsule().fill(theme.accentSolid)
                                                     } else {
-                                                        Capsule().fill(Palette.faint)
+                                                        Capsule().fill(theme.faint)
                                                     }
                                                 }
                                         }
@@ -1529,7 +1540,7 @@ struct SourceSwitchSheet: View {
 
                         Text("切换会在这个书源里检索同名书，并验证详情、目录与正文都读得到才提交。验证期间阅读位置会按章节标题迁移。")
                             .font(.system(size: 10.5))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                             .padding(.top, 10)
                     }
                     .padding(.horizontal, 18)
@@ -1572,8 +1583,8 @@ struct SourceSwitchSheet: View {
     }
 
     private func statusTint(source: BookSource, probe: SourceProbe?) -> Color {
-        if failures[source.id] != nil { return Palette.accent }
-        return probe?.ok == false ? Palette.accent : Palette.tertiary
+        if failures[source.id] != nil { return theme.accent }
+        return probe?.ok == false ? theme.accent : theme.tertiary
     }
 
     /// 点击切换：交给上层真正换源，失败就把原因留在这一行。
@@ -1598,9 +1609,19 @@ struct SourceSwitchSheet: View {
 
 extension View {
     func readableButtonStyle(tint: Color) -> some View {
-        self
+        modifier(ReadableButtonStyleModifier(tint: tint))
+    }
+}
+
+private struct ReadableButtonStyleModifier: ViewModifier {
+    let tint: Color
+
+    @Environment(\.theme) private var theme
+
+    func body(content: Content) -> some View {
+        content
             .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(Palette.onAccent)
+            .foregroundStyle(theme.onAccent)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(tint, in: Capsule())
