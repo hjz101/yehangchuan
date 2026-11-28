@@ -536,6 +536,12 @@ final class ComicReaderModel {
 
     var hasRealComic: Bool { report != nil }
 
+    /// 这一页的图片是否读不出来（失败过，或还没加载成功且不是刚在加载）。
+    /// 朗读定位时据此如实说明，而不是念一句通用描述。
+    func imageMissing(for index: Int) -> Bool {
+        failedPages.contains(index) || (images[index] == nil && !loading.contains(index) && report != nil)
+    }
+
     func configure(url: URL?, expectsComic: Bool) {
         comicURL = url
         report = nil
@@ -758,15 +764,11 @@ struct ComicReaderView: View {
                 .buttonStyle(PressableStyle())
 
                 Button {
-                    store.speech.load(
-                        book: book,
-                        chapterTitle: "第 \(page + 1) 页",
-                        text: "第 \(page + 1) 页画面。\(book.title)的镜头从夜色里推进，人物沿着灯光向前走。"
-                    )
+                    store.speech.load(book: book, chapterTitle: speechTitle, text: speechText)
                     store.speech.toggle()
-                    store.showToast("已开始朗读画面描述")
+                    store.showToast("已开始朗读本页定位信息")
                 } label: {
-                    toolLabel("朗读", "speaker.wave.2")
+                    toolLabel("朗读位置", "speaker.wave.2")
                 }
                 .buttonStyle(PressableStyle())
 
@@ -824,6 +826,35 @@ struct ComicReaderView: View {
             progress: Double(page + 1) / Double(pageCount),
             position: "第 \(page + 1) 页 / \(pageCount)"
         )
+    }
+
+    // MARK: - 朗读本页定位
+
+    /// 漫画页没有语义描述可用，朗读只报真实存在的定位信息：
+    /// 书名、页码、章节名（压缩包里若有章节目录），再加上画布状态。
+    /// 以前的「画面描述」是写死的一句「镜头从夜色里推进」，等于编造内容。
+    private var speechTitle: String {
+        let chapter = model.report.flatMap { report in
+            page < report.pages.count ? report.pages[page].chapter : nil
+        }
+        return (chapter?.isEmpty == false ? chapter! : book.title) + " · 第 \(page + 1) 页"
+    }
+
+    private var speechText: String {
+        var parts = [
+            "《\(book.title)》第 \(page + 1) 页，共 \(pageCount) 页。"
+        ]
+        if let chapter = model.report.flatMap({ report in
+            page < report.pages.count ? report.pages[page].chapter : nil
+        }), !chapter.isEmpty {
+            parts.append("本章为 \(chapter)。")
+        }
+        if model.imageMissing(for: page) {
+            parts.append("这一页的图片没有读出来。")
+        } else if model.isBroken {
+            parts.append("漫画文件已丢失或损坏，请重新导入。")
+        }
+        return parts.joined()
     }
 }
 
