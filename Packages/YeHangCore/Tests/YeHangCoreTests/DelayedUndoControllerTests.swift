@@ -8,7 +8,7 @@ final class DelayedUndoControllerTests: XCTestCase {
     func testExpiryFiresExactlyOnceAndClearsPending() async throws {
         let controller = DelayedUndoController()
         var expired = 0
-        controller.schedule(delay: .milliseconds(40)) { expired += 1 }
+        controller.schedule(delay: 40_000_000) { expired += 1 }
 
         XCTAssertTrue(controller.isPending)
         try await Task.sleep(nanoseconds: 100_000_000) // 100ms
@@ -22,7 +22,7 @@ final class DelayedUndoControllerTests: XCTestCase {
     func testCancelBeforeExpiryPreventsDeletion() async throws {
         let controller = DelayedUndoController()
         var expired = false
-        controller.schedule(delay: .milliseconds(60)) { expired = true }
+        controller.schedule(delay: 60_000_000) { expired = true }
 
         XCTAssertTrue(controller.isPending)
         controller.cancel()
@@ -35,8 +35,8 @@ final class DelayedUndoControllerTests: XCTestCase {
     func testRescheduleInvalidatesEarlierToken() async throws {
         let controller = DelayedUndoController()
         var expired = 0
-        controller.schedule(delay: .milliseconds(40)) { expired += 1 } // 旧任务
-        controller.schedule(delay: .milliseconds(160)) { expired += 10 } // 新任务
+        controller.schedule(delay: 40_000_000) { expired += 1 } // 旧任务
+        controller.schedule(delay: 160_000_000) { expired += 10 } // 新任务
 
         try await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertEqual(expired, 0, "旧 token 到期时不得触发")

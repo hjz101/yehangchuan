@@ -18,8 +18,11 @@ public final class DelayedUndoController {
     }
 
     /// 排期一次延迟执行。重复调用会先取消前一次，确保同一时刻只有一个有效 token。
+    ///
+    /// 用纳秒而不是 `Duration`：包仍支持 iOS 15，而 `Duration` 相关 API 从 iOS 16 才有，
+    /// 否则 App 目标编译会在这里失败。
     public func schedule(
-        delay: Duration = .seconds(5),
+        delay: UInt64 = 5_000_000_000,
         onExpire: @escaping @MainActor () -> Void
     ) {
         cancel()
@@ -28,7 +31,7 @@ public final class DelayedUndoController {
         isPending = true
         task = Task { @MainActor in
             do {
-                try await Task.sleep(for: delay)
+                try await Task.sleep(nanoseconds: delay)
             } catch {
                 return  // 撤销或重新排期时旧任务被取消
             }
