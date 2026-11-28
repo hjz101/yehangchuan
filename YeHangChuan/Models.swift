@@ -970,10 +970,28 @@ final class AppStore {
     ///
     /// 读在前的话，首次启动会把旧快照（段落 ID 还是「章ID-p序号」）读进内存，
     /// 迁移随后写出的新结构立刻被内存里的旧数据覆盖回去，书签就白改了。
+    ///
+    /// P0-07：主题在最前同步读（只读 JSON、不解码图片/字体，几十毫秒），
+    /// 让首帧就能拿到用户的主题选择，避免闪默认色。
     init() {
+        loadThemeSynchronously()
         runLibraryMigration()
         loadSnapshot()
         loadReadingRecords()
+    }
+
+    /// 同步读主题目录并同步 themeSelection 到 Snapshot 的桥接字段。
+    /// 此阶段主题令牌尚未驱动视图（P1-01 才迁移 Palette），故外观零变化。
+    private func loadThemeSynchronously() {
+        ThemeStore.shared.bootstrap()
+        // Snapshot 的 themeSelection 若存在，优先用它（一期 iCloud 同步来源）；
+        // 否则以 ThemeStore 的 activeThemeID 为准。
+        if themeSelection == nil {
+            themeSelection = ThemeSelection(
+                activeThemeID: ThemeStore.shared.catalog.activeThemeID,
+                catalogSchemaVersion: ThemeStore.shared.catalog.schemaVersion
+            )
+        }
     }
 
     private func loadReadingRecords() {

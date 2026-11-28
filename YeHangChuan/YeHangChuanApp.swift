@@ -17,8 +17,33 @@ struct YeHangChuanApp: App {
         WindowGroup {
             RootView()
                 .environment(store)
+                // P0-07：根部立即注入主题令牌，首帧即用户主题；
+                // 不用 onAppear 切换、不加过渡动画（避免闪默认色）。
+                .environment(\.theme, ThemeStore.shared.resolvedTokens())
                 .tint(Palette.accent)
+                .background {
+                    // 零尺寸叶子：落盘与字体注册都放这里，避免拖滑块重建 RootView。
+                    ThemeApplicator()
+                        .frame(width: 0, height: 0)
+                        .allowsHitTesting(false)
+                }
         }
+    }
+}
+
+/// 主题落盘与字体注册的观察点（仿 SnapshotAutosaver 的零尺寸叶子）。
+/// P0-07 阶段只做落盘；字体注册在 P2-04 实现后从此叶子触发。
+private struct ThemeApplicator: View {
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Color.clear
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active { ThemeStore.shared.flush() }
+            }
+            .onAppear {
+                // P2-04 落点：FontRegistry.registerAll() 在 catalog 解码后触发。
+            }
     }
 }
 
