@@ -956,6 +956,26 @@ struct ThemePackageManifest: Codable, Sendable {
         case createdAt, appVersion, containsExecutableCode
     }
 
+    init(
+        format: String = "yhthm",
+        schemaVersion: Int = ThemeCatalog.currentSchemaVersion,
+        themeID: String,
+        name: String,
+        checksums: [String: String],
+        createdAt: Date = Date(),
+        appVersion: String,
+        containsExecutableCode: Bool = false
+    ) {
+        self.format = format
+        self.schemaVersion = schemaVersion
+        self.themeID = themeID
+        self.name = String(name.prefix(ThemeLimits.name))
+        self.checksums = checksums
+        self.createdAt = createdAt
+        self.appVersion = appVersion
+        self.containsExecutableCode = containsExecutableCode
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         format = (try? c.decodeIfPresent(String.self, forKey: .format)) ?? "yhthm"

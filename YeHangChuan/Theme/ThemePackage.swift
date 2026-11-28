@@ -1,5 +1,6 @@
 import Foundation
 import ZIPFoundation
+import LegadoCore
 import CryptoKit
 
 // MARK: - .yhthm 主题包导入导出（P3-07）
@@ -120,15 +121,15 @@ enum ThemePackage {
         }
         guard data.count <= maxPackageBytes else { throw ThemePackageError.tooLarge }
 
-        guard let archive = Archive(data: data, accessMode: .read) else {
-            throw ThemePackageError.badMagic
-        }
+        let archive: Archive
+        do { archive = try Archive(data: data, accessMode: .read) }
+        catch { throw ThemePackageError.badMagic }
 
         // ① central directory 预判：声明总量 + 压缩比信号 + 条目合法性。
         var declaredTotal: UInt64 = 0
         var compressedTotal: UInt64 = 0
         var seenNames = Set<String>()
-        for entry in archive.entries {
+        for entry in archive {
             let name = entry.path
             guard !name.contains(".."), !name.hasPrefix("/"), !name.contains("\\") else {
                 throw ThemePackageError.traversal(name)
@@ -138,7 +139,7 @@ enum ThemePackage {
             }
             // Entry 公开 API 不暴露加密标志/压缩方式；symlink/directory 通过 type 拒绝，
             // 加密与非标准压缩方式由下方 extract 抛错兜底（等价拒绝）。
-            guard entry.type == .file else { throw ThemePackageError.symlinkEntry(name) }
+            guard entry.type == Entry.EntryType.file else { throw ThemePackageError.symlinkEntry(name) }
             // 可执行脚本/隐藏元数据一律拒绝。
             let lower = (name as NSString).lastPathComponent.lowercased()
             if ["js", "sh", "exe", "dylib", "command"].contains((lower as NSString).pathExtension)
@@ -156,7 +157,7 @@ enum ThemePackage {
         // ② 流式解压：累计字节硬限额 + 单资产上限，超限立即 throw（防声明值欺骗）。
         var extracted: [String: Data] = [:]
         var streamedTotal = 0
-        for entry in archive.entries {
+        for entry in archive {
             var entryData = Data()
             // consumer 闭包可 throw（ZIPFoundation Consumer 是 throws 闭包），
             // 超限立即抛出、不继续解压——这是防"声明值欺骗型炸弹"的关键。
