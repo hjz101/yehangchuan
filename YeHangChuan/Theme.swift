@@ -223,7 +223,7 @@ struct GlassIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: diameter * 0.36, weight: .semibold))
+                .themeFont(.appBody, size: diameter * 0.36, weight: .semibold)
                 .foregroundStyle(foreground ?? theme.text)
                 .glassCircle(diameter: diameter, tint: tint)
                 .contentShape(Circle())
@@ -266,7 +266,7 @@ struct SectionHeading: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(text)
-                .font(.system(size: 12, weight: .semibold))
+                .themeFont(.appBody, size: 12, weight: .semibold))
                 .tracking(1.6)
                 .foregroundStyle(theme.secondary)
 
@@ -274,7 +274,7 @@ struct SectionHeading: View {
 
             if let trailing {
                 Text(trailing)
-                    .font(.system(size: 11, weight: .medium))
+                    .themeFont(.appBody, size: 11, weight: .medium))
                     .foregroundStyle(theme.tertiary)
             }
         }
@@ -340,12 +340,13 @@ struct RingProgress: View {
             VStack(spacing: 1) {
                 if let label {
                     Text(label)
+                        // 保留理由：环数字用圆体是品牌既有设计，不属于主题可换字族范围。
                         .font(.system(size: 17, weight: .semibold, design: .rounded))
                         .foregroundStyle(theme.text)
                 }
                 if let caption {
                     Text(caption)
-                        .font(.system(size: 9, weight: .medium))
+                        .themeFont(.appBody, size: 9, weight: .medium))
                         .foregroundStyle(theme.tertiary)
                 }
             }
@@ -403,7 +404,7 @@ struct BookCover: View {
 
                 VStack(alignment: .leading, spacing: width * 0.05) {
                     Text(book.title)
-                        .font(.system(size: titleSize, weight: .semibold, design: .serif))
+                        .themeFont(.appTitle, size: titleSize, weight: .semibold)
                         .foregroundStyle(.white.opacity(0.96))
                         .lineLimit(3)
                         .minimumScaleFactor(0.7)
@@ -416,7 +417,7 @@ struct BookCover: View {
                         .frame(width: max(6, width * 0.18), height: 1)
 
                     Text(book.author)
-                        .font(.system(size: authorSize, weight: .medium))
+                        .themeFont(.appCaption, size: authorSize, weight: .medium)
                         .foregroundStyle(.white.opacity(0.62))
                         .lineLimit(1)
                 }
@@ -426,7 +427,7 @@ struct BookCover: View {
 
                 if book.kind != .novel {
                     Image(systemName: book.kind.symbol)
-                        .font(.system(size: max(5, width * 0.08), weight: .semibold))
+                        .themeFont(.appCaption, size: max(5, width * 0.08), weight: .semibold)
                         .foregroundStyle(.white.opacity(0.9))
                         .padding(max(2.5, width * 0.04))
                         .background(.black.opacity(0.22), in: Circle())
@@ -459,7 +460,7 @@ struct ToastView: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 13, weight: .medium))
+            .themeFont(.appBody, size: 13, weight: .medium))
             .foregroundStyle(theme.text)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -498,21 +499,21 @@ struct SettingsRow: View {
             HStack(spacing: 13) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 14, weight: .semibold))
+                        .themeFont(.appBody, size: 14, weight: .semibold))
                         .foregroundStyle(rowTint)
                         .frame(width: 30, height: 30)
                         .background(rowTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
 
                 Text(title)
-                    .font(.system(size: 15))
+                    .themeFont(.appBody, size: 15)
                     .foregroundStyle(theme.text)
 
                 Spacer(minLength: 8)
 
                 if let value {
                     Text(value)
-                        .font(.system(size: 13))
+                        .themeFont(.appBody, size: 13)
                         .foregroundStyle(theme.secondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -521,7 +522,7 @@ struct SettingsRow: View {
 
                 if showsChevron {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .bold))
+                        .themeFont(.appBody, size: 11, weight: .bold))
                         .foregroundStyle(theme.tertiary.opacity(0.5))
                 }
             }
@@ -557,7 +558,7 @@ struct GlassSegmented<T: Hashable>: View {
                     }
                 } label: {
                     Text(title(item))
-                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                        .themeFont(.appBody, size: 13, weight: isSelected ? .semibold : .medium)
                         .foregroundStyle(isSelected ? theme.text : theme.secondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)

@@ -48,9 +48,23 @@ extension View {
         self
     }
 
-    /// 语义字体接口骨架（P1-04 实现批量迁移）。
+    /// 语义字体（P1-04）：从主题 uiFont 解析器取字体。
+    /// 默认主题 TypographySpec(system.default/serif, uiScale=1) 产生与
+    /// `.system(size:weight:)` 完全一致的字体，观感零回归；换主题时随 uiFamily 变化。
     func themeFont(_ role: FontRole, size: CGFloat, weight: Font.Weight = .regular) -> some View {
-        // P1-04 落地：从 @Environment(\.theme).uiFont 取字体。
-        self.font(.system(size: size, weight: weight))
+        modifier(ThemeFontModifier(role: role, size: size, weight: weight))
+    }
+}
+
+/// ViewModifier 能读 @Environment，把主题字体套到内容上。
+private struct ThemeFontModifier: ViewModifier {
+    let role: FontRole
+    let size: CGFloat
+    let weight: Font.Weight
+
+    @Environment(\.theme) private var theme
+
+    func body(content: Content) -> some View {
+        content.font(theme.uiFont.font(for: role, size: size, weight: weight))
     }
 }
