@@ -43,6 +43,7 @@ public struct RegexEvaluator: Sendable {
         var captures: [[String]] = []
         let deadline = DispatchTime.now().uptimeNanoseconds + 3_000_000_000
         var timedOut = false
+        var exceeded = false
         expression.enumerateMatches(in: input, options: .reportProgress, range: range) { match, _, stop in
             if DispatchTime.now().uptimeNanoseconds >= deadline {
                 timedOut = true
@@ -50,7 +51,8 @@ public struct RegexEvaluator: Sendable {
                 return
             }
             guard let match else { return }
-            if captures.count >= limits.maximumMatches {
+            if captures.count == limits.maximumMatches {
+                exceeded = true
                 stop.pointee = true
                 return
             }
@@ -61,7 +63,7 @@ public struct RegexEvaluator: Sendable {
             })
         }
         if timedOut { throw RuleEngineError.resourceLimit(rule: pattern, detail: "正则匹配超时（3000 ms）") }
-        if captures.count >= limits.maximumMatches {
+        if exceeded {
             throw RuleEngineError.resourceLimit(rule: pattern, detail: "正则匹配数量超过限制")
         }
         return captures

@@ -21,4 +21,15 @@ final class RegexEvaluatorTests: XCTestCase {
             }
         }
     }
+
+    func testMatchLimitAllowsExactlyMaximumMatches() throws {
+        let evaluator = RegexEvaluator(limits: RegexLimits(maximumMatches: 3))
+        XCTAssertEqual(try evaluator.captureGroups(pattern: "a", input: "aaa").count, 3)
+        XCTAssertThrowsError(try evaluator.captureGroups(pattern: "a", input: "aaaa")) { error in
+            guard case RuleEngineError.resourceLimit = error else {
+                return XCTFail("期望 resourceLimit，实际为 \(error)")
+            }
+        }
+    }
 }
+
