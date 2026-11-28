@@ -698,6 +698,9 @@ final class ComicReaderModel {
     var isBroken = false
     private var loading: Set<Int> = []
     private var comicURL: URL?
+    /// 代次标记：重新进入 / 换书时，上一轮的解包与取图结果不能回写新状态。
+    private var generation = 0
+    private var configureTask: Task<Void, Never>?
 
     var hasRealComic: Bool { report != nil }
 
@@ -708,6 +711,10 @@ final class ComicReaderModel {
     }
 
     func configure(url: URL?, expectsComic: Bool) {
+        generation &+= 1
+        let token = generation
+        configureTask?.cancel()
+        configureTask = nil
         comicURL = url
         report = nil
         loadError = nil
@@ -719,19 +726,30 @@ final class ComicReaderModel {
             isBroken = expectsComic
             return
         }
-        do {
-            report = try LocalBookService.live().inspectComic(at: url)
-        } catch {
-            loadError = error.localizedDescription
-            isBroken = expectsComic
+        let service = LocalBookService.live()
+        // 解包建索引要重开整个压缩包，同步跑会把「进入漫画页」卡住；
+        // 这里只留转圈，结果回到主线程再更新状态。
+        configureTask = Task { [weak self] in
+            do {
+                let report = try await Task.detached(priority: .userInitiated) {
+                    try service.inspectComic(at: url)
+                }.value
+                guard let self, !Task.isCancelled, self.generation == token else { return }
+                self.report = report
+            } catch {
+                guard let self, !Task.isCancelled, self.generation == token else { return }
+                self.loadError = error.localizedDescription
+                self.isBroken = expectsComic
+            }
         }
     }
 
     func loadImage(for index: Int) async {
+        let token = generation
         guard images[index] == nil, !failedPages.contains(index), !loading.contains(index),
               let comicURL, let report, index < report.pages.count else { return }
         loading.insert(index)
-        defer { loading.remove(index) }
+        defer { if generation == token { loading.remove(index) } }
         let service = LocalBookService.live()
         let url = comicURL
         let path = report.pages[index].path
@@ -739,12 +757,14 @@ final class ComicReaderModel {
             let data = try await Task.detached(priority: .userInitiated) {
                 try service.loadComicThumbnail(at: url, path: path)
             }.value
+            guard generation == token, !Task.isCancelled else { return }
             guard let image = UIImage(data: data) else {
                 failedPages.insert(index)
                 return
             }
             images[index] = image
         } catch {
+            guard generation == token else { return }
             failedPages.insert(index)
         }
     }
@@ -761,6 +781,8 @@ struct ComicReaderView: View {
     @State private var mode: ComicMode = .page
     @State private var showChrome = true
     @State private var cached = false
+    @State private var caching = false
+    @State private var cacheTask: Task<Void, Never>?
     @State private var model = ComicReaderModel()
 
     enum ComicMode: String, CaseIterable, Identifiable {
@@ -823,15 +845,29 @@ struct ComicReaderView: View {
         .persistentSystemOverlays(.hidden)
         .onAppear {
             model.configure(url: comicURL, expectsComic: book.comicFileName != nil)
-            if let error = model.loadError { store.showToast("漫画读取失败：\(error)") }
             let count = pageCount
             page = min(max(Int((book.progress * Double(count - 1)).rounded()), 0), count - 1)
             // 图片缓存是真实文件，重新进入时按磁盘状态显示图标。
             cached = ImageCacheStore.isCached(bookID: book.id)
             syncProgress()
         }
+        .onChange(of: model.loadError) { _, error in
+            if let error { store.showToast("漫画读取失败：\(error)") }
+        }
+        .onChange(of: model.report?.pageCount) { _, _ in
+            let count = pageCount
+            page = min(max(page, 0), count - 1)
+            syncProgress()
+            // 解包是异步的：进入页面时报告还没回来，首屏取图会落空，等报告到了再补一次。
+            Task { await model.loadImage(for: page) }
+        }
         .onChange(of: page) { _, _ in
             syncProgress()
+        }
+        .onDisappear {
+            cacheTask?.cancel()
+            cacheTask = nil
+            caching = false
         }
     }
 
@@ -870,19 +906,26 @@ struct ComicReaderView: View {
                         ImageCacheStore.remove(bookID: book.id)
                         cached = false
                         store.showToast("已清除 \(book.title) 的图片缓存")
-                    } else if let bytes = cachePages() {
-                        cached = true
-                        store.showToast("已缓存 · \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))")
                     } else {
-                        store.showToast("缓存写入失败，请检查存储空间")
+                        cacheAllPages()
                     }
                 } label: {
-                    Image(systemName: cached ? "arrow.down.circle.fill" : "arrow.down.circle")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(cached ? theme.jade : .white)
-                        .glassCircle(diameter: 40)
+                    ZStack {
+                        if caching {
+                            ProgressView()
+                                .tint(.white)
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: cached ? "arrow.down.circle.fill" : "arrow.down.circle")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(cached ? theme.jade : .white)
+                        }
+                    }
+                    .frame(width: 40, height: 40)
+                    .glassCircle(diameter: 40)
                 }
                 .buttonStyle(PressableStyle())
+                .disabled(caching)
             }
         }
         .padding(.horizontal, 16)
@@ -968,15 +1011,43 @@ struct ComicReaderView: View {
     }
 
     /// 真漫画把降采样后的页图落盘；老演示书沿用清单文件，界面行为一致。
-    private func cachePages() -> Int? {
+    /// 逐页解压是重活，整段放到后台，主线程只收结果、更新按钮状态。
+    @MainActor
+    private func cacheAllPages() {
+        guard !caching else { return }
         guard let report = model.report, let comicURL else {
-            return ImageCacheStore.store(bookID: book.id, title: book.title, pages: pageCount)
+            if let bytes = ImageCacheStore.store(bookID: book.id, title: book.title, pages: pageCount) {
+                cached = true
+                store.showToast("已缓存 · \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))")
+            } else {
+                store.showToast("缓存写入失败，请检查存储空间")
+            }
+            return
         }
-        return ImageCacheStore.storeImages(bookID: book.id, title: book.title, pages: pageCount) { index in
-            guard index < report.pages.count else { return nil }
-            return try? LocalBookService.live().loadComicThumbnail(
-                at: comicURL, path: report.pages[index].path, maxPixelSize: 1200
-            )
+        caching = true
+        let bookID = book.id
+        let title = book.title
+        let pages = pageCount
+        let paths = report.pages.map(\.path)
+        let service = LocalBookService.live()
+        cacheTask = Task {
+            let bytes = await Task.detached(priority: .utility) { () -> Int? in
+                ImageCacheStore.storeImages(bookID: bookID, title: title, pages: pages) { index in
+                    guard !Task.isCancelled, index < paths.count else { return nil }
+                    return try? service.loadComicThumbnail(
+                        at: comicURL, path: paths[index], maxPixelSize: 1200
+                    )
+                }
+            }.value
+            caching = false
+            cacheTask = nil
+            guard !Task.isCancelled else { return }
+            if let bytes {
+                cached = true
+                store.showToast("已缓存 · \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))")
+            } else {
+                store.showToast("缓存写入失败，请检查存储空间")
+            }
         }
     }
 
