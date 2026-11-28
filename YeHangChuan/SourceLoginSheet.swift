@@ -42,36 +42,22 @@ struct SourceLoginSheet: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
+            // 顶部对齐：表单内容比屏幕高时不能让 ZStack 把它垂直居中，
+            // 否则顶部输入框会被导航栏吞掉、底部输入框被屏幕边缘裁掉。
+            ZStack(alignment: .top) {
                 AppBackdrop()
 
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("Different source · 不同书源的登录方式不同。这里只保存你主动提交的会话，账号密码不会写回书源。")
-                        .font(.system(size: 11))
-                        .foregroundStyle(theme.secondary)
-
-                    switch mode {
-                    case .some(.web(let url)):
-                        SourceLoginWebView(url: url, webView: $webView)
-                            .frame(minHeight: 320)
-                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    case .some(.script):
-                        scriptForm
-                    case .some(.html):
-                        htmlPage
-                    case nil:
-                        Text("这条书源没有声明登录入口。")
-                            .foregroundStyle(theme.secondary)
+                Group {
+                    if isScrollable {
+                        ScrollView(.vertical) {
+                            contentStack
+                        }
+                        .scrollContentBackground(.hidden)
+                        .scrollDismissesKeyboard(.interactively)
+                    } else {
+                        contentStack
                     }
-
-                    Text(status)
-                        .font(.system(size: 11))
-                        .foregroundStyle(theme.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Spacer(minLength: 0)
                 }
-                .padding(18)
             }
             .navigationTitle("书源登录")
             .navigationBarTitleDisplayMode(.inline)
@@ -91,6 +77,48 @@ struct SourceLoginSheet: View {
             }
         }
         .task { await prepare() }
+    }
+
+    /// `loginUi` 表单字段可能多达二十几个，必须能滚动；
+    /// WebView 自己有滚动手势，套在外层 ScrollView 里会抢手势。
+    private var isScrollable: Bool {
+        switch mode {
+        case .some(.script), nil:
+            return true
+        case .some(.web), .some(.html):
+            return false
+        }
+    }
+
+    private var contentStack: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Different source · 不同书源的登录方式不同。这里只保存你主动提交的会话，账号密码不会写回书源。")
+                .font(.system(size: 11))
+                .foregroundStyle(theme.secondary)
+
+            switch mode {
+            case .some(.web(let url)):
+                SourceLoginWebView(url: url, webView: $webView)
+                    .frame(minHeight: 420)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            case .some(.script):
+                scriptForm
+            case .some(.html):
+                htmlPage
+            case nil:
+                Text("这条书源没有声明登录入口。")
+                    .foregroundStyle(theme.secondary)
+            }
+
+            Text(status)
+                .font(.system(size: 11))
+                .foregroundStyle(theme.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var scriptForm: some View {
