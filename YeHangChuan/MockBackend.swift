@@ -147,9 +147,4 @@ final class MockBackend {
         syncState = .synced(now)
     }
 
-    func loginSource(_ source: BookSource, account: String, password: String) async -> Bool {
-        let response = await call("POST", "/source/\(source.id)/login")
-        let ok = response.ok && !account.isEmpty && !password.isEmpty
-        return ok
-    }
 }

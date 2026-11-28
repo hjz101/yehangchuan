@@ -945,15 +945,16 @@ struct SourceDetailSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
+    private var hasLoginScript: Bool {
+        LegadoBridge.engineSource(from: source).map { store.engine.hasLoginScript(source: $0) } ?? false
+    }
+
     @State private var source: BookSource
     @State private var probe: SourceProbe?
     @State private var debugLines: [DebugLine] = []
     @State private var report: [SourceProbe] = []
-    @State private var account = "demo-reader"
-    @State private var password = "demo-pass"
     @State private var isBusy = false
     @State private var ruleMessage = ""
-    @State private var loginMessage = ""
     @State private var enableWarning = ""
     /// 取消过就不再回写，避免「点了取消却仍然被保存」。
     /// 手势下滑关闭没有按钮可点，仍按「保存」处理。
@@ -961,7 +962,6 @@ struct SourceDetailSheet: View {
 
     init(source: BookSource) {
         _source = State(initialValue: source)
-        _account = State(initialValue: source.username.isEmpty ? "demo-reader" : source.username)
     }
 
     var body: some View {
@@ -1231,62 +1231,17 @@ struct SourceDetailSheet: View {
         VStack(alignment: .leading, spacing: 9) {
             SectionHeading(text: "书源登录", trailing: source.login.rawValue)
 
-            VStack(spacing: 10) {
-                TextField("账号", text: $account)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 11)
-                    .glassSurface(cornerRadius: 15)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(hasLoginScript
+                     ? "这条书源声明了登录脚本，但 App 不会代你执行站点登录、也不保存站点密码。需要登录态的源，请在书源规则里用 Cookie / header 自行配置。"
+                     : "这条书源没有登录脚本。搜索、目录与正文按规则匿名请求；需要账号的源请在书源规则里配置 Cookie 或 header。")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Palette.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                SecureField("密码", text: $password)
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 11)
-                    .glassSurface(cornerRadius: 15)
-
-                HStack(spacing: 9) {
-                    Button {
-                        isBusy = true
-                        Task { @MainActor in
-                            let ok = await store.backend.loginSource(source, account: account, password: password)
-                            source.login = ok ? .signedIn : .expired
-                            source.username = account
-                            // 这是演示登录：不会真的向站点发请求，也不会写入任何 Cookie。
-                            // 需要真实登录状态时，书源规则里的 loginUrl / Cookie 由引擎自己处理。
-                            loginMessage = ok ? "已记录本站账号（演示，不发起真实登录请求）" : "登录失败，请检查账号或网络"
-                            store.updateSource(source)
-                            isBusy = false
-                        }
-                    } label: {
-                        Text(source.login == .signedIn ? "重新登录" : "登录书源")
-                            .readableButtonStyle(tint: Palette.jade)
-                    }
-                    .buttonStyle(PressableStyle(scale: 0.97))
-
-                    if source.login == .signedIn {
-                        Button {
-                            source.login = .signedOut
-                            source.username = ""
-                            loginMessage = "已清除本站账号记录"
-                            store.updateSource(source)
-                        } label: {
-                            Text("清除")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Palette.accent)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 13)
-                                .glassCapsule(tint: Palette.accent.opacity(0.08), interactive: true)
-                        }
-                        .buttonStyle(PressableStyle())
-                    }
-                }
-
-                if !loginMessage.isEmpty {
-                    Text(loginMessage)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(Palette.tertiary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                Text("App 从不伪造登录成功，也不会把账号密码写进书源。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Palette.tertiary)
             }
             .padding(13)
             .glassSurface(cornerRadius: 20)

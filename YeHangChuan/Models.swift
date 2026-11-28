@@ -130,8 +130,10 @@ struct BookSource: Identifiable, Hashable, Codable, Sendable {
 
 enum SourceLoginState: String, Codable {
     case signedOut = "未登录"
-    case signedIn = "已登录"
     case expired = "登录过期"
+    /// 规则里声明了登录脚本时的状态。App 不会替站点执行登录，
+    /// 只是把「需要登录」如实标出来。
+    case required = "需登录，规则含登录脚本"
 }
 
 // MARK: - Reading Content

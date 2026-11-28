@@ -48,6 +48,12 @@ final class SourceEngine {
         )
     }
 
+    /// 书源是否声明了登录脚本（`loginUrl` 字段）。
+    /// App 不代用户执行登录，界面据此如实标出「需登录」。
+    func hasLoginScript(source: LegadoCore.BookSource) -> Bool {
+        source.loginUrl?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
     // MARK: - 搜索
 
     /// 并发检索多个书源，结果通过回调逐条返回，界面可以边搜边显示。
