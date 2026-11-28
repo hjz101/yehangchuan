@@ -4,6 +4,19 @@ import MediaPlayer
 import LegadoCore
 import YeHangCore
 
+// P4-05/D1：阅读正文前景色专用环境键。
+// 阅读正文由 CoreText 绘制（NSAttributedString），拿不到 SwiftUI 的 @Environment(\.theme)，
+// 深层的 ReaderPageView 通过此键拿到解析后的 effective 前景色，避免退回旧 settings.theme。
+private struct ReaderTextColorKey: EnvironmentKey {
+    static let defaultValue: UIColor = UIColor(hex: 0xD9E2EC)
+}
+private extension EnvironmentValues {
+    var readerTextColor: UIColor {
+        get { self[ReaderTextColorKey.self] }
+        set { self[ReaderTextColorKey.self] = newValue }
+    }
+}
+
 struct ReaderView: View {
     /// 门禁计数：验证「纯换色 rebuild=0、换字体族 rebuild=1」。
     static var rebuildCount = 0
@@ -180,10 +193,10 @@ struct ReaderView: View {
             if let flash {
                 Text(flash)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(settings.theme.text)
+                    .foregroundStyle(effectiveSurface.text)
                     .padding(.horizontal, 15)
                     .padding(.vertical, 9)
-                    .glassCapsule(tint: settings.theme.isDark ? .white.opacity(0.08) : .white.opacity(0.5))
+                    .glassCapsule(tint: effectiveSurface.isDark ? .white.opacity(0.08) : .white.opacity(0.5))
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
                     // 提示条正压在屏幕正中，能点就得让路：否则它浮着的那 1.5 秒里
                     // 点中间既唤不出工具栏、也翻不了页。
@@ -235,6 +248,9 @@ struct ReaderView: View {
             guard pagination != nil else { return }
             rebuild(restore: false)
         }
+        .environment(\.readerTextColor, UIColor(ThemeEngine.color(
+            effectiveSurface.text, scheme: effectiveSurface.isDark ? .dark : .light
+        )))
         .preferredColorScheme(effectiveSurface.isDark ? .dark : .light)
         .statusBarHidden(!showChrome)
         .persistentSystemOverlays(.hidden)
@@ -401,13 +417,13 @@ struct ReaderView: View {
         VStack(spacing: 12) {
             Image(systemName: "doc.text")
                 .font(.system(size: 30, weight: .light))
-                .foregroundStyle(settings.theme.secondary)
+                .foregroundStyle(effectiveSurface.secondary)
             Text("这本书没有可显示的正文")
                 .font(.system(size: 15, weight: .semibold, design: .serif))
-                .foregroundStyle(settings.theme.text)
+                .foregroundStyle(effectiveSurface.text)
             Text("可能是导入时内容解析失败。可以返回书架重新导入这本书。")
                 .font(.system(size: 12))
-                .foregroundStyle(settings.theme.secondary)
+                .foregroundStyle(effectiveSurface.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 36)
             Button {
@@ -486,16 +502,16 @@ struct ReaderView: View {
                 ProgressView().themedProgress()
                 Text("正在加载在线章节…")
                     .font(.system(size: 12))
-                    .foregroundStyle(settings.theme.secondary)
+                    .foregroundStyle(effectiveSurface.secondary)
             }
         } else if let networkError, pageCount == 0 {
             VStack(spacing: 10) {
                 Image(systemName: "wifi.exclamationmark")
                     .font(.system(size: 24, weight: .light))
-                    .foregroundStyle(settings.theme.secondary)
+                    .foregroundStyle(effectiveSurface.secondary)
                 Text(networkError)
                     .font(.system(size: 12))
-                    .foregroundStyle(settings.theme.secondary)
+                    .foregroundStyle(effectiveSurface.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
 
@@ -633,7 +649,7 @@ struct ReaderView: View {
 
                     Text(currentChapterTitle)
                         .font(.system(size: 10))
-                        .foregroundStyle(settings.theme.secondary)
+                        .foregroundStyle(effectiveSurface.secondary)
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 18)
@@ -739,24 +755,24 @@ struct ReaderView: View {
                 HStack(spacing: 9) {
                     Text(settings.pageMode == .scroll ? "滚动" : "\(pageIndex + 1) / \(pageCount)")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundStyle(settings.theme.secondary)
+                        .foregroundStyle(effectiveSurface.secondary)
                         .monospacedDigit()
 
                     ProgressBar(
                         value: progress,
-                        tint: settings.theme.accent,
-                        track: settings.theme.text.opacity(0.16),
+                        tint: effectiveSurface.accent,
+                        track: effectiveSurface.text.opacity(0.16),
                         height: 2.5
                     )
 
                     Text("\(Int(progress * 100))%")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundStyle(settings.theme.secondary)
+                        .foregroundStyle(effectiveSurface.secondary)
                         .monospacedDigit()
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 13)
-                .glassCapsule(tint: settings.theme.isDark ? .white.opacity(0.06) : .white.opacity(0.45))
+                .glassCapsule(tint: effectiveSurface.isDark ? .white.opacity(0.06) : .white.opacity(0.45))
 
                 HStack(spacing: 0) {
                     toolButton("目录", symbol: "list.bullet") { showTOC = true }
@@ -789,7 +805,7 @@ struct ReaderView: View {
                 }
                 .padding(.vertical, 7)
                 .padding(.horizontal, 6)
-                .glassSurface(cornerRadius: 30, tint: settings.theme.isDark ? .white.opacity(0.05) : .white.opacity(0.4))
+                .glassSurface(cornerRadius: 30, tint: effectiveSurface.isDark ? .white.opacity(0.05) : .white.opacity(0.4))
             }
         }
         .padding(.horizontal, 16)
@@ -1470,6 +1486,7 @@ struct PageFlipReader: View {
 /// 段评胶囊是叠在绘制层上的独立按钮：CoreText 画出来的字拿不到 SwiftUI
 /// 的点击，所以位置由 `PageParagraphBox` 算好，按钮绝对定位到那一行。
 struct ReaderPageView: View {
+    @Environment(\.readerTextColor) private var readerTextColor
     let pagination: PaginatedBook
     let page: ReadingPage
     let pageIndex: Int
@@ -1515,7 +1532,7 @@ struct ReaderPageView: View {
                     }
                     .font(.system(size: 10, weight: .medium))
                     .tracking(0.9)
-                    .foregroundStyle(settings.theme.secondary)
+                    .foregroundStyle(appTheme.secondary)
                     .padding(.horizontal, settings.sideMargin)
                     // 页眉始终落在正文起点之前：上边界拖小后，固定减 32 会把
                     // 页眉推进第一行里，看起来像版心线没生效。留 14 点至少
@@ -1531,7 +1548,7 @@ struct ReaderPageView: View {
                         Text(page.chapterTitle)
                     }
                     .font(.system(size: 9.5))
-                    .foregroundStyle(settings.theme.secondary.opacity(0.55))
+                    .foregroundStyle(appTheme.secondary.opacity(0.55))
                     .padding(.horizontal, settings.sideMargin)
                     .padding(.bottom, min(max(settings.bottomMargin - 30, 8), max(settings.bottomMargin - 14, 8)))
                 }
@@ -1569,10 +1586,10 @@ struct ReaderPageView: View {
                             .monospacedDigit()
                     }
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(settings.theme.accent)
+                    .foregroundStyle(appTheme.accent)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3.5)
-                    .glassCapsule(tint: settings.theme.accent.opacity(0.14))
+                    .glassCapsule(tint: appTheme.accent.opacity(0.14))
                 }
                 .buttonStyle(.plain)
                 // 贴在段尾那一行的文字末尾。末行通常不满宽，气泡跟在字后；
@@ -1587,7 +1604,7 @@ struct ReaderPageView: View {
                 // 连一行都放不下：如实说清楚，而不是把字裁掉装作正常。
                 Text("这一页放不下一行，请调小字号或减小留白")
                     .font(.system(size: 11))
-                    .foregroundStyle(settings.theme.accent)
+                    .foregroundStyle(appTheme.accent)
                     .padding(10)
                     .glassCapsule()
             }
@@ -1601,7 +1618,7 @@ struct ReaderPageView: View {
         let copy = NSMutableAttributedString(attributedString: text)
         copy.addAttribute(
             .foregroundColor,
-            value: UIColor(settings.theme.text),
+            value: readerTextColor,
             range: NSRange(location: 0, length: copy.length)
         )
         return copy
@@ -1631,7 +1648,7 @@ struct ParagraphView: View {
                     design: settings.fontDesign.design
                 ))
                 .lineSpacing(settings.fontSize * settings.lineSpacing)
-                .foregroundStyle(settings.theme.text)
+                .foregroundStyle(appTheme.text)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, showsComments ? 30 : 0)
@@ -1646,10 +1663,10 @@ struct ParagraphView: View {
                             .monospacedDigit()
                     }
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(settings.theme.accent)
+                    .foregroundStyle(appTheme.accent)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3.5)
-                    .glassCapsule(tint: settings.theme.accent.opacity(0.14))
+                    .glassCapsule(tint: appTheme.accent.opacity(0.14))
                 }
                 .buttonStyle(.plain)
                 .offset(y: -2)
@@ -1716,10 +1733,10 @@ struct ScrollReaderView: View {
                             Text(title)
                                 .font(.system(size: 13, weight: .semibold, design: .serif))
                                 .tracking(1.4)
-                                .foregroundStyle(settings.theme.secondary)
+                                .foregroundStyle(appTheme.secondary)
 
                             Rectangle()
-                                .fill(settings.theme.secondary.opacity(0.3))
+                                .fill(appTheme.secondary.opacity(0.3))
                                 .frame(width: 26, height: 1.5)
                         }
                         .padding(.top, 30)
@@ -2344,22 +2361,22 @@ struct ReaderSettingsSheet: View {
                 design: settings.fontDesign.design
             ))
             .lineSpacing(settings.fontSize * settings.lineSpacing)
-            .foregroundStyle(settings.theme.text)
+            .foregroundStyle(appTheme.text)
             .padding(.vertical, 16)
             .padding(.horizontal, min(settings.sideMargin, 28))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(settings.theme.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(appTheme.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(settings.theme.text.opacity(0.1), lineWidth: 0.8)
+                    .strokeBorder(appTheme.text.opacity(0.1), lineWidth: 0.8)
             }
             .overlay(alignment: .topTrailing) {
                 Text(settings.theme.rawValue)
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(settings.theme.secondary)
+                    .foregroundStyle(appTheme.secondary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .glassCapsule(tint: settings.theme.isDark ? .white.opacity(0.08) : .white.opacity(0.4))
+                    .glassCapsule(tint: appTheme.reader.isDark ? .white.opacity(0.08) : .white.opacity(0.4))
                     .padding(9)
             }
     }
@@ -2695,13 +2712,13 @@ struct ReaderSettingsSheet: View {
 
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(settings.theme.background)
+                    .fill(appTheme.background)
 
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(settings.theme.text.opacity(0.055))
+                    .fill(appTheme.text.opacity(0.055))
                     .overlay {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .strokeBorder(settings.theme.accent.opacity(0.65), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                            .strokeBorder(appTheme.accent.opacity(0.65), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     }
                     .frame(width: frame.width, height: frame.height)
                     .offset(x: frame.minX, y: frame.minY)

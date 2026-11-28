@@ -63,7 +63,7 @@ struct ThemeSyncService {
 
         record["themeID"] = theme.id
         record["name"] = theme.name
-        record["schemaVersion"] = theme.schemaVersion
+        record["schemaVersion"] = ThemeCatalog.currentSchemaVersion
         record["updatedAt"] = theme.updatedAt
         record["deviceID"] = deviceID
         record["assetIDs"] = uploadedIDs

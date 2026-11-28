@@ -30,12 +30,13 @@ extension View {
         tokens: ThemeTokens? = nil,
         fallbackTheme: Theme? = nil
     ) -> some View {
+        // sheet/fullScreenCover 是独立宿主，环境不会从根部继承，必须由这里显式注入。
+        // 兜底顺序：显式 tokens > 指定主题 > 当前激活主题 > 内置默认。
+        // 关键：必须用当前激活主题，否则切到自定义主题后所有弹层退回默认色（换肤不一致）。
+        let active = ThemeStore.shared.activeTheme
         let resolved = tokens
             ?? (fallbackTheme.map { ThemeEngine.resolve(theme: $0) })
-            ?? ThemeEngine.resolve(
-                theme: BuiltinThemes.theme(withID: BuiltinThemes.defaultID)
-                    ?? Theme(name: "默认")
-            )
+            ?? ThemeEngine.resolve(theme: active)
         return self
             .environment(\.theme, resolved)
             .preferredColorScheme(store.appearance.colorScheme)

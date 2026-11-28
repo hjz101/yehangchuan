@@ -127,12 +127,13 @@ struct ThemeEditor: View {
 
     /// 实时预览：注入 draft 解析出的 tokens（390×844 预览几何）。
     private var previewPane: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("实时预览").font(.caption).foregroundStyle(theme.secondary)
+        // 预览内容统一用 draft 解析的令牌（背景+前景都跟随草稿）。
+        let previewTokens = ThemeEngine.resolve(theme: draft)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("实时预览").font(.caption).foregroundStyle(previewTokens.secondary)
             ZStack {
-                // 内层用 draft tokens —— 拖色卡时预览跟随，编辑器自身外观不变。
                 ThemeBackdrop()
-                    .environment(\.theme, ThemeEngine.resolve(theme: draft))
+                    .environment(\.theme, previewTokens)
                 VStack(spacing: 10) {
                     HStack {
                         Image(systemName: "books.vertical.fill")
@@ -140,18 +141,19 @@ struct ThemeEditor: View {
                         Spacer()
                     }
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(theme.accent.opacity(0.6))
+                        .fill(previewTokens.accent.opacity(0.6))
                         .frame(height: 64)
-                        .overlay(Text("继续阅读").foregroundStyle(theme.onAccent))
+                        .overlay(Text("继续阅读").foregroundStyle(previewTokens.onAccent))
                     Spacer()
                 }
                 .padding(20)
+                .foregroundStyle(previewTokens.text)
             }
             .frame(width: 390, height: 300)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay {
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(theme.hairline, lineWidth: 1)
+                    .stroke(previewTokens.hairline, lineWidth: 1)
             }
         }
         .padding(16)

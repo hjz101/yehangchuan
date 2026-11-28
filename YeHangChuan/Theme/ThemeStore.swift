@@ -143,7 +143,14 @@ final class ThemeStore {
                 try persistCatalog(loaded)
             }
         } catch {
-            // 主文件损坏：改名留档 + 写 decode-error.txt，再尝试 prev。
+            // 整份 catalog 解码失败：先试逐主题兜底（单个坏主题不该丢掉整座主题库）。
+            if let partiallyRecovered = decodeCatalogPerTheme(data, decoder: decoder) {
+                catalog = refreshBuiltins(in: partiallyRecovered)
+                decodeError = "部分主题损坏，已跳过并记录"
+                writeDecodeError(decodeError!)
+                return
+            }
+            // 仍失败：改名留档 + 写 decode-error.txt，再尝试 prev。
             quarantineCorruptFile(data)
             decodeError = "主题索引损坏：\(error.localizedDescription)"
             writeDecodeError(decodeError!)
@@ -157,6 +164,32 @@ final class ThemeStore {
                 catalog = defaultCatalog()
             }
         }
+    }
+
+    /// 整份 catalog 解码失败时的最后兜底：从原始 JSON 字典里逐个解主题，
+    /// 好的留下、坏的记入 skippedThemes（沿用 Snapshot 逐分区兜底惯例）。
+    private func decodeCatalogPerTheme(_ data: Data, decoder: JSONDecoder) -> ThemeCatalog? {
+        guard let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rawThemes = raw["themes"] as? [[String: Any]] else { return nil }
+        var good: [Theme] = []
+        var skipped: [String] = []
+        for rawTheme in rawThemes {
+            guard let themeData = try? JSONSerialization.data(withJSONObject: rawTheme),
+                  let theme = try? decoder.decode(Theme.self, from: themeData) else {
+                skipped.append((rawTheme["id"] as? String) ?? "(unknown)")
+                continue
+            }
+            good.append(theme)
+        }
+        guard !good.isEmpty else { return nil }
+        return ThemeCatalog(
+            schemaVersion: (raw["schemaVersion"] as? Int) ?? 1,
+            activeThemeID: (raw["activeThemeID"] as? String) ?? BuiltinThemes.defaultID,
+            themes: good,
+            assets: [],
+            skippedThemes: skipped,
+            pendingDelete: []
+        )
     }
 
     private func refreshBuiltins(in catalog: ThemeCatalog) -> ThemeCatalog {
@@ -249,8 +282,14 @@ final class ThemeStore {
                 remaining.append(item)
                 continue
             }
-            if let url = assetURL(id: item.assetID, ext: "png") ?? assetURL(id: item.assetID, ext: "ttf") {
+            if let url = assetURL(id: item.assetID, ext: item.ext) {
                 try? fileManager.removeItem(at: url)
+            }
+            // 兼容旧记录（ext 默认 png）：扫其余白名单扩展名兜底。
+            for otherExt in AssetRef.allowedExtensions where otherExt != item.ext {
+                if let url = assetURL(id: item.assetID, ext: otherExt) {
+                    try? fileManager.removeItem(at: url)
+                }
             }
         }
         catalog.pendingDelete = remaining

@@ -887,7 +887,20 @@ struct ThemeCatalog: Codable, Sendable {
 
     struct PendingDelete: Codable, Equatable, Sendable {
         var assetID: String
+        var ext: String = "png"           // 记录扩展名，避免 jpg/heic/otf 等孤儿永久泄漏
         var markedAt: Date
+
+        enum CodingKeys: String, CodingKey { case assetID, ext, markedAt }
+        init(assetID: String, ext: String = "png", markedAt: Date = Date()) {
+            self.assetID = assetID; self.ext = ext; self.markedAt = markedAt
+        }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            assetID = (try? c.decodeIfPresent(String.self, forKey: .assetID)) ?? ""
+            ext = (try? c.decodeIfPresent(String.self, forKey: .ext))
+                .flatMap { AssetRef.allowedExtensions.contains($0.lowercased()) ? $0 : nil } ?? "png"
+            markedAt = (try? c.decodeIfPresent(Date.self, forKey: .markedAt)) ?? Date()
+        }
     }
 
     enum CodingKeys: String, CodingKey {
