@@ -10,6 +10,7 @@
 		A10000000000000000000020 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001E /* Assets.xcassets */; };
 		A10000000000000000000010 /* LegadoCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* LegadoCore */; };
 		A10000000000000000000013 /* YeHangCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000014 /* YeHangCore */; };
+		A10000000000000000000017 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000016 /* ZIPFoundation */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +46,7 @@
 			files = (
 				A10000000000000000000010 /* LegadoCore in Frameworks */,
 				A10000000000000000000013 /* YeHangCore in Frameworks */,
+				A10000000000000000000017 /* ZIPFoundation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -89,6 +91,7 @@
 			packageProductDependencies = (
 				A10000000000000000000011 /* LegadoCore */,
 				A10000000000000000000014 /* YeHangCore */,
+				A10000000000000000000016 /* ZIPFoundation */,
 			);
 			productName = YeHangChuan;
 			productReference = A10000000000000000000003 /* YeHangChuan.app */;
@@ -295,6 +298,10 @@
 		A10000000000000000000014 /* YeHangCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = YeHangCore;
+		};
+		A10000000000000000000016 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ZIPFoundation;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
