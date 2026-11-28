@@ -292,13 +292,8 @@ struct SettingsView: View {
                     ThemeStore.shared.selectTheme(id: applied.id)
                 },
                 onDeleteTheme: { deleted in
-                    guard !deleted.builtin else { return }
-                    ThemeStore.shared.catalog.themes.removeAll { $0.id == deleted.id }
-                    // 删掉当前正在用的主题时回退内置默认，避免 activeThemeID 悬空。
-                    if ThemeStore.shared.catalog.activeThemeID == deleted.id {
-                        ThemeStore.shared.catalog.activeThemeID = BuiltinThemes.defaultID
-                    }
-                    ThemeStore.shared.flush()
+                    // 删主题 + 回收其独占的图片/字体资产（其它主题仍引用则保留）。
+                    ThemeStore.shared.deleteTheme(deleted.id)
                 }
             )
             .presentationDetents([.large])

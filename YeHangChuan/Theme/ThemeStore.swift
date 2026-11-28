@@ -356,6 +356,53 @@ final class ThemeStore {
         requestWrite()
     }
 
+    // MARK: 删除自定义主题（回收其独占资产）
+
+    /// 主题直接引用的资产 id：背景图、加载图、导入字体。
+    static func referencedAssetIDs(in theme: Theme) -> Set<String> {
+        var ids = Set<String>()
+        func collectBackdrop(_ backdrop: BackgroundSpec?) {
+            if case let .image(asset, _, _)? = backdrop, AssetRef.isValidAssetID(asset) {
+                ids.insert(asset)
+            }
+        }
+        collectBackdrop(theme.backdrop)
+        collectBackdrop(theme.loading.background)
+        if let artwork = theme.loading.artworkAsset, AssetRef.isValidAssetID(artwork) {
+            ids.insert(artwork)
+        }
+        for family in [theme.typography.uiFamily, theme.typography.titleFamily] {
+            if case let .imported(assetID, _) = family, AssetRef.isValidAssetID(assetID) {
+                ids.insert(assetID)
+            }
+        }
+        return ids
+    }
+
+    /// 删除自定义主题：收集它引用的资产，只回收其他主题（含内置）都不再引用的，
+    /// 修正 activeThemeID 后落盘并触发孤儿清理，避免图片/字体永久残留。
+    func deleteTheme(_ id: String) {
+        guard let theme = catalog.themes.first(where: { $0.id == id }), !theme.builtin else {
+            return
+        }
+        let ownedAssets = Self.referencedAssetIDs(in: theme)
+        let remaining = catalog.themes.filter { $0.id != id }
+        var stillReferenced = Set<String>()
+        for other in remaining {
+            stillReferenced.formUnion(Self.referencedAssetIDs(in: other))
+        }
+        let reclaimable = ownedAssets.subtracting(stillReferenced)
+
+        catalog.themes = remaining
+        // 先从索引中摘掉独占资产，孤儿清理才不会因「仍被引用」而跳过。
+        catalog.assets.removeAll { reclaimable.contains($0.id) }
+        if catalog.activeThemeID == id {
+            catalog.activeThemeID = BuiltinThemes.defaultID
+        }
+        markPendingDelete(assetIDs: Array(reclaimable))
+        flush()
+    }
+
     // MARK: 坏文件留档与诊断
 
     private func quarantineCorruptFile(_ data: Data) {
