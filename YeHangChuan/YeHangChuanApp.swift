@@ -93,6 +93,10 @@ struct RootView: View {
                 AccessoryBar()
             }
         }
+        .overlay {
+            // P4-03：首次进入动画（一次、可跳过、Reduce Motion 降级，不动启动屏）。
+            FirstLaunchAnimation()
+        }
         .overlay(alignment: .top) {
             if let toast = store.toast {
                 ToastView(text: toast)
