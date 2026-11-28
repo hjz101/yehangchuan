@@ -247,7 +247,7 @@ struct ShelfView: View {
                     }
 
                     ForEach(BookKind.allCases) { kind in
-                        chip(kind.rawValue, selected: filter == kind, tint: kind.tint) {
+                        chip(kind.rawValue, selected: filter == kind, tint: kind.tint(in: theme)) {
                             filter = kind
                         }
                     }
@@ -585,10 +585,10 @@ struct MediaDetailView: View {
                 Text(book.kind.rawValue)
                     .font(.system(size: 9, weight: .bold))
                     .tracking(1.6)
-                    .foregroundStyle(book.kind.tint)
+                    .foregroundStyle(book.kind.tint(in: theme))
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(book.kind.tint.opacity(0.14), in: Capsule())
+                    .background(book.kind.tint(in: theme).opacity(0.14), in: Capsule())
 
                 Text(book.title)
                     .font(.system(size: 24, weight: .semibold, design: .serif))

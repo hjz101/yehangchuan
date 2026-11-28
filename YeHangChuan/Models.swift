@@ -29,6 +29,15 @@ enum BookKind: String, CaseIterable, Identifiable, Codable {
         case .audio: Palette.gold
         }
     }
+
+    /// 主题版：View 里用它替代 tint，保证换肤时分类色跟随（P4-05）。
+    func tint(in theme: ThemeTokens) -> Color {
+        switch self {
+        case .novel: return theme.accent
+        case .comic: return theme.jade
+        case .audio: return theme.gold
+        }
+    }
 }
 
 struct Book: Identifiable, Hashable, Codable, Sendable {
