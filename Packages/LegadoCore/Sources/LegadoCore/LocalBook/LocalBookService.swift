@@ -827,7 +827,8 @@ public struct LocalBookService: Sendable {
                     encoding: encoding,
                     fromEnd: false
                 )
-                let end = newline ?? blockEnd
+                // 换行点必须在游标之后，否则截断的多字节残片会让游标原地不动。
+                let end = max(newline ?? blockEnd, cursor + 1)
                 var chapter = BookChapter(
                     url: "",
                     title: title(block, chapterInBlock, output.count),
@@ -841,7 +842,10 @@ public struct LocalBookService: Sendable {
                 cursor = end
             }
             finalChapterNumber = chapterInBlock + 1
-            if blockEnd == rangeEnd { break }
+            // 已到文件末尾，或块内剩余内容不足一章（末尾多字节残片时
+            // blockEnd 会略小于 rangeEnd），剩下的统一走下面的收尾分支，
+            // 不能让外层循环带着同一个游标空转。
+            if blockEnd == rangeEnd || blockEnd - cursor <= maximumLength { break }
         }
         if cursor < rangeEnd {
             if rangeEnd - cursor <= 100, !output.isEmpty {
