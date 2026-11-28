@@ -426,24 +426,33 @@ struct AIStudioSheet: View {
 
     private var coverCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeading(text: "AI 封面", trailing: "\(coverIdeas.count) 个方案")
+            SectionHeading(
+                text: "AI 封面方案",
+                trailing: coverIdeas.isEmpty ? "文字方案" : "\(coverIdeas.count) 个方案"
+            )
 
             if coverIdeas.isEmpty {
-                Text("根据书名、作者与正文氛围生成竖版封面候选。")
+                Text("服务按书名、作者与正文氛围给出三个封面方向。这里只展示文字方案，不会生成或下载封面图片。")
                     .font(.system(size: 11.5))
                     .foregroundStyle(Palette.tertiary)
             } else {
-                HStack(spacing: 9) {
-                    ForEach(coverIdeas) { idea in
-                        ZStack(alignment: .bottomLeading) {
-                            LinearGradient(colors: [idea.colors.0, idea.colors.1], startPoint: .topLeading, endPoint: .bottomTrailing)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(coverIdeas.enumerated()), id: \.element.id) { index, idea in
+                        HStack(spacing: 10) {
+                            Text("\(index + 1)")
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .foregroundStyle(Palette.gold)
+                                .frame(width: 20, height: 20)
+                                .background(Palette.gold.opacity(0.12), in: Circle())
                             Text(idea.name)
-                                .font(.system(size: 9, weight: .semibold, design: .serif))
-                                .foregroundStyle(.white.opacity(0.9))
-                                .padding(8)
+                                .font(.system(size: 12, design: .serif))
+                                .foregroundStyle(Palette.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
                         }
-                        .aspectRatio(0.71, contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .glassSurface(cornerRadius: 12)
                     }
                 }
             }
@@ -451,7 +460,7 @@ struct AIStudioSheet: View {
             Button {
                 Task { @MainActor in await generateCovers() }
             } label: {
-                actionLabel("生成封面", symbol: "photo.on.rectangle", tint: Palette.jade)
+                actionLabel("生成封面方案", symbol: "text.badge.plus", tint: Palette.jade)
             }
             .buttonStyle(PressableStyle(scale: 0.97))
         }
