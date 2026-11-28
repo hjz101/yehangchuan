@@ -1762,13 +1762,15 @@ struct ScrollReaderView: View {
     let onTap: () -> Void
 
     /// 章节标题与段落拍平成一行行，这样章节标题也能参与滚动定位，段落之间仍保持原有间距。
+    /// 标题行用章节的稳定 id 做标识：同名章节（「番外」「序」）标题会重复，
+    /// 拿标题拼 id 会让 ForEach 出现重复标识。
     private enum Row: Identifiable {
-        case heading(String)
+        case heading(id: String, title: String)
         case paragraph(Paragraph)
 
         var id: String {
             switch self {
-            case .heading(let title): return "h-\(title)"
+            case .heading(let id, _): return id
             case .paragraph(let paragraph): return paragraph.id
             }
         }
@@ -1776,7 +1778,7 @@ struct ScrollReaderView: View {
 
     private var rows: [Row] {
         chapters.flatMap { chapter -> [Row] in
-            [.heading(chapter.title)] + chapter.paragraphs.map { Row.paragraph($0) }
+            [.heading(id: "h-\(chapter.id)", title: chapter.title)] + chapter.paragraphs.map { Row.paragraph($0) }
         }
     }
 
@@ -1785,7 +1787,7 @@ struct ScrollReaderView: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(rows) { row in
                     switch row {
-                    case .heading(let title):
+                    case .heading(_, let title):
                         VStack(alignment: .leading, spacing: 6) {
                             Text(title)
                                 .font(.system(size: 13, weight: .semibold, design: .serif))
