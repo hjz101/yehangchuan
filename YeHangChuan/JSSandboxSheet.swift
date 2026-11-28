@@ -23,6 +23,9 @@ struct JSSandboxSheet: View {
     @State private var overrideScript = ""
     @State private var useOverrideScript = false
     @State private var isLoadingSample = false
+    /// 样本加载代次。切书源时旧的加载可能还在路上，
+    /// 回来后不能把上一条源的样本写进共享状态。
+    @State private var sampleGeneration = 0
     @State private var isRunning = false
     @State private var logs: [DebugLine] = []
     @State private var preview = ""
@@ -169,9 +172,19 @@ struct JSSandboxSheet: View {
     }
 
     private func loadSampleIfNeeded() async {
-        guard let source = selection?.engine, !isLoadingSample else { return }
+        // 每次调用都自增代次并重新为新源加载；不再用 isLoadingSample
+        // 当全局闸门把新源直接跳过。
+        sampleGeneration += 1
+        let generation = sampleGeneration
+        guard let selected = selection else {
+            isLoadingSample = false
+            return
+        }
+        let selectedID = selected.app.id
         isLoadingSample = true
-        let sample = await store.engine.sampleAddresses(source: source, keyword: keyword)
+        let sample = await store.engine.sampleAddresses(source: selected.engine, keyword: keyword)
+        // 旧代次或已切到别的源：直接丢弃，不碰共享状态，loading 交给新一轮管理。
+        guard generation == sampleGeneration, selection?.app.id == selectedID else { return }
         applySample(sample)
         isLoadingSample = false
     }
