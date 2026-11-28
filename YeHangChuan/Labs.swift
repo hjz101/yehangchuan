@@ -463,7 +463,7 @@ struct AIStudioSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeading(text: "AI 朗读", trailing: "系统语音真实播放")
 
-            Text("把摘要交给系统语音试听；正式版可切换 AI TTS 服务。")
+            Text("把摘要交给系统语音试听。AI 摘要由你配置的兼容服务生成，朗读始终使用设备上的系统语音。")
                 .font(.system(size: 11.5))
                 .foregroundStyle(Palette.secondary)
 
