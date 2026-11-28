@@ -61,6 +61,8 @@ struct ThemeSyncService {
             let file = FileManager.default.temporaryDirectory
                 .appendingPathComponent("theme-asset-\(asset.id).bin")
             try asset.data.write(to: file)
+            // 保存完成后再删临时文件，避免 tmp 残留。
+            defer { try? FileManager.default.removeItem(at: file) }
             newAssets.append(CKAsset(fileURL: file))
             uploadedIDs.append(asset.id)
         }
@@ -68,6 +70,7 @@ struct ThemeSyncService {
         let payloadFile = FileManager.default.temporaryDirectory
             .appendingPathComponent("theme-\(theme.id).json")
         try payload.write(to: payloadFile)
+        defer { try? FileManager.default.removeItem(at: payloadFile) }
 
         // 保留该记录此前挂载的资产，只追加本次新上传的，避免覆盖丢引用。
         let previousAssets = record["assets"] as? [CKAsset] ?? []
