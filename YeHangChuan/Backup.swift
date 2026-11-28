@@ -67,6 +67,10 @@ struct BackupPayload: Codable, Sendable {
     var appearance: AppAppearance?
     var goalMinutes: Int?
     var groups: [String]?
+    /// P3-08：主题纳入 .preferences scope。资产 base64 内嵌（JSONEncoder 自动），
+    /// 总上限 20MB；超限只备 catalog，不备资产（恢复时提示用 .yhthm 手动导出）。
+    var themeCatalog: ThemeCatalog?
+    var themeAssets: [String: Data]?
 }
 
 // MARK: - Backup storage

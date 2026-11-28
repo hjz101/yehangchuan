@@ -2124,8 +2124,28 @@ final class AppStore {
             eyeCare: scopes.contains(.preferences) ? eyeCare : nil,
             appearance: scopes.contains(.preferences) ? appearance : nil,
             goalMinutes: scopes.contains(.preferences) ? goalMinutes : nil,
-            groups: scopes.contains(.library) ? groups : nil
+            groups: scopes.contains(.library) ? groups : nil,
+            themeCatalog: scopes.contains(.preferences) ? ThemeStore.shared.catalog : nil,
+            themeAssets: scopes.contains(.preferences) ? Self.themeAssetsForBackup() : nil
         )
+    }
+
+    /// P3-08：主题资产打包（20MB 上限，base64 后约 +33%）。
+    /// 超限返回 nil —— 恢复时只还原 catalog 指向的内置主题，自定义资产需 .yhthm 手动导出。
+    private static func themeAssetsForBackup() -> [String: Data]? {
+        let store = ThemeStore.shared
+        let assetStore = ThemeAssetStore.shared
+        var result: [String: Data] = [:]
+        var total = 0
+        for ref in store.catalog.assets {
+            guard let url = assetStore.url(for: ref),
+                  let data = try? Data(contentsOf: url) else { continue }
+            // 20MB 上限按 base64 前原始字节控制（约 +33% 膨胀后仍 <27MB）。
+            if total + data.count > 15 * 1024 * 1024 { return nil }
+            total += data.count
+            result[ref.id + "." + ref.ext] = data
+        }
+        return result
     }
 
     /// 真实恢复：把备份里的每一块合并回当前状态，并立即落盘。
@@ -2142,7 +2162,28 @@ final class AppStore {
         if let appearance = payload.appearance { self.appearance = appearance }
         if let goalMinutes = payload.goalMinutes { self.goalMinutes = goalMinutes }
         if let groups = payload.groups { self.groups = groups }
+
+        // P3-08：主题恢复顺序——先装资产，再换 catalog，最后设选择并 flush。
+        // 只覆盖备份确实带了的字段（themeAssets 缺失时只恢复内置主题）。
+        if let assets = payload.themeAssets {
+            for (key, data) in assets {
+                let parts = key.split(separator: ".", maxSplits: 1)
+                guard parts.count == 2 else { continue }
+                _ = try? ThemeAssetStore.shared.importAsset(
+                    data: data, ext: String(parts[1])
+                )
+            }
+        }
+        if let catalog = payload.themeCatalog {
+            ThemeStore.shared.catalog = catalog
+            ThemeStore.shared.selectTheme(id: catalog.activeThemeID)
+            themeSelection = ThemeSelection(
+                activeThemeID: catalog.activeThemeID,
+                catalogSchemaVersion: catalog.schemaVersion
+            )
+        }
         flushSnapshot()
+        ThemeStore.shared.flush()
     }
 }
 
