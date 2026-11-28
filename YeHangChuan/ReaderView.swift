@@ -5,8 +5,14 @@ import LegadoCore
 import YeHangCore
 
 struct ReaderView: View {
+    /// 门禁计数：验证「纯换色 rebuild=0、换字体族 rebuild=1」。
+    static var rebuildCount = 0
+    static func resetRebuildCount() { rebuildCount = 0 }
+
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    /// P2-03：全局主题令牌（纯读；颜色变化不会触发 rebuild）。
+    @Environment(\.theme) private var themeTokens
 
     let book: Book
     var initialChapterTitle: String? = nil
@@ -127,8 +133,19 @@ struct ReaderView: View {
         return paragraphs.map(\.text).joined(separator: "\n")
     }
 
+    /// P2-03：阅读页最终样式。优先级由 ReaderStyleResolver 决定；
+    /// 纯颜色变化只重算视图，不进 rebuild 的 onChange 列表（避免 CoreText 重排）。
+    private var effectiveReaderStyle: ReaderStyleResolution {
+        let global = ThemeStore.shared.activeTheme
+        return ReaderStyleResolver.resolve(global: global, override: settings.themeOverride)
+    }
+
+    private var effectiveSurface: ReadingSurfaceSpec {
+        effectiveReaderStyle.surface
+    }
+
     private var chromeColor: Color {
-        settings.theme.isDark ? .white : Palette.text
+        effectiveSurface.isDark ? .white : Palette.text
     }
 
     var body: some View {
@@ -218,7 +235,7 @@ struct ReaderView: View {
             guard pagination != nil else { return }
             rebuild(restore: false)
         }
-        .preferredColorScheme(settings.theme.isDark ? .dark : .light)
+        .preferredColorScheme(effectiveSurface.isDark ? .dark : .light)
         .statusBarHidden(!showChrome)
         .persistentSystemOverlays(.hidden)
         .onAppear(perform: bootstrap)
@@ -412,7 +429,10 @@ struct ReaderView: View {
     private var readerBackground: some View {
         ZStack {
             LinearGradient(
-                colors: [settings.theme.background, settings.theme.backgroundDeep],
+                colors: [
+                    ThemeEngine.color(effectiveSurface.background, scheme: effectiveSurface.isDark ? .dark : .light),
+                    ThemeEngine.color(effectiveSurface.backgroundDeep, scheme: effectiveSurface.isDark ? .dark : .light)
+                ],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -1088,6 +1108,13 @@ struct ReaderView: View {
     ///   - targetChapter: 指定落到这一章的开头（目录跳转、补正文后）。
     private func rebuild(restore: Bool, targetChapter: String? = nil) {
         guard viewport.width > 1, viewport.height > 1 else { return }
+
+        // P2-03 / 技术评审：rebuild 计数器（四任务共用同一口径）。
+        // 纯换色必须 rebuild=0；只有字体族真实变化才允许 bump 一次。
+        Self.rebuildCount += 1
+        #if DEBUG
+        DiagnosticLog.shared.record(.info, category: "主题", message: "rebuild #\(Self.rebuildCount)")
+        #endif
 
         // 锚点用「当前页首段的段落 ID」而不是页序号：重排后同一段文字
         // 可能不再是某页的第一段，所以要按「包含该段」去找。
