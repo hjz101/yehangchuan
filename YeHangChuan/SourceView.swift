@@ -377,10 +377,14 @@ struct SourceView: View {
                         id: source.id, name: source.name, ok: probe.ok,
                         milliseconds: probe.milliseconds, message: probe.message
                     )
-                    var updated = source
-                    updated.latency = probe.milliseconds
-                    updated.lastError = probe.ok ? nil : probe.message
-                    store.updateSource(updated)
+                    // 校验期间用户可能正在详情页编辑并保存过这条书源。
+                    // 用点击瞬间的快照整条回写会覆盖掉那些修改，所以只把
+                    // 延迟与错误合并进当前最新的那条；书源已被删除就别复活它。
+                    if var latest = store.sources.first(where: { $0.id == source.id }) {
+                        latest.latency = probe.milliseconds
+                        latest.lastError = probe.ok ? nil : probe.message
+                        store.updateSource(latest)
+                    }
                 } else {
                     result = SourceProbe(
                         id: source.id, name: source.name, ok: false,
