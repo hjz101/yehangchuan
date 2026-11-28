@@ -118,6 +118,9 @@ final class MockBackend {
         syncState = .idle
     }
 
+    /// 演示同步：只改状态，不上传、不下载、不合并任何数据。
+    /// 冲突只在用户显式选择「演示冲突流程」时出现，不再随机制造 ——
+    /// 随机冲突会让用户以为自己真的有云端数据在打架。
     func sync(forceConflict: Bool = false) async -> CloudSyncState {
         syncState = .syncing
         let response = await call("POST", "/v1/sync/push")
@@ -126,7 +129,7 @@ final class MockBackend {
             syncState = state
             return state
         }
-        let conflict = forceConflict || Int.random(in: 0..<12) == 0
+        let conflict = forceConflict
         if conflict {
             syncState = .conflict
         } else {
@@ -138,6 +141,7 @@ final class MockBackend {
     }
 
     func resolveConflict(useLocal: Bool) {
+        // 演示的冲突解决只切状态：两份数据从头到尾都只有本机这一份。
         let now = Date()
         lastSyncAt = now
         syncState = .synced(now)

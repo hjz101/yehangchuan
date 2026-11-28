@@ -887,8 +887,9 @@ struct SyncCenterSheet: View {
 
     @State private var email = "reader@yehangchuan.app"
     @State private var isBusy = false
-    @State private var forceConflict = false
     @State private var useRealCloud = false
+    /// 演示模式下的冲突演练：默认不制造冲突。
+    @State private var demoConflict = false
     @State private var message = ""
 
     private var syncTint: Color {
@@ -936,7 +937,7 @@ struct SyncCenterSheet: View {
                 .background(syncTint.opacity(0.12), in: Circle())
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("iCloud 同步")
+                Text(useRealCloud ? "iCloud 同步" : "同步（演示）")
                     .font(.system(size: 17, weight: .semibold, design: .serif))
                     .foregroundStyle(Palette.text)
 
@@ -959,9 +960,10 @@ struct SyncCenterSheet: View {
 
     private var lastSyncText: String {
         guard let date = store.backend.lastSyncAt else {
-            return "尚未同步 · 本机数据优先"
+            return useRealCloud ? "尚未同步 · 本机数据优先" : "演示状态 · 本机数据优先"
         }
-        return "上次同步 \(date.formatted(date: .abbreviated, time: .shortened))"
+        let stamp = date.formatted(date: .abbreviated, time: .shortened)
+        return useRealCloud ? "上次同步 \(stamp)" : "上次演示同步 \(stamp) · 未上传"
     }
 
     private var accountSection: some View {
@@ -1050,10 +1052,15 @@ struct SyncCenterSheet: View {
                 .tint(Palette.jade)
 
                 if !useRealCloud {
-                    Toggle(isOn: $forceConflict) {
-                        Text("下一次同步制造冲突")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Palette.text)
+                    Toggle(isOn: $demoConflict) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("演练冲突流程")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Palette.text)
+                            Text("只切换演示状态，不产生真实的云端数据")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Palette.tertiary)
+                        }
                     }
                     .tint(Palette.accent)
                 }
@@ -1064,8 +1071,8 @@ struct SyncCenterSheet: View {
                     } else {
                         isBusy = true
                         Task { @MainActor in
-                            _ = await store.backend.sync(forceConflict: forceConflict)
-                            forceConflict = false
+                            _ = await store.backend.sync(forceConflict: demoConflict)
+                            demoConflict = false
                             isBusy = false
                         }
                     }
