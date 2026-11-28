@@ -42,6 +42,10 @@ extension Color {
 
 // MARK: - Design Tokens
 
+/// 已弃用（P1-01）：全局主题后的内置默认常量壳。
+/// 保留 enum + 静态常量形态与全部数值，作为零视觉回归基准和未迁移代码/预览的兜底。
+/// 新代码一律用 `@Environment(\.theme)` 的令牌，不要再直接引用 Palette。
+/// 注：这里只加文档注释、不加 @available(deprecated)，避免 481 处既有引用产生编译警告。
 enum Palette {
     // 灯焰
     static let accent = Color.adaptive(light: 0xB6402A, dark: 0xFF8E63)
@@ -99,89 +103,10 @@ enum Palette {
 /// 网格渐变与两团径向渐变本身就是静态的，去掉动画后外观几乎无差别，
 /// 但整机功耗与切换手感完全是两回事。
 struct AppBackdrop: View {
-    @Environment(\.colorScheme) private var scheme
-
+    /// P1-01：背景读主题令牌。默认主题下与旧实现（夜色水面 3×3 网格 + 双光斑）
+    /// 逐色一致；换主题时随令牌换肤。静态、无动画（边界2）。
     var body: some View {
-        // 用 Color.clear 作为尺寸基准，避免固定尺寸的光斑把父级 ZStack 撑大
-        Color.clear
-            .overlay {
-                ZStack {
-                    mesh
-                    glows
-                }
-            }
-            .clipped()
-            .allowsHitTesting(false)
-            .ignoresSafeArea()
-    }
-
-    private var mesh: some View {
-        Group {
-            if scheme == .dark {
-                MeshGradient(
-                    width: 3,
-                    height: 3,
-                    points: [
-                        [0, 0], [0.5, 0], [1, 0],
-                        [0, 0.52], [0.52, 0.46], [1, 0.55],
-                        [0, 1], [0.48, 1], [1, 1]
-                    ],
-                    colors: [
-                        Color(hex: 0x05080E), Color(hex: 0x081019), Color(hex: 0x0C1622),
-                        Color(hex: 0x0A121C), Color(hex: 0x13202D), Color(hex: 0x1A232D),
-                        Color(hex: 0x0E161E), Color(hex: 0x191D24), Color(hex: 0x2A1E15)
-                    ]
-                )
-            } else {
-                MeshGradient(
-                    width: 3,
-                    height: 3,
-                    points: [
-                        [0, 0], [0.5, 0], [1, 0],
-                        [0, 0.52], [0.52, 0.46], [1, 0.55],
-                        [0, 1], [0.48, 1], [1, 1]
-                    ],
-                    colors: [
-                        Color(hex: 0xF7F9FD), Color(hex: 0xEFF3FA), Color(hex: 0xE6EDF7),
-                        Color(hex: 0xF3F6FB), Color(hex: 0xE9F0F8), Color(hex: 0xDEE7F2),
-                        Color(hex: 0xEDF0F5), Color(hex: 0xE5EBF3), Color(hex: 0xF3E7DA)
-                    ]
-                )
-            }
-        }
-    }
-
-    private var glows: some View {
-        let isDark = scheme == .dark
-        return ZStack {
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [Palette.accentSolid.opacity(isDark ? 0.34 : 0.20), .clear],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: 200
-                    )
-                )
-                .frame(width: 460, height: 460)
-                // 径向渐变本身已经淡到透明，大半径 blur 只是额外的一次离屏绘制。
-                .blur(radius: 24)
-                .offset(x: -70, y: 350)
-
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [Color(hex: 0x3F8FA8).opacity(isDark ? 0.30 : 0.16), .clear],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: 190
-                    )
-                )
-                .frame(width: 420, height: 420)
-                .blur(radius: 28)
-                .offset(x: 110, y: -320)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        ThemeBackdrop()
     }
 }
 

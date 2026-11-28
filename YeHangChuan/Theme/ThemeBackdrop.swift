@@ -56,28 +56,34 @@ struct ThemeBackdrop: View {
         }
     }
 
-    /// 光斑 ≤3、静态，颜色取缓存里的解析结果。
+    /// 光斑 ≤3、静态。systemMesh（默认主题）走内置精确值，保证零视觉回归；
+    /// 自定义主题走令牌缓存里的解析结果。
+    @ViewBuilder
     private var glowLayer: some View {
-        ZStack {
-            ForEach(Array(theme.background.glows.enumerated()), id: \.offset) { _, glow in
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [glow.color.opacity(glow.opacity), .clear],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: glow.radius
+        if case .systemMesh = theme.background.style {
+            EmptyView()  // 内置光斑由 SystemMeshBackdrop 自己绘制（精确旧值）
+        } else {
+            ZStack {
+                ForEach(Array(theme.background.glows.enumerated()), id: \.offset) { _, glow in
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [glow.color.opacity(glow.opacity), .clear],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: glow.radius
+                            )
                         )
-                    )
-                    .frame(width: glow.radius * 2.3, height: glow.radius * 2.3)
-                    .blur(radius: glow.radius * 0.12)
-                    .offset(
-                        x: (glow.position.x - 0.5) * 400,
-                        y: (glow.position.y - 0.5) * 700
-                    )
+                        .frame(width: glow.radius * 2.3, height: glow.radius * 2.3)
+                        .blur(radius: glow.radius * 0.12)
+                        .offset(
+                            x: (glow.position.x - 0.5) * 400,
+                            y: (glow.position.y - 0.5) * 700
+                        )
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 }
 
