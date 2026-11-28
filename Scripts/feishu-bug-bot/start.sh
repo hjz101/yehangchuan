@@ -5,22 +5,14 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DIR="$ROOT/Scripts/feishu-bug-bot"
 SESSION="feishu-bug-bot"
 
-if [[ -z "${LARKSUITE_CLI_USER_ACCESS_TOKEN:-}" ]]; then
-  echo "缺少 LARKSUITE_CLI_USER_ACCESS_TOKEN，请在 Trae 会话中运行本脚本（凭据由会话注入）。" >&2
+if [[ ! -f "$DIR/.aamp.env" ]]; then
+  echo "缺少 AAMP 应用凭据：$DIR/.aamp.env" >&2
   exit 1
 fi
 if ! command -v tmux >/dev/null 2>&1; then
   echo "未找到 tmux，请先安装：brew install tmux" >&2
   exit 1
 fi
-
-# 凭据只落在本机，已被 .gitignore 排除
-umask 077
-{
-  echo "export LARKSUITE_CLI_APP_ID='${LARKSUITE_CLI_APP_ID}'"
-  echo "export LARKSUITE_CLI_USER_ACCESS_TOKEN='${LARKSUITE_CLI_USER_ACCESS_TOKEN}'"
-  echo "export LARKSUITE_CLI_BRAND='${LARKSUITE_CLI_BRAND:-feishu}'"
-} > "$DIR/.env"
 
 mkdir -p "$DIR/logs"
 if tmux has-session -t "$SESSION" 2>/dev/null; then

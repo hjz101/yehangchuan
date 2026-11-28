@@ -1,12 +1,12 @@
 #!/bin/zsh
-# LaunchAgent 入口：加载本地凭据后启动机器人
+# LaunchAgent/tmux 入口：加载 AAMP 应用凭据后启动机器人
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR/../.."
 
-if [[ -f "$DIR/.env" ]]; then
+if [[ -f "$DIR/.aamp.env" ]]; then
   set -a
-  source "$DIR/.env"
+  source "$DIR/.aamp.env"
   set +a
 fi
 

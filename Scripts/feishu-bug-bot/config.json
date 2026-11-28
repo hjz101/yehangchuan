@@ -1,6 +1,7 @@
 {
-  "chatId": "oc_98b5e83701d6cc5facc17ddeb7d61678",
-  "triggerOpenId": "ou_20e52979ff6bb3bf1c440dbb03bf72a5",
+  "chatId": "oc_97905c7f85e4639270db6132fbd35ded",
+  "identity": "bot",
+  "triggerOpenId": "ou_d2f1234936522c85eed7ef24153ef02e",
   "repoDir": "/Users/a138/Desktop/夜航船",
   "pollIntervalMs": 15000,
   "agentTimeoutMs": 1200000,
