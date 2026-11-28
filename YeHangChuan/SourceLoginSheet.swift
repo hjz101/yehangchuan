@@ -151,23 +151,32 @@ final class SourceLoginModel: ObservableObject {
         }
         switch mode {
         case .web:
-            webView?.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
-                let host = URL(string: engineSource.bookSourceUrl)?.host ?? ""
+            // `webView` 由 `makeUIView` 异步赋值，点「完成」时可能还没就绪。
+            // 有就优先用它自己的 cookie store；没有则退回默认 store，
+            // 不能因为 webView 为 nil 就直接跳过收集。
+            let cookieStore = (webView?.configuration.websiteDataStore ?? WKWebsiteDataStore.default()).httpCookieStore
+            // 回调不弱引用 model：点完成会立刻 dismiss，model 可能先被释放，
+            // 用 weak self 会把已经拿到的会话结果静默丢掉。
+            let onFinished = self.onFinished
+            let sourceKey = engineSource.bookSourceUrl
+            let sourceID = engineSource.id
+            cookieStore.getAllCookies { cookies in
+                let host = URL(string: sourceKey)?.host ?? ""
                 let pairs = cookies
                     .filter { host.isEmpty || $0.domain.hasSuffix(host) || host.hasSuffix($0.domain) }
                     .map { "\($0.name)=\($0.value)" }
                 let header = pairs.joined(separator: "; ")
                 if !header.isEmpty {
-                    LegadoCookieStore.shared.setCookie(header, for: engineSource.bookSourceUrl)
+                    LegadoCookieStore.shared.setCookie(header, for: sourceKey)
                     if let data = try? JSONSerialization.data(withJSONObject: ["Cookie": header]),
                        let text = String(data: data, encoding: .utf8) {
                         BookSourceRuntimeStore.shared.put(
-                            sourceID: engineSource.id, key: "loginHeader", value: text
+                            sourceID: sourceID, key: "loginHeader", value: text
                         )
                     }
                 }
                 DispatchQueue.main.async {
-                    self?.onFinished(header.isEmpty ? .signedOut : .signedIn)
+                    onFinished(header.isEmpty ? .signedOut : .signedIn)
                 }
             }
         case .script:
