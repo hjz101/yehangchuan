@@ -32,7 +32,14 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             let item = CPListItem(text: chapter.title, detailText: "第 \(index + 1) 节", image: nil)
             item.handler = { _, completion in
                 Task { @MainActor in
-                    CarPlaySupport.store?.player.chapterIndex = index
+                    guard let player = CarPlaySupport.store?.player else {
+                        completion()
+                        return
+                    }
+                    // 走播放器自己的切章：真实音频会 seek 到对应时间点，
+                    // 演示音轨会重置到该章开头。只改 chapterIndex 不会换内容。
+                    player.selectChapter(index)
+                    if !player.isPlaying { player.resume() }
                     completion()
                 }
             }
