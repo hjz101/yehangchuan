@@ -137,12 +137,6 @@ extension View {
     func eyeCareFilter(_ settings: EyeCareSettings) -> some View {
         overlay { EyeCareLayer(settings: settings) }
     }
-
-    /// 弹层的统一外观：跟随 App 的明暗偏好，并叠上护眼层。
-    func appChrome(_ store: AppStore) -> some View {
-        preferredColorScheme(store.appearance.colorScheme)
-            .eyeCareFilter(store.eyeCare)
-    }
 }
 
 // MARK: - Glass
