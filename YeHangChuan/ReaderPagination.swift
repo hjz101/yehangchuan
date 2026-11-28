@@ -143,6 +143,8 @@ final class PaginatedBook {
     let size: CGSize
     let pages: [ReadingPage]
     let hasComments: Bool
+    /// 是否净化正文。分页用的是净化后的文本，绘制与命中必须用同一份。
+    let purifyText: Bool
     /// 书 ID → 该章的页数。页眉要显示「本章第几页」，不能每次都数一遍。
     let chapterPageCounts: [String: Int]
 
@@ -158,13 +160,15 @@ final class PaginatedBook {
         typeface: ReaderTypeface,
         size: CGSize,
         pages: [ReadingPage],
-        hasComments: Bool
+        hasComments: Bool,
+        purifyText: Bool
     ) {
         self.chapters = chapters
         self.typeface = typeface
         self.size = size
         self.pages = pages
         self.hasComments = hasComments
+        self.purifyText = purifyText
         index = PageIndex(pages: pages, chapterIDs: chapters.map(\.id))
         chapterPageCounts = index.chapterPageCounts
     }
@@ -186,7 +190,11 @@ final class PaginatedBook {
 
     func layout(chapterID: String) -> ChapterLayout {
         if let cached = layouts.value(for: chapterID) { return cached }
-        let paragraphs = chapter(withID: chapterID)?.paragraphs.map(\.text) ?? []
+        // 分页测量用的是 displayText(purify:)，这里必须用同一份文本；
+        // 否则净化删字后，按净化偏移去切原始文本会裁字、错位。
+        let paragraphs = chapter(withID: chapterID)?.paragraphs.map {
+            ReaderTypography.displayText($0, purify: purifyText)
+        } ?? []
         let layout = ChapterLayout(chapterID: chapterID, paragraphs: paragraphs, style: typeface.style())
         layouts.store(layout, for: chapterID)
         return layout

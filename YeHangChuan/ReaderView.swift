@@ -1240,7 +1240,8 @@ struct ReaderView: View {
                 typeface: typeface,
                 size: size,
                 pages: pages,
-                hasComments: hasComments && !settings.hideSourceComments
+                hasComments: hasComments && !settings.hideSourceComments,
+                purifyText: settings.purifyText
             )
             pagination = paginated
             pageIndex = Self.resolveIndex(
