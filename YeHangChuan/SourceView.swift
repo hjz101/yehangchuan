@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 import LegadoCore
 
 struct SourceView: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
 
     @State private var showAddSource = false
@@ -149,7 +150,7 @@ struct SourceView: View {
                 RingProgress(
                     value: store.sources.isEmpty ? 0 : Double(enabledCount) / Double(store.sources.count),
                     lineWidth: 7,
-                    tint: Palette.jade,
+                    tint: theme.jade,
                     label: "\(enabledCount)",
                     caption: "启用"
                 )
@@ -159,14 +160,14 @@ struct SourceView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("书源池")
                     .font(.system(size: 16, weight: .semibold, design: .serif))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
 
                 // 这里原来写「可检索 N 本」，N 是所有书源 bookCount 的累加。
                 // 但 bookCount 只是演示时写死的数字，真实引擎从不知道也不算这个数，
                 // 所以改成能如实反映的：书源总数与已启用数。
                 Text("共 \(store.sources.count) 个书源，\(enabledCount) 个已启用")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
 
                 HStack(spacing: 6) {
                     ForEach(SourceKind.allCases, id: \.self) { kind in
@@ -174,10 +175,10 @@ struct SourceView: View {
                         if count > 0 {
                             Text("\(kind.rawValue) \(count)")
                                 .font(.system(size: 9.5, weight: .semibold))
-                                .foregroundStyle(Palette.tertiary)
+                                .foregroundStyle(theme.tertiary)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
-                                .glassCapsule(tint: Palette.glassTint)
+                                .glassCapsule(tint: theme.glassTint)
                         }
                     }
                 }
@@ -199,28 +200,28 @@ struct SourceView: View {
             HStack(spacing: 13) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Palette.onAccent)
+                    .foregroundStyle(theme.onAccent)
                     .frame(width: 40, height: 40)
-                    .background(Palette.accentSolid, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .background(theme.accentSolid, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("搜索并加入书架")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(theme.text)
 
                     Text(enabledCount > 0 ? "在已启用的书源中检索" : "先启用一个书源")
                         .font(.system(size: 11))
-                        .foregroundStyle(Palette.secondary)
+                        .foregroundStyle(theme.secondary)
                 }
 
                 Spacer()
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Palette.tertiary.opacity(0.6))
+                    .foregroundStyle(theme.tertiary.opacity(0.6))
             }
             .padding(14)
-            .glassSurface(cornerRadius: 24, tint: Palette.accent.opacity(0.08), interactive: true)
+            .glassSurface(cornerRadius: 24, tint: theme.accent.opacity(0.08), interactive: true)
             .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
         .buttonStyle(PressableStyle(scale: 0.985))
@@ -260,10 +261,10 @@ struct SourceView: View {
                     VStack(spacing: 8) {
                         Image(systemName: "antenna.radiowaves.left.and.right.slash")
                             .font(.system(size: 22, weight: .light))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                         Text("还没有书源")
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Palette.secondary)
+                            .foregroundStyle(theme.secondary)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 34)
@@ -276,7 +277,7 @@ struct SourceView: View {
     private var footerNote: some View {
         Text("书源默认关闭；启用前会提示权限与私网风险。已启用书源的检索、目录与正文会真实联网，私网地址默认拦截。")
             .font(.system(size: 10.5))
-            .foregroundStyle(Palette.tertiary)
+            .foregroundStyle(theme.tertiary)
             .padding(.horizontal, 2)
             .padding(.top, 2)
     }
@@ -299,6 +300,7 @@ enum SourceEnablePrompt: Identifiable {
 }
 
 struct SourceRow: View {
+    @Environment(\.theme) private var theme
     let source: BookSource
     let onToggle: (Bool) -> Void
     var onOpen: (() -> Void)? = nil
@@ -310,8 +312,8 @@ struct SourceRow: View {
                     .fill(
                         LinearGradient(
                             colors: source.enabled
-                                ? [Palette.jade.opacity(0.9), Palette.jade.opacity(0.55)]
-                                : [Palette.faint, Palette.faint],
+                                ? [theme.jade.opacity(0.9), theme.jade.opacity(0.55)]
+                                : [theme.faint, theme.faint],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -320,44 +322,44 @@ struct SourceRow: View {
 
                 Image(systemName: source.kind == .js ? "curlybraces" : "doc.text")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(source.enabled ? .white : Palette.tertiary)
+                    .foregroundStyle(source.enabled ? .white : theme.tertiary)
             }
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(source.name)
                         .font(.system(size: 14.5, weight: .medium))
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(theme.text)
                         .lineLimit(1)
 
                     Text(source.kind.rawValue)
                         .font(.system(size: 8.5, weight: .bold))
                         .tracking(0.4)
-                        .foregroundStyle(Palette.accent)
+                        .foregroundStyle(theme.accent)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(Palette.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .background(theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                 }
 
                 // 原来这里写「N 本」，那个 N 来自演示数据里写死的 bookCount，
                 // 与真实书源无关。改成书源自己的分组，是真实字段。
                 Text("\(source.host) · \(source.group)")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                     .lineLimit(1)
 
                 HStack(spacing: 5) {
                     Text(source.login.rawValue)
-                        .foregroundStyle(source.login == .expired ? Palette.accent : Palette.tertiary)
+                        .foregroundStyle(source.login == .expired ? theme.accent : theme.tertiary)
 
                     if let latency = source.latency {
                         Text("· \(latency) ms")
-                            .foregroundStyle(Palette.jade)
+                            .foregroundStyle(theme.jade)
                     }
 
                     if source.lastError != nil {
                         Text("· 异常")
-                            .foregroundStyle(Palette.accent)
+                            .foregroundStyle(theme.accent)
                     }
                 }
                 .font(.system(size: 9.5, weight: .medium))
@@ -370,7 +372,7 @@ struct SourceRow: View {
                 isOn: Binding(get: { source.enabled }, set: onToggle)
             )
             .labelsHidden()
-            .tint(Palette.jade)
+            .tint(theme.jade)
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 11)
@@ -386,6 +388,7 @@ struct SourceRow: View {
 // MARK: - Add Source
 
 struct AddSourceSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -451,7 +454,7 @@ struct AddSourceSheet: View {
 
             TextField("书源名称", text: $name)
                 .font(.system(size: 15))
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 13)
                 .glassSurface(cornerRadius: 18)
@@ -475,7 +478,7 @@ struct AddSourceSheet: View {
                  ? "规则里含 @js: 或 jsLib，运行时在 JavaScriptCore 中执行。"
                  : "规则用 CSS 选择器、JSONPath 或正则表达式提取字段。")
                 .font(.system(size: 10))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
         }
     }
 
@@ -493,10 +496,10 @@ struct AddSourceSheet: View {
                         } label: {
                             Text(preset.0)
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Palette.text)
+                                .foregroundStyle(theme.text)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
-                                .glassCapsule(tint: Palette.glassTint, interactive: true)
+                                .glassCapsule(tint: theme.glassTint, interactive: true)
                         }
                         .buttonStyle(PressableStyle())
                     }
@@ -513,7 +516,7 @@ struct AddSourceSheet: View {
 
             TextEditor(text: $config)
                 .font(.system(size: 11.5, design: .monospaced))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
                 .scrollContentBackground(.hidden)
                 .padding(10)
                 .frame(height: 200)
@@ -601,6 +604,7 @@ struct AddSourceSheet: View {
 // MARK: - Source Search
 
 struct SourceSearchSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -659,7 +663,7 @@ struct SourceSearchSheet: View {
                                         Text("并发检索 \(enabledCount) 个书源 · \(results.count) 条结果")
                                     }
                                     .font(.system(size: 9.5, weight: .medium))
-                                    .foregroundStyle(Palette.tertiary)
+                                    .foregroundStyle(theme.tertiary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.bottom, 2)
                                 }
@@ -771,14 +775,14 @@ struct SourceSearchSheet: View {
         VStack(spacing: 8) {
             Image(systemName: searchedKeyword.isEmpty ? "magnifyingglass" : "text.magnifyingglass")
                 .font(.system(size: 24, weight: .light))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
             Text(searchedKeyword.isEmpty ? "输入书名或作者开始检索" : "没有匹配的结果")
                 .font(.system(size: 13))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
             if !searchedKeyword.isEmpty && sourceErrors.isEmpty {
                 Text("检索真实网络请求，速度取决于书源站点")
                     .font(.system(size: 10))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             }
         }
         .padding(.top, 48)
@@ -788,19 +792,19 @@ struct SourceSearchSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("以下书源没有返回结果")
                 .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
 
             ForEach(Array(sourceErrors.keys.sorted()), id: \.self) { name in
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 9))
-                        .foregroundStyle(Palette.accent)
+                        .foregroundStyle(theme.accent)
                     Text(name)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Palette.secondary)
+                        .foregroundStyle(theme.secondary)
                     Text(sourceErrors[name] ?? "")
                         .font(.system(size: 9.5))
-                        .foregroundStyle(Palette.tertiary)
+                        .foregroundStyle(theme.tertiary)
                         .lineLimit(2)
                     Spacer(minLength: 0)
                 }
@@ -808,7 +812,7 @@ struct SourceSearchSheet: View {
         }
         .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassSurface(cornerRadius: 14, tint: Palette.accent.opacity(0.06))
+        .glassSurface(cornerRadius: 14, tint: theme.accent.opacity(0.06))
     }
 
     private var searchingState: some View {
@@ -816,7 +820,7 @@ struct SourceSearchSheet: View {
             ProgressView().themedProgress()
             Text("正在检索书源…")
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 50)
@@ -826,11 +830,11 @@ struct SourceSearchSheet: View {
         HStack(spacing: 9) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
 
             TextField("输入书名或作者", text: $query)
                 .font(.system(size: 14))
-                .foregroundStyle(Palette.text)
+                .foregroundStyle(theme.text)
                 .autocorrectionDisabled()
 
             if !query.isEmpty {
@@ -839,7 +843,7 @@ struct SourceSearchSheet: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 13))
-                        .foregroundStyle(Palette.tertiary.opacity(0.7))
+                        .foregroundStyle(theme.tertiary.opacity(0.7))
                 }
             }
         }
@@ -864,15 +868,15 @@ struct SourceSearchSheet: View {
                             Text(source.name)
                         }
                         .font(.system(size: 11.5, weight: selected ? .semibold : .medium))
-                        .foregroundStyle(selected ? Palette.onAccent : Palette.secondary)
+                        .foregroundStyle(selected ? theme.onAccent : theme.secondary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
                         .background {
                             if selected {
-                                Capsule().fill(Palette.jade)
+                                Capsule().fill(theme.jade)
                             }
                         }
-                        .glassCapsule(tint: selected ? nil : Palette.glassTint, interactive: true)
+                        .glassCapsule(tint: selected ? nil : theme.glassTint, interactive: true)
                         .contentShape(Capsule())
                     }
                     .buttonStyle(PressableStyle())
@@ -886,6 +890,7 @@ struct SourceSearchSheet: View {
 }
 
 struct SearchResultRow: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
 
     let book: Book
@@ -901,12 +906,12 @@ struct SearchResultRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(book.title)
                     .font(.system(size: 15, weight: .semibold, design: .serif))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                     .lineLimit(1)
 
                 Text("\(book.author) · \(book.kind.rawValue) · \(book.chapterCountLabel)")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                     .lineLimit(1)
 
                 HStack(spacing: 4) {
@@ -916,7 +921,7 @@ struct SearchResultRow: View {
                         .font(.system(size: 9.5))
                         .lineLimit(1)
                 }
-                .foregroundStyle(Palette.jade.opacity(0.85))
+                .foregroundStyle(theme.jade.opacity(0.85))
             }
 
             Spacer(minLength: 4)
@@ -926,9 +931,9 @@ struct SearchResultRow: View {
             } label: {
                 Image(systemName: added ? "checkmark" : "plus")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(added ? Palette.jade : Palette.onAccent)
+                    .foregroundStyle(added ? theme.jade : theme.onAccent)
                     .frame(width: 32, height: 32)
-                    .background(added ? Palette.jade.opacity(0.16) : Palette.accentSolid, in: Circle())
+                    .background(added ? theme.jade.opacity(0.16) : theme.accentSolid, in: Circle())
             }
             .buttonStyle(PressableStyle())
             .disabled(added)
@@ -942,6 +947,7 @@ struct SearchResultRow: View {
 // MARK: - Source Detail
 
 struct SourceDetailSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -1019,23 +1025,23 @@ struct SourceDetailSheet: View {
         HStack(spacing: 14) {
             Image(systemName: source.kind == .js ? "curlybraces" : "doc.text")
                 .font(.system(size: 21, weight: .semibold))
-                .foregroundStyle(Palette.jade)
+                .foregroundStyle(theme.jade)
                 .frame(width: 52, height: 52)
-                .background(Palette.jade.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(theme.jade.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(source.name)
                     .font(.system(size: 19, weight: .semibold, design: .serif))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
 
                 Text("\(source.host) · \(source.kind.rawValue) · \(source.group)")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                     .lineLimit(1)
 
                 Text(source.login.rawValue)
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(source.login == .expired ? Palette.accent : Palette.jade)
+                    .foregroundStyle(source.login == .expired ? theme.accent : theme.jade)
             }
 
             Spacer()
@@ -1053,7 +1059,7 @@ struct SourceDetailSheet: View {
                 }
             ))
                 .labelsHidden()
-                .tint(Palette.jade)
+                .tint(theme.jade)
         }
         .padding(14)
         .glassSurface(cornerRadius: 24)
@@ -1061,7 +1067,7 @@ struct SourceDetailSheet: View {
             if !enableWarning.isEmpty {
                 Text(enableWarning)
                     .font(.system(size: 9.5))
-                    .foregroundStyle(Palette.accent)
+                    .foregroundStyle(theme.accent)
                     .padding(.horizontal, 15)
                     .offset(y: 12)
             }
@@ -1070,7 +1076,7 @@ struct SourceDetailSheet: View {
 
     private var actionRow: some View {
         HStack(spacing: 9) {
-            actionCard("测试连接", symbol: "bolt.horizontal", tint: Palette.jade) {
+            actionCard("测试连接", symbol: "bolt.horizontal", tint: theme.jade) {
                 isBusy = true
                 Task { @MainActor in
                     guard let engineSource = LegadoBridge.engineSource(from: source) else {
@@ -1099,7 +1105,7 @@ struct SourceDetailSheet: View {
                 }
             }
 
-            actionCard("批量测试", symbol: "checklist", tint: Palette.gold) {
+            actionCard("批量测试", symbol: "checklist", tint: theme.gold) {
                 isBusy = true
                 Task { @MainActor in
                     // 并发探测，但每个源内部只发一次最小请求。
@@ -1127,7 +1133,7 @@ struct SourceDetailSheet: View {
                 }
             }
 
-            actionCard("运行调试", symbol: "ladybug", tint: Palette.accent) {
+            actionCard("运行调试", symbol: "ladybug", tint: theme.accent) {
                 isBusy = true
                 Task { @MainActor in
                     guard let engineSource = LegadoBridge.engineSource(from: source) else {
@@ -1174,15 +1180,15 @@ struct SourceDetailSheet: View {
         HStack(spacing: 10) {
             Image(systemName: probe.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                 .font(.system(size: 16))
-                .foregroundStyle(probe.ok ? Palette.jade : Palette.accent)
+                .foregroundStyle(probe.ok ? theme.jade : theme.accent)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(probe.ok ? "连接正常 · \(probe.milliseconds) ms" : "连接异常 · \(probe.milliseconds) ms")
                     .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                 Text(probe.message)
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
             }
 
             Spacer()
@@ -1199,7 +1205,7 @@ struct SourceDetailSheet: View {
 
             TextEditor(text: $source.rule)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
                 .scrollContentBackground(.hidden)
                 .padding(10)
                 .frame(height: 150)
@@ -1211,17 +1217,17 @@ struct SourceDetailSheet: View {
                 } label: {
                     Label("校验 JSON", systemImage: "checkmark.seal")
                         .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(Palette.jade)
+                        .foregroundStyle(theme.jade)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 8)
-                        .glassCapsule(tint: Palette.jade.opacity(0.1), interactive: true)
+                        .glassCapsule(tint: theme.jade.opacity(0.1), interactive: true)
                 }
                 .buttonStyle(PressableStyle())
 
                 if !ruleMessage.isEmpty {
                     Text(ruleMessage)
                         .font(.system(size: 10))
-                        .foregroundStyle(ruleMessage.contains("有效") ? Palette.jade : Palette.accent)
+                        .foregroundStyle(ruleMessage.contains("有效") ? theme.jade : theme.accent)
                 }
             }
         }
@@ -1236,12 +1242,12 @@ struct SourceDetailSheet: View {
                      ? "这条书源声明了登录脚本，但 App 不会代你执行站点登录、也不保存站点密码。需要登录态的源，请在书源规则里用 Cookie / header 自行配置。"
                      : "这条书源没有登录脚本。搜索、目录与正文按规则匿名请求；需要账号的源请在书源规则里配置 Cookie 或 header。")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text("App 从不伪造登录成功，也不会把账号密码写进书源。")
                     .font(.system(size: 10))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             }
             .padding(13)
             .glassSurface(cornerRadius: 20)
@@ -1256,7 +1262,7 @@ struct SourceDetailSheet: View {
                 if debugLines.isEmpty {
                     Text("尚未运行。调试会依次请求搜索、详情、目录和正文。")
                         .font(.system(size: 11))
-                        .foregroundStyle(Palette.tertiary)
+                        .foregroundStyle(theme.tertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(13)
                 } else {
@@ -1264,23 +1270,23 @@ struct SourceDetailSheet: View {
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: line.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
                                 .font(.system(size: 12))
-                                .foregroundStyle(line.ok ? Palette.jade : Palette.accent)
+                                .foregroundStyle(line.ok ? theme.jade : theme.accent)
                                 .padding(.top, 1)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(line.step)
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Palette.text)
+                                    .foregroundStyle(theme.text)
                                 Text(line.detail)
                                     .font(.system(size: 10.5))
-                                    .foregroundStyle(Palette.secondary)
+                                    .foregroundStyle(theme.secondary)
                             }
 
                             Spacer()
 
                             Text("\(line.milliseconds) ms")
                                 .font(.system(size: 9.5, design: .rounded))
-                                .foregroundStyle(Palette.tertiary)
+                                .foregroundStyle(theme.tertiary)
                                 .monospacedDigit()
                         }
                         .padding(.horizontal, 13)
@@ -1288,7 +1294,7 @@ struct SourceDetailSheet: View {
 
                         if line.id != debugLines.last?.id {
                             Rectangle()
-                                .fill(Palette.hairline)
+                                .fill(theme.hairline)
                                 .frame(height: 0.6)
                                 .padding(.leading, 35)
                         }
@@ -1310,15 +1316,15 @@ struct SourceDetailSheet: View {
                 ForEach(report) { row in
                     HStack {
                         Circle()
-                            .fill(row.ok ? Palette.jade : Palette.accent)
+                            .fill(row.ok ? theme.jade : theme.accent)
                             .frame(width: 6, height: 6)
                         Text(row.name)
                             .font(.system(size: 12))
-                            .foregroundStyle(Palette.text)
+                            .foregroundStyle(theme.text)
                         Spacer()
                         Text(row.ok ? "\(row.milliseconds) ms" : "失败")
                             .font(.system(size: 10, design: .rounded))
-                            .foregroundStyle(row.ok ? Palette.jade : Palette.accent)
+                            .foregroundStyle(row.ok ? theme.jade : theme.accent)
                             .monospacedDigit()
                     }
                     .padding(.horizontal, 13)
@@ -1346,6 +1352,7 @@ struct SourceDetailSheet: View {
 // MARK: - Source import / export
 
 struct SourceImportExportSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -1381,10 +1388,10 @@ struct SourceImportExportSheet: View {
                             } label: {
                                 Label("选择 JSON", systemImage: "doc.badge.plus")
                                     .font(.system(size: 11.5, weight: .semibold))
-                                    .foregroundStyle(Palette.jade)
+                                    .foregroundStyle(theme.jade)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 8)
-                                    .glassCapsule(tint: Palette.jade.opacity(0.1), interactive: true)
+                                    .glassCapsule(tint: theme.jade.opacity(0.1), interactive: true)
                             }
                             .buttonStyle(PressableStyle())
 
@@ -1393,17 +1400,17 @@ struct SourceImportExportSheet: View {
                             } label: {
                                 Label("导出当前", systemImage: "square.and.arrow.up")
                                     .font(.system(size: 11.5, weight: .semibold))
-                                    .foregroundStyle(Palette.text)
+                                    .foregroundStyle(theme.text)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 8)
-                                    .glassCapsule(tint: Palette.glassTint, interactive: true)
+                                    .glassCapsule(tint: theme.glassTint, interactive: true)
                             }
                             .buttonStyle(PressableStyle())
                         }
 
                         TextEditor(text: $json)
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Palette.secondary)
+                            .foregroundStyle(theme.secondary)
                             .scrollContentBackground(.hidden)
                             .padding(10)
                             .frame(height: 320)
@@ -1412,21 +1419,21 @@ struct SourceImportExportSheet: View {
                         if !message.isEmpty {
                             Text(message)
                                 .font(.system(size: 11))
-                                .foregroundStyle(message.contains("已导入") || message.contains("已生成") ? Palette.jade : Palette.accent)
+                                .foregroundStyle(message.contains("已导入") || message.contains("已生成") ? theme.jade : theme.accent)
                         }
 
                         Button {
                             importJSON(json)
                         } label: {
                             Text("校验并导入")
-                                .readableButtonStyle(tint: Palette.accentSolid)
+                                .readableButtonStyle(tint: theme.accentSolid)
                         }
                         .buttonStyle(PressableStyle(scale: 0.97))
 
                         // 引擎已经能执行规则里的 JS，这句不能再写「不执行」。
                         Text("按 Legado 3.0 书源格式解析，保留全部规则字段。启用后检索与正文会真实联网；规则里的 JS 在 JavaScriptCore 中执行，私网地址一律拦截。")
                             .font(.system(size: 10.5))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                     }
                     .padding(18)
                 }
@@ -1588,6 +1595,7 @@ struct SourceImportExportSheet: View {
 /// 搜索、目录、正文改成真实引擎之后，真实请求根本不进那张表，
 /// 页面就成了「看起来有日志、其实一条真的都没有」。
 struct NetworkLogSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -1609,7 +1617,7 @@ struct NetworkLogSheet: View {
                                     diagnostics.clear()
                                 }
                                 .font(.system(size: 10.5, weight: .medium))
-                                .foregroundStyle(Palette.accent)
+                                .foregroundStyle(theme.accent)
                             }
                         }
 
@@ -1641,10 +1649,10 @@ struct NetworkLogSheet: View {
                             } label: {
                                 Text("复制全部日志")
                                     .font(.system(size: 11.5, weight: .semibold))
-                                    .foregroundStyle(Palette.jade)
+                                    .foregroundStyle(theme.jade)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 11)
-                                    .glassSurface(cornerRadius: 16, tint: Palette.jade.opacity(0.08), interactive: true)
+                                    .glassSurface(cornerRadius: 16, tint: theme.jade.opacity(0.08), interactive: true)
                             }
                             .buttonStyle(PressableStyle())
                         }
@@ -1682,14 +1690,14 @@ struct NetworkLogSheet: View {
             )) {
                 Text("记录请求")
                     .font(.system(size: 13.5, weight: .medium))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
             }
-            .tint(Palette.jade)
+            .tint(theme.jade)
 
             // 记录会把请求地址写进磁盘，说清楚而不是默认打开。
             Text("开启后，引擎发出的每条请求地址与状态会写到本机 Application Support/Legado/Logs；关闭时不记录。")
                 .font(.system(size: 10.5))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(13)
@@ -1698,9 +1706,9 @@ struct NetworkLogSheet: View {
 
     private func entryRow(_ entry: DiagnosticLogEntry, isLast: Bool) -> some View {
         let tint: Color = switch entry.level {
-        case .error: Palette.accent
-        case .warning: Palette.gold
-        case .info: Palette.jade
+        case .error: theme.accent
+        case .warning: theme.gold
+        case .info: theme.jade
         }
 
         return VStack(spacing: 0) {
@@ -1712,13 +1720,13 @@ struct NetworkLogSheet: View {
 
                 Text(entry.message)
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(entry.date.formatted(date: .omitted, time: .standard))
                     .font(.system(size: 8.5, design: .rounded))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                     .monospacedDigit()
             }
             .padding(.horizontal, 12)
@@ -1726,7 +1734,7 @@ struct NetworkLogSheet: View {
 
             if !isLast {
                 Rectangle()
-                    .fill(Palette.hairline)
+                    .fill(theme.hairline)
                     .frame(height: 0.6)
                     .padding(.leading, 12)
             }

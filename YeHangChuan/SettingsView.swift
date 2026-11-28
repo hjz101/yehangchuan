@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct SettingsView: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
 
     /// 缓存与空间：三类缓存都要数一遍磁盘目录。
@@ -84,13 +85,13 @@ struct SettingsView: View {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text("显示「摘录」标签")
                                             .font(.system(size: 15))
-                                            .foregroundStyle(Palette.text)
+                                            .foregroundStyle(theme.text)
                                         Text("关掉后底部只留四个标签；摘录数据不会删除")
                                             .font(.system(size: 10.5))
-                                            .foregroundStyle(Palette.tertiary)
+                                            .foregroundStyle(theme.tertiary)
                                     }
                                 }
-                                .tint(Palette.accent)
+                                .tint(theme.accent)
                                 .padding(.horizontal, 15)
                                 .padding(.vertical, 10)
 
@@ -102,7 +103,7 @@ struct SettingsView: View {
                                         title: "主题",
                                         value: ThemeStore.shared.activeTheme.name,
                                         systemImage: "paintpalette",
-                                        iconTint: Palette.accent,
+                                        iconTint: theme.accent,
                                         isLast: false
                                     )
                                 }
@@ -117,7 +118,7 @@ struct SettingsView: View {
                                             ? "\(store.appearance.rawValue) · 暖度 \(Int(store.eyeCare.warmth * 100))%"
                                             : "\(store.appearance.rawValue) · 护眼关闭",
                                         systemImage: "leaf",
-                                        iconTint: Palette.jade,
+                                        iconTint: theme.jade,
                                         isLast: true
                                     )
                                 }
@@ -182,16 +183,16 @@ struct SettingsView: View {
                                     columns: [GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9)],
                                     spacing: 9
                                 ) {
-                                    labTile("AI 阅读助手", "摘要 · 封面 · 语音", "sparkles", Palette.accent) {
+                                    labTile("AI 阅读助手", "摘要 · 封面 · 语音", "sparkles", theme.accent) {
                                         showAI = true
                                     }
-                                    labTile("JS 书源沙箱", "不预装脚本 · 私网拦截", "curlybraces.square", Palette.jade) {
+                                    labTile("JS 书源沙箱", "不预装脚本 · 私网拦截", "curlybraces.square", theme.jade) {
                                         showSandbox = true
                                     }
-                                    labTile("在线发现", "只用已启用书源", "safari", Palette.blue) {
+                                    labTile("在线发现", "只用已启用书源", "safari", theme.blue) {
                                         showDiscover = true
                                     }
-                                    labTile("声音实验室", "多角色 · 后台播放", "waveform", Palette.sand) {
+                                    labTile("声音实验室", "多角色 · 后台播放", "waveform", theme.sand) {
                                         showVoice = true
                                     }
                                 }
@@ -256,7 +257,7 @@ struct SettingsView: View {
 
                             Text("夜航船 · 本地优先的阅读器")
                                 .font(.system(size: 10.5, design: .serif))
-                                .foregroundStyle(Palette.tertiary)
+                                .foregroundStyle(theme.tertiary)
                             .frame(maxWidth: .infinity)
                             .padding(.top, 4)
                             .id("settingsFooter")
@@ -426,7 +427,7 @@ struct SettingsView: View {
                 Circle()
                     .fill(
                         LinearGradient(
-                            colors: [Palette.accent, Palette.gold.opacity(0.75)],
+                            colors: [theme.accent, theme.gold.opacity(0.75)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -441,11 +442,11 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("夜读者")
                     .font(.system(size: 16, weight: .semibold, design: .serif))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
 
                 Text("连续 \(store.streak) 天 · 累计 \(store.totalMinutes / 60) 小时")
                     .font(.system(size: 11))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
             }
 
             Spacer()
@@ -453,10 +454,10 @@ struct SettingsView: View {
             VStack(spacing: 1) {
                 Text("\(store.books.count)")
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                 Text("本藏书")
                     .font(.system(size: 9))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             }
         }
         .padding(15)
@@ -481,12 +482,12 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.system(size: 13.5, weight: .medium))
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(theme.text)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                     Text(detail)
                         .font(.system(size: 10))
-                        .foregroundStyle(Palette.tertiary)
+                        .foregroundStyle(theme.tertiary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                 }
@@ -495,10 +496,10 @@ struct SettingsView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
-            .background(Palette.glassTint.opacity(0.55), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .background(theme.glassTint.opacity(0.55), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .strokeBorder(Palette.hairline, lineWidth: 0.6)
+                    .strokeBorder(theme.hairline, lineWidth: 0.6)
             }
             .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         }
@@ -521,6 +522,7 @@ struct SettingsView: View {
 // MARK: - Eye care
 
 struct EyeCareSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -562,13 +564,13 @@ struct EyeCareSheet: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("暖色滤光")
                                         .font(.system(size: 14, weight: .medium))
-                                        .foregroundStyle(Palette.text)
+                                        .foregroundStyle(theme.text)
                                     Text("降低蓝光刺激，阅读页与书架同步生效")
                                         .font(.system(size: 10.5))
-                                        .foregroundStyle(Palette.tertiary)
+                                        .foregroundStyle(theme.tertiary)
                                 }
                             }
-                            .tint(Palette.jade)
+                            .tint(theme.jade)
 
                             sliderRow(
                                 title: "暖度",
@@ -602,7 +604,7 @@ struct EyeCareSheet: View {
                             HStack {
                                 Text("每 \(store.eyeCare.restMinutes) 分钟")
                                     .font(.system(size: 13))
-                                    .foregroundStyle(Palette.text)
+                                    .foregroundStyle(theme.text)
 
                                 Spacer()
 
@@ -611,7 +613,7 @@ struct EyeCareSheet: View {
                                     set: { store.eyeCare.restReminder = $0; store.saveSnapshot() }
                                 ))
                                 .labelsHidden()
-                                .tint(Palette.jade)
+                                .tint(theme.jade)
                             }
 
                             Button {
@@ -624,20 +626,20 @@ struct EyeCareSheet: View {
                                     Text("预览休息提醒")
                                 }
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Palette.jade)
+                                .foregroundStyle(theme.jade)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 10)
-                                .glassCapsule(tint: Palette.jade.opacity(0.1), interactive: true)
+                                .glassCapsule(tint: theme.jade.opacity(0.1), interactive: true)
                             }
                             .buttonStyle(PressableStyle())
 
                             if showPreview {
                                 Text("已读 20 分钟。看看 6 米外，让眼睛休息 20 秒。")
                                     .font(.system(size: 11.5))
-                                    .foregroundStyle(Palette.secondary)
+                                    .foregroundStyle(theme.secondary)
                                     .padding(10)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .glassSurface(cornerRadius: 14, tint: Palette.jade.opacity(0.08))
+                                    .glassSurface(cornerRadius: 14, tint: theme.jade.opacity(0.08))
                                     .transition(.opacity.combined(with: .move(edge: .top)))
                             }
                         }
@@ -646,7 +648,7 @@ struct EyeCareSheet: View {
 
                         Text("护眼设置全 App 生效，只保存在本机。")
                             .font(.system(size: 10))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                             .padding(.horizontal, 2)
                     }
                     .padding(18)
@@ -682,17 +684,17 @@ struct EyeCareSheet: View {
         HStack(spacing: 13) {
             Image(systemName: "leaf.fill")
                 .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(Palette.jade)
+                .foregroundStyle(theme.jade)
                 .frame(width: 42, height: 42)
-                .background(Palette.jade.opacity(0.12), in: Circle())
+                .background(theme.jade.opacity(0.12), in: Circle())
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(store.eyeCare.enabled ? "已开启" : "已关闭")
                     .font(.system(size: 15, weight: .semibold, design: .serif))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                 Text("暖度 \(Int(store.eyeCare.warmth * 100))% · 亮度 \(Int((1 - store.eyeCare.dim) * 100))%")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                     .monospacedDigit()
             }
 
@@ -711,13 +713,13 @@ struct EyeCareSheet: View {
         HStack(spacing: 10) {
             Text(title)
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
                 .frame(width: 32, alignment: .leading)
             Slider(value: value, in: range)
-                .tint(Palette.jade)
+                .tint(theme.jade)
             Text(label)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
                 .monospacedDigit()
                 .frame(width: 34, alignment: .trailing)
         }
@@ -725,6 +727,7 @@ struct EyeCareSheet: View {
 }
 
 struct GoalSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
 
     let minutes: Int
@@ -741,12 +744,12 @@ struct GoalSheet: View {
                     VStack(spacing: 5) {
                         Text("\(value)")
                             .font(.system(size: 46, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Palette.text)
+                            .foregroundStyle(theme.text)
                             .monospacedDigit()
 
                         Text("分钟 / 天")
                             .font(.system(size: 12))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                     }
                     .padding(.top, 14)
 
@@ -758,7 +761,7 @@ struct GoalSheet: View {
                         in: 10...180,
                         step: 5
                     )
-                    .tint(Palette.accent)
+                    .tint(theme.accent)
                     .padding(.horizontal, 6)
 
                     HStack(spacing: 8) {
@@ -770,13 +773,13 @@ struct GoalSheet: View {
                             } label: {
                                 Text("\(preset) 分")
                                     .font(.system(size: 12, weight: value == preset ? .semibold : .medium))
-                                    .foregroundStyle(value == preset ? Palette.onAccent : Palette.secondary)
+                                    .foregroundStyle(value == preset ? theme.onAccent : theme.secondary)
                                     .padding(.horizontal, 13)
                                     .padding(.vertical, 8)
                                     .background {
-                                        if value == preset { Capsule().fill(Palette.accentSolid) }
+                                        if value == preset { Capsule().fill(theme.accentSolid) }
                                     }
-                                    .glassCapsule(tint: value == preset ? nil : Palette.glassTint, interactive: true)
+                                    .glassCapsule(tint: value == preset ? nil : theme.glassTint, interactive: true)
                                     .contentShape(Capsule())
                             }
                             .buttonStyle(PressableStyle())
@@ -791,10 +794,10 @@ struct GoalSheet: View {
                     } label: {
                         Text("保存目标")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Palette.onAccent)
+                            .foregroundStyle(theme.onAccent)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
-                            .background(Palette.accentSolid, in: Capsule())
+                            .background(theme.accentSolid, in: Capsule())
                     }
                     .buttonStyle(PressableStyle(scale: 0.97))
                 }
@@ -814,6 +817,7 @@ struct GoalSheet: View {
 }
 
 struct DistributionSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -825,17 +829,17 @@ struct DistributionSheet: View {
                     HStack(alignment: .top, spacing: 13) {
                         Image(systemName: "shippingbox")
                             .font(.system(size: 21, weight: .light))
-                            .foregroundStyle(Palette.accent)
+                            .foregroundStyle(theme.accent)
                             .frame(width: 30)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("TestFlight / 自签安装")
                                 .font(.system(size: 16, weight: .semibold, design: .serif))
-                                .foregroundStyle(Palette.text)
+                                .foregroundStyle(theme.text)
 
                             Text("当前为演示构建，仅用于界面与交互评估。")
                                 .font(.system(size: 11.5))
-                                .foregroundStyle(Palette.secondary)
+                                .foregroundStyle(theme.secondary)
                         }
                     }
                     .padding(15)
@@ -855,10 +859,10 @@ struct DistributionSheet: View {
                     } label: {
                         Label("打开发布页", systemImage: "arrow.up.right.square")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Palette.onAccent)
+                            .foregroundStyle(theme.onAccent)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 13)
-                            .background(Palette.accentSolid, in: Capsule())
+                            .background(theme.accentSolid, in: Capsule())
                     }
                     .buttonStyle(PressableStyle(scale: 0.97))
 
@@ -882,20 +886,20 @@ struct DistributionSheet: View {
             HStack {
                 Text(title)
                     .font(.system(size: 13))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
 
                 Spacer()
 
                 Text(value)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
             }
             .padding(.horizontal, 15)
             .padding(.vertical, 12)
 
             if !isLast {
                 Rectangle()
-                    .fill(Palette.hairline)
+                    .fill(theme.hairline)
                     .frame(height: 0.6)
                     .padding(.leading, 15)
             }
@@ -906,6 +910,7 @@ struct DistributionSheet: View {
 // MARK: - Sync
 
 struct SyncCenterSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -918,10 +923,10 @@ struct SyncCenterSheet: View {
 
     private var syncTint: Color {
         switch store.backend.syncState {
-        case .synced: Palette.jade
-        case .conflict, .failed: Palette.accent
-        case .syncing: Palette.gold
-        case .idle: Palette.tertiary
+        case .synced: theme.jade
+        case .conflict, .failed: theme.accent
+        case .syncing: theme.gold
+        case .idle: theme.tertiary
         }
     }
 
@@ -963,7 +968,7 @@ struct SyncCenterSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(useRealCloud ? "iCloud 同步" : "同步（演示）")
                     .font(.system(size: 17, weight: .semibold, design: .serif))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
 
                 Text(store.backend.syncState.title)
                     .font(.system(size: 12, weight: .medium))
@@ -971,7 +976,7 @@ struct SyncCenterSheet: View {
 
                 Text(lastSyncText)
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             }
 
             Spacer()
@@ -1015,22 +1020,22 @@ struct SyncCenterSheet: View {
                         }
                     } label: {
                         Text("登录演示账号")
-                            .readableButtonStyle(tint: Palette.accentSolid)
+                            .readableButtonStyle(tint: theme.accentSolid)
                     }
                     .buttonStyle(PressableStyle(scale: 0.97))
                 case .signedIn(let email):
                     HStack(spacing: 12) {
                         Image(systemName: "person.crop.circle.badge.checkmark")
                             .font(.system(size: 22, weight: .light))
-                            .foregroundStyle(Palette.jade)
+                            .foregroundStyle(theme.jade)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(email)
                                 .font(.system(size: 13))
-                                .foregroundStyle(Palette.text)
+                                .foregroundStyle(theme.text)
                             Text("本机 + 云端模拟副本")
                                 .font(.system(size: 10))
-                                .foregroundStyle(Palette.tertiary)
+                                .foregroundStyle(theme.tertiary)
                         }
 
                         Spacer()
@@ -1040,17 +1045,17 @@ struct SyncCenterSheet: View {
                             message = "已退出演示账号，本机数据保留"
                         }
                         .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(Palette.accent)
+                        .foregroundStyle(theme.accent)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
-                        .glassCapsule(tint: Palette.accent.opacity(0.08), interactive: true)
+                        .glassCapsule(tint: theme.accent.opacity(0.08), interactive: true)
                     }
                 }
 
                 if !message.isEmpty {
                     Text(message)
                         .font(.system(size: 10.5))
-                        .foregroundStyle(Palette.tertiary)
+                        .foregroundStyle(theme.tertiary)
                 }
             }
             .padding(14)
@@ -1067,26 +1072,26 @@ struct SyncCenterSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("使用真实 iCloud 私有库")
                             .font(.system(size: 13))
-                            .foregroundStyle(Palette.text)
+                            .foregroundStyle(theme.text)
                         Text("需要登录 iCloud 并在 Xcode 开启 iCloud capability")
                             .font(.system(size: 10))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
                     }
                 }
-                .tint(Palette.jade)
+                .tint(theme.jade)
 
                 if !useRealCloud {
                     Toggle(isOn: $demoConflict) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("演练冲突流程")
                                 .font(.system(size: 13))
-                                .foregroundStyle(Palette.text)
+                                .foregroundStyle(theme.text)
                             Text("只切换演示状态，不产生真实的云端数据")
                                 .font(.system(size: 10))
-                                .foregroundStyle(Palette.tertiary)
+                                .foregroundStyle(theme.tertiary)
                         }
                     }
-                    .tint(Palette.accent)
+                    .tint(theme.accent)
                 }
 
                 Button {
@@ -1102,7 +1107,7 @@ struct SyncCenterSheet: View {
                     }
                 } label: {
                     Label(useRealCloud ? "上传到 iCloud" : "立即同步", systemImage: "arrow.triangle.2.circlepath")
-                        .readableButtonStyle(tint: Palette.accentSolid)
+                        .readableButtonStyle(tint: theme.accentSolid)
                 }
                 .buttonStyle(PressableStyle(scale: 0.97))
 
@@ -1111,7 +1116,7 @@ struct SyncCenterSheet: View {
                         Task { @MainActor in await downloadFromCloud() }
                     } label: {
                         Label("从 iCloud 拉取并恢复", systemImage: "arrow.down.to.line")
-                            .readableButtonStyle(tint: Palette.jade)
+                            .readableButtonStyle(tint: theme.jade)
                     }
                     .buttonStyle(PressableStyle(scale: 0.97))
                     .disabled(isBusy)
@@ -1124,7 +1129,7 @@ struct SyncCenterSheet: View {
                             message = "已保留本机版本"
                         } label: {
                             Text("保留本机")
-                                .readableButtonStyle(tint: Palette.jade)
+                                .readableButtonStyle(tint: theme.jade)
                         }
                         .buttonStyle(PressableStyle())
 
@@ -1134,10 +1139,10 @@ struct SyncCenterSheet: View {
                         } label: {
                             Text("使用云端")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Palette.text)
+                                .foregroundStyle(theme.text)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 13)
-                                .glassSurface(cornerRadius: 22, tint: Palette.gold.opacity(0.1), interactive: true)
+                                .glassSurface(cornerRadius: 22, tint: theme.gold.opacity(0.1), interactive: true)
                         }
                         .buttonStyle(PressableStyle())
                     }
@@ -1147,7 +1152,7 @@ struct SyncCenterSheet: View {
                      ? "真实模式会读写当前 Apple ID 的 CloudKit 私有数据库；未登录或权限不足会如实报错。"
                      : "演示同步只改本机状态，不发送任何请求，也不会连接 iCloud。")
                     .font(.system(size: 10))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             }
             .padding(14)
             .glassSurface(cornerRadius: 20)
@@ -1189,10 +1194,10 @@ struct SyncCenterSheet: View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: "list.bullet.rectangle")
                 .font(.system(size: 12))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
             Text("真实请求记录在「设置 → 网络日志」；这一页不另外维护一份日志。")
                 .font(.system(size: 10))
-                .foregroundStyle(Palette.tertiary)
+                .foregroundStyle(theme.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -1205,6 +1210,7 @@ struct SyncCenterSheet: View {
 // MARK: - Backup
 
 struct BackupSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -1244,23 +1250,23 @@ struct BackupSheet: View {
                                     }
                                 } label: {
                                     Label("创建备份", systemImage: "externaldrive.badge.plus")
-                                        .readableButtonStyle(tint: Palette.accentSolid)
+                                        .readableButtonStyle(tint: theme.accentSolid)
                                 }
                                 .buttonStyle(PressableStyle(scale: 0.97))
                                 .disabled(store.backup.isBusy || scopes.isEmpty)
 
                                 Text("备份写在 Application Support/Backups 下，卸载 App 会一并删除。")
                                     .font(.system(size: 9.5))
-                                    .foregroundStyle(Palette.tertiary)
+                                    .foregroundStyle(theme.tertiary)
 
                                 if !message.isEmpty {
                                     Text(message)
                                         .font(.system(size: 10.5))
-                                        .foregroundStyle(Palette.tertiary)
+                                        .foregroundStyle(theme.tertiary)
                                 }
                             }
                             .font(.system(size: 13))
-                            .tint(Palette.accent)
+                            .tint(theme.accent)
                             .padding(14)
                             .glassSurface(cornerRadius: 20)
                         }
@@ -1271,7 +1277,7 @@ struct BackupSheet: View {
                             if backups.isEmpty {
                                 Text("还没有备份。勾选要包含的内容后点「创建备份」。")
                                     .font(.system(size: 11.5))
-                                    .foregroundStyle(Palette.tertiary)
+                                    .foregroundStyle(theme.tertiary)
                                     .padding(14)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .glassSurface(cornerRadius: 20)
@@ -1281,18 +1287,18 @@ struct BackupSheet: View {
                                         HStack(spacing: 12) {
                                             Image(systemName: "archivebox")
                                                 .font(.system(size: 15))
-                                                .foregroundStyle(Palette.gold)
+                                                .foregroundStyle(theme.gold)
                                                 .frame(width: 32, height: 32)
-                                                .background(Palette.gold.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
+                                                .background(theme.gold.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
 
                                             VStack(alignment: .leading, spacing: 2) {
                                                 Text(record.displayName)
                                                     .font(.system(size: 12.5, weight: .medium))
-                                                    .foregroundStyle(Palette.text)
+                                                    .foregroundStyle(theme.text)
                                                     .lineLimit(1)
                                                 Text("\(record.createdAt.formatted(date: .abbreviated, time: .shortened)) · \(record.sizeLabel) · \(record.includesLabel)")
                                                     .font(.system(size: 9.5))
-                                                    .foregroundStyle(Palette.tertiary)
+                                                    .foregroundStyle(theme.tertiary)
                                                     .lineLimit(1)
                                             }
 
@@ -1302,7 +1308,7 @@ struct BackupSheet: View {
                                                 restoreTarget = record
                                             }
                                             .font(.system(size: 11.5, weight: .semibold))
-                                            .foregroundStyle(Palette.accent)
+                                            .foregroundStyle(theme.accent)
                                         }
                                         .padding(.horizontal, 13)
                                         .padding(.vertical, 10)
@@ -1363,6 +1369,7 @@ struct BackupSheet: View {
 // MARK: - Cache
 
 struct CacheSheet: View {
+    @Environment(\.theme) private var theme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -1391,7 +1398,7 @@ struct CacheSheet: View {
                             RingProgress(
                                 value: min(totalMB / 160, 1),
                                 lineWidth: 7,
-                                tint: Palette.jade,
+                                tint: theme.jade,
                                 label: String(format: "%.1f", totalMB),
                                 caption: "MB"
                             )
@@ -1400,10 +1407,10 @@ struct CacheSheet: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("阅读缓存")
                                     .font(.system(size: 16, weight: .semibold, design: .serif))
-                                    .foregroundStyle(Palette.text)
+                                    .foregroundStyle(theme.text)
                                 Text(usage == nil ? "正在统计磁盘占用…" : "章节正文、漫画页图与本地音频的磁盘占用")
                                     .font(.system(size: 10.5))
-                                    .foregroundStyle(Palette.tertiary)
+                                    .foregroundStyle(theme.tertiary)
                             }
                             Spacer()
                         }
@@ -1431,21 +1438,21 @@ struct CacheSheet: View {
                             }
                         } label: {
                             Text("清理全部缓存")
-                                .readableButtonStyle(tint: Palette.accentSolid)
+                                .readableButtonStyle(tint: theme.accentSolid)
                         }
                         .buttonStyle(PressableStyle(scale: 0.97))
                         .disabled(usage == nil)
 
                         Text("三项都按真实磁盘统计：章节是书源正文缓存，图片是降采样后的漫画页图，音频是导入到沙箱的音频副本。清除音频等于删除这本书的本地音频，需重新导入。")
                             .font(.system(size: 10))
-                            .foregroundStyle(Palette.tertiary)
+                            .foregroundStyle(theme.tertiary)
 
                         storageMigrationCard
 
                         if !message.isEmpty {
                             Text(message)
                                 .font(.system(size: 10.5))
-                                .foregroundStyle(Palette.tertiary)
+                                .foregroundStyle(theme.tertiary)
                         }
                     }
                     .padding(18)
@@ -1472,35 +1479,35 @@ struct CacheSheet: View {
             HStack(spacing: 8) {
                 Image(systemName: "externaldrive.badge.checkmark")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Palette.jade)
+                    .foregroundStyle(theme.jade)
                 Text("书架存储")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                 Spacer()
                 if store.libraryStoreWarning != nil {
                     Label("有问题", systemImage: "exclamationmark.triangle.fill")
                         .font(.system(size: 9.5))
-                        .foregroundStyle(Palette.accent)
+                        .foregroundStyle(theme.accent)
                         .labelStyle(.titleAndIcon)
                         .lineLimit(1)
                 } else if let report = store.migrationReport, !report.warnings.isEmpty {
                     Text("\(report.warnings.count) 条提示")
                         .font(.system(size: 9.5))
-                        .foregroundStyle(Palette.accent)
+                        .foregroundStyle(theme.accent)
                 }
             }
 
             if let summary = store.migratedLibrarySummary {
                 Text("\(summary.books) 本 · \(summary.chapters) 章 · 索引与正文分开存放")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
                 Text(String(format: "占用 %.1f MB", Double(store.migratedLibraryBytes) / 1_048_576))
                     .font(.system(size: 10))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             } else {
                 Text("书架仍保存在单个快照文件里。")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Palette.secondary)
+                    .foregroundStyle(theme.secondary)
             }
 
             // 读写出过问题时如实说出来。宁可让用户知道「这次读到的是上一版」，
@@ -1509,7 +1516,7 @@ struct CacheSheet: View {
                 ForEach(warning.components(separatedBy: "\n"), id: \.self) { line in
                     Text("· \(line)")
                         .font(.system(size: 9.5))
-                        .foregroundStyle(Palette.accent)
+                        .foregroundStyle(theme.accent)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1517,19 +1524,19 @@ struct CacheSheet: View {
             if let report = store.migrationReport {
                 Text(report.message)
                     .font(.system(size: 10))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let archived = report.archivedFile {
                     Text("旧文件已留档：\(archived.lastPathComponent)")
                         .font(.system(size: 9.5))
-                        .foregroundStyle(Palette.tertiary)
+                        .foregroundStyle(theme.tertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 ForEach(report.warnings, id: \.self) { warning in
                     Text("· \(warning)")
                         .font(.system(size: 9.5))
-                        .foregroundStyle(Palette.accent)
+                        .foregroundStyle(theme.accent)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1545,17 +1552,17 @@ struct CacheSheet: View {
         return HStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Palette.jade)
+                .foregroundStyle(theme.jade)
                 .frame(width: 32, height: 32)
-                .background(Palette.jade.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
+                .background(theme.jade.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
                 Text(bytes == nil ? "计算中…" : String(format: "%.1f MB", size))
                     .font(.system(size: 10))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             }
 
             Spacer()
@@ -1582,7 +1589,7 @@ struct CacheSheet: View {
                 }
             }
             .font(.system(size: 11.5, weight: .medium))
-            .foregroundStyle(Palette.accent)
+            .foregroundStyle(theme.accent)
             .disabled(size == 0)
             .opacity(size == 0 ? 0.35 : 1)
         }
