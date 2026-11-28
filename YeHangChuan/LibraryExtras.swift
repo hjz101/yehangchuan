@@ -108,7 +108,7 @@ struct SmartImportSheet: View {
 
     private var parsingPanel: some View {
         HStack(spacing: 9) {
-            ProgressView()
+            ProgressView().themedProgress()
             Text("正在识别编码与章节…")
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.secondary)
@@ -988,7 +988,7 @@ struct ComicPageView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.5))
                 } else {
-                    ProgressView()
+                    ProgressView().themedProgress()
                         .tint(.white.opacity(0.7))
                     Text("正在解包第 \(page + 1) 页")
                         .font(.system(size: 11))
@@ -1500,7 +1500,7 @@ struct SourceSwitchSheet: View {
                                     Spacer()
 
                                     if switching {
-                                        ProgressView()
+                                        ProgressView().themedProgress()
                                     } else {
                                         Button {
                                             startSwitch(source)

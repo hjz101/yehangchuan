@@ -813,7 +813,7 @@ struct SourceSearchSheet: View {
 
     private var searchingState: some View {
         VStack(spacing: 10) {
-            ProgressView()
+            ProgressView().themedProgress()
             Text("正在检索书源…")
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.tertiary)
@@ -1187,7 +1187,7 @@ struct SourceDetailSheet: View {
 
             Spacer()
 
-            if isBusy { ProgressView() }
+            if isBusy { ProgressView().themedProgress() }
         }
         .padding(13)
         .glassSurface(cornerRadius: 18)

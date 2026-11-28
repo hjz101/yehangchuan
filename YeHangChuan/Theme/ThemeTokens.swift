@@ -42,10 +42,9 @@ extension View {
             .eyeCareFilter(store.eyeCare)
     }
 
-    /// 主题化加载态接口骨架（P4-01 实现具体渲染）。
+    /// 主题化加载态（P4-01）：读 theme.loadingStyle/tint，尊重 Reduce Motion。
     func themedLoading(isLoading: Bool, label: String? = nil) -> some View {
-        // P4-01 落地：读 theme.loadingStyle/tint/background/title。
-        self
+        modifier(ThemedLoadingModifier(isLoading: isLoading, label: label))
     }
 
     /// 语义字体（P1-04）：从主题 uiFont 解析器取字体。

@@ -976,7 +976,7 @@ struct SyncCenterSheet: View {
 
             Spacer()
 
-            if isBusy { ProgressView() }
+            if isBusy { ProgressView().themedProgress() }
         }
         .padding(15)
         .glassSurface(cornerRadius: 24)

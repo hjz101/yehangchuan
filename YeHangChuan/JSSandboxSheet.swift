@@ -288,7 +288,7 @@ struct JSSandboxSheet: View {
                 .buttonStyle(PressableStyle(scale: 0.97))
                 .disabled(isRunning || selection == nil)
 
-                if isRunning { ProgressView() }
+                if isRunning { ProgressView().themedProgress() }
             }
 
             if !message.isEmpty {

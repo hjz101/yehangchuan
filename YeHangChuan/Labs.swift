@@ -760,7 +760,7 @@ struct DiscoverSheet: View {
             Task { await load(pages: page + 1, reset: false) }
         } label: {
             HStack(spacing: 8) {
-                if isLoadingMore { ProgressView() }
+                if isLoadingMore { ProgressView().themedProgress() }
                 Text(isLoadingMore ? "正在加载第 \(page + 1) 页" : "加载更多")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Palette.jade)
@@ -791,7 +791,7 @@ struct DiscoverSheet: View {
 
     private func loadingHint(_ text: String) -> some View {
         HStack(spacing: 9) {
-            ProgressView()
+            ProgressView().themedProgress()
             Text(text)
                 .font(.system(size: 11.5))
                 .foregroundStyle(Palette.tertiary)

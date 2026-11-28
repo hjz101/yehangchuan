@@ -483,7 +483,7 @@ struct ReaderView: View {
     private var readingContent: some View {
         if isLoadingNetwork && pageCount == 0 {
             VStack(spacing: 10) {
-                ProgressView()
+                ProgressView().themedProgress()
                 Text("正在加载在线章节…")
                     .font(.system(size: 12))
                     .foregroundStyle(settings.theme.secondary)
@@ -567,7 +567,7 @@ struct ReaderView: View {
                 syncProgress()
             }
         } else {
-            ProgressView()
+            ProgressView().themedProgress()
         }
     }
 
@@ -2838,7 +2838,7 @@ struct SegmentCommentsSheet: View {
 
                         if isLoading {
                             HStack(spacing: 9) {
-                                ProgressView()
+                                ProgressView().themedProgress()
                                 Text("正在向书源请求段评…")
                                     .font(.system(size: 11.5))
                                     .foregroundStyle(Palette.tertiary)
