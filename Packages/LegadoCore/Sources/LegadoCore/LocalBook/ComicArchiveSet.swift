@@ -50,6 +50,17 @@ public struct ComicArchiveSet {
                 throw ComicBookError.resourceTooLarge
             }
             let data = try Data(contentsOf: url, options: .mappedIfSafe)
+            // 解压前按 7z 头部声明值把关：`SevenZipContainer.open` 是先解压后校验，
+            // LZMA2 甚至可以在声明值之外膨胀，所以必须在它碰到数据之前拒绝炸弹。
+            // 「不是 7z」交给 open() 报准确的错误；「结构读得懂但超限」在这里就被拦下。
+            switch SevenZipPrecheck.check(
+                data, limits: .comic(maximumTotalUncompressed: maximumUncompressedSize)
+            ) {
+            case .rejected:
+                throw ComicBookError.resourceTooLarge
+            case .validated, .unsupported:
+                break
+            }
             let entries = try SevenZipContainer.open(container: data)
             // 先看条目声明的未压缩总量，超过上限直接拒绝，不再逐条保留数据。
             var declaredTotal = 0
