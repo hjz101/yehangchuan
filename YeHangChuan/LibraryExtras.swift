@@ -1264,6 +1264,7 @@ struct ListenSheet: View {
                 scrubber
                 transport
                 speedPicker
+                sleepTimerRow
                 Spacer(minLength: 10)
             }
             .padding(.horizontal, 26)
@@ -1425,6 +1426,27 @@ struct ListenSheet: View {
         )
         .frame(width: 210)
         .padding(.top, 20)
+    }
+
+    private var sleepTimerRow: some View {
+        Menu {
+            ForEach([0, 5, 15, 30, 60], id: \.self) { minutes in
+                Button(minutes == 0 ? "不开启" : "\(minutes) 分钟") {
+                    speech.setSleepTimer(minutes)
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "moon.zzz")
+                Text(speech.sleepMinutes > 0 ? "定时 \(speech.sleepMinutes) 分钟" : "睡眠定时")
+            }
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(Palette.secondary)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 8)
+            .glassCapsule(tint: Palette.glassTint, interactive: true)
+        }
+        .padding(.top, 14)
     }
 }
 

@@ -36,10 +36,11 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
                         completion()
                         return
                     }
+                    // 车机上选中章节即代表「开始听这一章」。
+                    if !player.isPlaying { player.resume() }
                     // 走播放器自己的切章：真实音频会 seek 到对应时间点，
                     // 演示音轨会重置到该章开头。只改 chapterIndex 不会换内容。
                     player.selectChapter(index)
-                    if !player.isPlaying { player.resume() }
                     completion()
                 }
             }

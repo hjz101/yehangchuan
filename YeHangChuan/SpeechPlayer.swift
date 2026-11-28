@@ -17,6 +17,8 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
     var text = ""
     var elapsedLabel = "00:00"
     var remainingLabel = "00:00"
+    /// 睡眠定时（分钟），0 表示关闭。到点后暂停朗读。
+    var sleepMinutes = 0
 
     @ObservationIgnored private let synthesizer = AVSpeechSynthesizer()
     @ObservationIgnored private var offset = 0
@@ -25,6 +27,7 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
     @ObservationIgnored private var startedAt: Date?
     @ObservationIgnored private var accumulated: TimeInterval = 0
     @ObservationIgnored private var ticker: Task<Void, Never>?
+    @ObservationIgnored private var sleepTask: Task<Void, Never>?
     @ObservationIgnored private lazy var artwork: MPMediaItemArtwork? = Self.makeArtwork()
 
     private struct SpokenSegment {
@@ -121,9 +124,35 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
         isPlaying = false
         isPaused = false
         ticker?.cancel()
+        cancelSleepTimer()
         startedAt = nil
         deactivateSession()
         updateNowPlaying()
+    }
+
+    /// 睡眠定时：只作用于系统语音朗读，到点暂停，不影响有声书播放器。
+    func setSleepTimer(_ minutes: Int) {
+        sleepTask?.cancel()
+        sleepTask = nil
+        sleepMinutes = max(minutes, 0)
+        guard sleepMinutes > 0 else { return }
+        sleepTask = Task { [weak self] in
+            for _ in 0..<minutes {
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled else { return }
+            }
+            await MainActor.run { [weak self] in
+                self?.pause()
+                self?.sleepMinutes = 0
+                self?.sleepTask = nil
+            }
+        }
+    }
+
+    private func cancelSleepTimer() {
+        sleepTask?.cancel()
+        sleepTask = nil
+        sleepMinutes = 0
     }
 
     func restart() {
