@@ -630,6 +630,7 @@ struct AddSourceSheet: View {
 
     @State private var name = "我的书源"
     @State private var kind: SourceKind = .json
+    @State private var validationError = ""
     @State private var config = """
     {
       "name": "我的书源",
@@ -662,6 +663,11 @@ struct AddSourceSheet: View {
             }
             .navigationTitle("添加书源")
             .navigationBarTitleDisplayMode(.inline)
+            .alert("书源不可用", isPresented: validationAlertShown) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(validationError)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("取消") { dismiss() }
@@ -669,6 +675,11 @@ struct AddSourceSheet: View {
 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("添加") {
+                        // 不校验就加进去，用户只会得到一条「添加成功」却永远搜不到书的书源。
+                        if let failure = validationFailure() {
+                            validationError = failure
+                            return
+                        }
                         store.addSource(
                             name: name,
                             kind: LegadoBridge.detectedKind(ruleJSON: config) ?? kind,
@@ -682,6 +693,47 @@ struct AddSourceSheet: View {
                 }
             }
         }
+    }
+
+    private var validationAlertShown: Binding<Bool> {
+        Binding(
+            get: { !validationError.isEmpty },
+            set: { if !$0 { validationError = "" } }
+        )
+    }
+
+    /// 添加前校验规则：JSON 必须能解析、必须有 `bookSourceUrl`，
+    /// 且至少要有一条能真正执行的搜索 / 详情 / 目录 / 正文规则。
+    private func validationFailure() -> String? {
+        let trimmed = config.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return "规则内容为空，请粘贴 Legado 3.0 书源 JSON。"
+        }
+        guard let data = trimmed.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return "规则不是合法的 JSON 对象。"
+        }
+        let rawURL = (object["bookSourceUrl"] ?? object["host"]) as? String ?? ""
+        guard !rawURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "缺少 bookSourceUrl，无法确定书源站点。"
+        }
+        guard hasUsableRule(object) else {
+            return "至少需要配置一条可用的搜索、详情、目录或正文规则。"
+        }
+        return nil
+    }
+
+    private func hasUsableRule(_ object: [String: Any]) -> Bool {
+        if isNonEmptyRule(object["searchUrl"]) { return true }
+        return ["ruleSearch", "ruleBookInfo", "ruleToc", "ruleContent"].contains { key in
+            guard let rule = object[key] as? [String: Any] else { return false }
+            return rule.values.contains { isNonEmptyRule($0) }
+        }
+    }
+
+    private func isNonEmptyRule(_ value: Any?) -> Bool {
+        guard let text = value as? String else { return false }
+        return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var nameField: some View {
