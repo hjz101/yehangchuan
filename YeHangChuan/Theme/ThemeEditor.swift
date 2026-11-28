@@ -11,6 +11,8 @@ struct ThemeEditor: View {
     @Environment(AppStore.self) private var store
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.colorScheme) private var colorScheme
 
     /// 草稿：编辑期的隔离状态，应用前不影响全局。
     @State private var draft: Theme
@@ -53,27 +55,7 @@ struct ThemeEditor: View {
 
     var body: some View {
         NavigationStack {
-            HStack(spacing: 0) {
-                // 左侧分组导航
-                List(EditorGroup.allCases) { group in
-                    Button {
-                        selectedGroup = group
-                    } label: {
-                        Label(group.rawValue, systemImage: icon(for: group))
-                            .foregroundStyle(selectedGroup == group ? theme.accent : theme.text)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .listStyle(.sidebar)
-                .frame(width: 180)
-
-                // 右侧：编辑区 + 实时预览
-                VStack(spacing: 0) {
-                    editorPane
-                    Divider()
-                    previewPane
-                }
-            }
+            editorLayout
             .navigationTitle("主题编辑")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -115,6 +97,71 @@ struct ThemeEditor: View {
         .themedChrome(store)
     }
 
+    /// 宽屏（iPad / 横屏）沿用左右分栏；窄屏（iPhone 竖屏）改纵向布局，
+    /// 分组用横向滚动条，避免 180pt 侧栏挤压编辑区与预览（截图裁切根因）。
+    @ViewBuilder
+    private var editorLayout: some View {
+        if sizeClass == .compact {
+            VStack(spacing: 0) {
+                groupStrip
+                editorPane
+                Divider()
+                previewPane
+            }
+        } else {
+            HStack(spacing: 0) {
+                groupList
+                    .frame(width: 180)
+                VStack(spacing: 0) {
+                    editorPane
+                    Divider()
+                    previewPane
+                }
+            }
+        }
+    }
+
+    private var groupList: some View {
+        List(EditorGroup.allCases) { group in
+            groupButton(group)
+        }
+        .listStyle(.sidebar)
+    }
+
+    private var groupStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(EditorGroup.allCases) { group in
+                    groupButton(group)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule().fill(
+                                selectedGroup == group
+                                    ? theme.accent.opacity(0.16)
+                                    : Color.clear
+                            )
+                        )
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+        .frame(height: 54)
+    }
+
+    private func groupButton(_ group: EditorGroup) -> some View {
+        Button {
+            selectedGroup = group
+        } label: {
+            Label(group.rawValue, systemImage: icon(for: group))
+                .font(.caption)
+                .foregroundStyle(selectedGroup == group ? theme.accent : theme.text)
+                .lineLimit(1)
+        }
+        .buttonStyle(.plain)
+    }
+
     @ViewBuilder
     private var editorPane: some View {
         switch selectedGroup {
@@ -145,12 +192,13 @@ struct ThemeEditor: View {
         }
     }
 
-    /// 实时预览：注入 draft 解析出的 tokens（390×844 预览几何）。
+    /// 实时预览：注入 draft 解析出的 tokens。宽度随容器自适应（上限 390），
+    /// 前景按 draft 背景亮度二选一，避免深底深色字（与阅读页 D1 修复同策略）。
     private var previewPane: some View {
-        // 预览内容统一用 draft 解析的令牌（背景+前景都跟随草稿）。
         let previewTokens = ThemeEngine.resolve(theme: draft)
+        let foreground = Self.previewForeground(draft.backdrop, scheme: colorScheme)
         return VStack(alignment: .leading, spacing: 8) {
-            Text("实时预览").font(.caption).foregroundStyle(previewTokens.secondary)
+            Text("实时预览").font(.caption).foregroundStyle(theme.secondary)
             ZStack {
                 ThemeBackdrop()
                     .environment(\.theme, previewTokens)
@@ -163,20 +211,56 @@ struct ThemeEditor: View {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(previewTokens.accent.opacity(0.6))
                         .frame(height: 64)
-                        .overlay(Text("继续阅读").foregroundStyle(previewTokens.onAccent))
+                        .overlay(Text("继续阅读").foregroundStyle(foreground))
                     Spacer()
                 }
                 .padding(20)
-                .foregroundStyle(previewTokens.text)
+                .foregroundStyle(foreground)
             }
-            .frame(width: 390, height: 300)
+            .frame(maxWidth: 390)
+            .aspectRatio(390 / 300, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay {
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(previewTokens.hairline, lineWidth: 1)
+                    .stroke(foreground.opacity(0.3), lineWidth: 1)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
+    }
+
+    /// 从草稿背景取代表色，用亮度对比选黑/白前景；只读配置、不改 draft。
+    private static func previewForeground(
+        _ backdrop: BackgroundSpec,
+        scheme: ColorScheme
+    ) -> Color {
+        let bg: UInt32
+        switch backdrop {
+        case .systemMesh:
+            bg = scheme == .dark ? 0x07080B : 0x1C2029
+        case let .solid(spec):
+            bg = specHex(spec, scheme: scheme)
+        case let .linear(colors, _, _):
+            bg = colors.first.map { specHex($0, scheme: scheme) } ?? 0x111111
+        case let .radial(colors, _, _, _):
+            bg = colors.first.map { specHex($0, scheme: scheme) } ?? 0x111111
+        case let .mesh(_, colors):
+            bg = colors.first.map { specHex($0, scheme: scheme) } ?? 0x111111
+        case let .image(_, _, overlay):
+            bg = overlay.map { specHex($0, scheme: scheme) } ?? 0x111111
+        }
+        return Color(hex: ThemeEngine.suggestedTextColor(background: bg))
+    }
+
+    private static func specHex(_ spec: ColorSpec, scheme: ColorScheme) -> UInt32 {
+        switch spec {
+        case .system:
+            return scheme == .dark ? 0xF4F0E8 : 0x111A24
+        case let .adaptive(light, dark, _, _):
+            return scheme == .dark ? dark : light
+        case let .fixed(hex, _):
+            return hex
+        }
     }
 
     /// 删除进入 5 秒待确认期：先只记 pendingDelete，到期才真正移除。

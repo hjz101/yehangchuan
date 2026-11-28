@@ -124,17 +124,31 @@ private struct ColorRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.subheadline)
-            HStack {
-                ColorPicker("浅色", selection: Binding(
-                    get: { Color(hex: color.light) },
-                    set: { color.light = editorHexValue($0) }
+            // 窄屏下两个并排 ColorPicker 会挤压标签与色轮导致重叠，改为两行独立标签。
+            HStack(spacing: 12) {
+                colorSlot(title: "浅色", hex: Binding(
+                    get: { color.light },
+                    set: { color.light = $0 }
                 ))
-                ColorPicker("深色", selection: Binding(
-                    get: { Color(hex: color.dark) },
-                    set: { color.dark = editorHexValue($0) }
+                colorSlot(title: "深色", hex: Binding(
+                    get: { color.dark },
+                    set: { color.dark = $0 }
                 ))
             }
         }
+    }
+
+    private func colorSlot(title label: String, hex: Binding<UInt32>) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+            ColorPicker("", selection: Binding(
+                get: { Color(hex: hex.wrappedValue) },
+                set: { hex.wrappedValue = editorHexValue($0) }
+            ))
+            .labelsHidden()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
