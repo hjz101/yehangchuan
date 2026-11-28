@@ -179,15 +179,20 @@ private struct GlassSurfaceModifier: ViewModifier {
     let interactive: Bool
 
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.theme) private var theme
 
     func body(content: Content) -> some View {
+        // P1-02：圆角/描边读 ShapeSpec。默认 scale=1、hairline=1，观感零变化。
+        let radius = cornerRadius * CGFloat(theme.shape.cornerRadiusScale)
+        let hairline = 0.7 * CGFloat(theme.shape.hairlineWidth)
+        // tint 为 nil 时保持系统默认玻璃（零回归）；显式传入的色由调用点在 P1-03 迁移。
         content
             .glassEffect(
                 Glass.regular.tint(tint).interactive(interactive),
-                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                in: RoundedRectangle(cornerRadius: radius, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(
                         LinearGradient(
                             colors: [
@@ -197,7 +202,7 @@ private struct GlassSurfaceModifier: ViewModifier {
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 0.7
+                        lineWidth: hairline
                     )
                     .allowsHitTesting(false)
             }
