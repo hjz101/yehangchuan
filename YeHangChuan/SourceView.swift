@@ -481,6 +481,8 @@ struct SourceRow: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(source.enabled ? .white : theme.tertiary)
             }
+            .contentShape(Rectangle())
+            .onTapGesture { onOpen?() }
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -521,15 +523,30 @@ struct SourceRow: View {
                 }
                 .font(.system(size: 9.5, weight: .medium))
             }
+            .contentShape(Rectangle())
+            .onTapGesture { onOpen?() }
 
             Spacer(minLength: 6)
 
-            Toggle(
-                "",
-                isOn: Binding(get: { source.enabled }, set: onToggle)
-            )
-            .labelsHidden()
-            .tint(theme.jade)
+            // 用显式 Button 画开关：原生 Toggle 在这个带长按菜单 + 行点击的
+            // 复合视图里会被手势抢先，点上去看着没反应。
+            Button {
+                onToggle(!source.enabled)
+            } label: {
+                ZStack(alignment: source.enabled ? .trailing : .leading) {
+                    Capsule()
+                        .fill(source.enabled ? theme.jade : theme.faint)
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 28, height: 28)
+                        .padding(3)
+                        .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+                }
+                .frame(width: 62, height: 34)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(source.enabled ? "禁用\(source.name)" : "启用\(source.name)")
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 11)
@@ -537,8 +554,6 @@ struct SourceRow: View {
             cornerRadius: 20,
             tint: source.enabled ? nil : .black.opacity(0.06)
         )
-        .contentShape(Rectangle())
-        .onTapGesture { onOpen?() }
         .contextMenu {
             if let onAction {
                 Button {
