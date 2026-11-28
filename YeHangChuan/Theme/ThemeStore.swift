@@ -33,6 +33,9 @@ final class ThemeStore {
     private var lastWrittenSequence = 0
     private var writeTask: Task<Void, Never>?
     private var didBootstrap = false
+    /// 逐主题恢复时资产索引无法解析：先按只读状态启动，用户主动修改前不落盘，
+    /// 避免把空 assets 写回、抹掉导入字体/背景图的引用。
+    private var assetsIndexUnreadable = false
 
     init(root: URL? = nil) {
         if let root { self.root = root }
@@ -150,7 +153,9 @@ final class ThemeStore {
                 var recovered = refreshBuiltins(in: partiallyRecovered)
                 _ = restoreTruncatedActiveThemeID(in: &recovered)
                 catalog = recovered
-                decodeError = "部分主题损坏，已跳过并记录"
+                decodeError = assetsIndexUnreadable
+                    ? "主题资产索引无法解析，已只读恢复（下次修改前不覆盖原文件）"
+                    : "部分主题损坏，已跳过并记录"
                 writeDecodeError(decodeError!)
                 return
             }
@@ -172,6 +177,7 @@ final class ThemeStore {
 
     /// 整份 catalog 解码失败时的最后兜底：从原始 JSON 字典里逐个解主题，
     /// 好的留下、坏的记入 skippedThemes（沿用 Snapshot 逐分区兜底惯例）。
+    /// 同时尽量解出 assets（能解多少解多少），避免下次写盘丢掉资产引用。
     private func decodeCatalogPerTheme(_ data: Data, decoder: JSONDecoder) -> ThemeCatalog? {
         guard let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let rawThemes = raw["themes"] as? [[String: Any]] else { return nil }
@@ -186,11 +192,25 @@ final class ThemeStore {
             good.append(theme)
         }
         guard !good.isEmpty else { return nil }
+
+        var assets: [AssetRef] = []
+        if let rawAssets = raw["assets"] as? [[String: Any]] {
+            for rawAsset in rawAssets {
+                guard let assetData = try? JSONSerialization.data(withJSONObject: rawAsset),
+                      let ref = try? decoder.decode(AssetRef.self, from: assetData),
+                      AssetRef.isValidAssetID(ref.id) else { continue }
+                assets.append(ref)
+            }
+        } else if raw["assets"] != nil {
+            // 结构损坏（assets 不是数组）：标记只读恢复，别用空索引覆盖原文件。
+            assetsIndexUnreadable = true
+        }
+
         return ThemeCatalog(
             schemaVersion: (raw["schemaVersion"] as? Int) ?? 1,
             activeThemeID: (raw["activeThemeID"] as? String) ?? BuiltinThemes.defaultID,
             themes: good,
-            assets: [],
+            assets: assets,
             skippedThemes: skipped,
             pendingDelete: []
         )
@@ -237,6 +257,8 @@ final class ThemeStore {
     /// 请求写（200ms 合并）。sequence 递增防旧覆盖。
     func requestWrite() {
         backend = .themeStore
+        // 用户主动修改：退出只读恢复，允许把当前 catalog 落盘。
+        assetsIndexUnreadable = false
         sequence += 1
         writeTask?.cancel()
         let captured = sequence
@@ -255,6 +277,8 @@ final class ThemeStore {
     }
 
     private func flushIfNeeded(sequence captured: Int) async {
+        // 只读恢复且用户尚未修改：不写盘，保住原文件里可能仍可用的资产索引。
+        guard !assetsIndexUnreadable else { return }
         guard captured >= lastWrittenSequence else { return }  // 旧写丢弃
         do {
             try persistCatalog(catalog)
