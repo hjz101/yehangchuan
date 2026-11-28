@@ -24,13 +24,17 @@ public struct HTTPResponse: Sendable {
     }
 
     public var decodedText: String {
-        let encoding = requestedCharset.flatMap(HTTPTextDecoder.encoding(named:))
+        // BOM 是字节序的唯一可靠依据：先按 BOM 选编码解完整数据，
+        // 不能先删 BOM 再用通用的 .utf16 解，否则会丢失字节序。
+        if let bom = HTTPTextDecoder.bomEncoding(data),
+           let value = HTTPTextDecoder.decode(data, encoding: bom) {
+            return value
+        }
+        let declared = requestedCharset.flatMap(HTTPTextDecoder.encoding(named:))
             ?? contentTypeCharset.flatMap(HTTPTextDecoder.encoding(named:))
-            ?? HTTPTextDecoder.bomEncoding(data)
-            ?? HTTPTextDecoder.htmlEncoding(data)
-            ?? .utf8
-        if let value = String(data: HTTPTextDecoder.removingBOM(data), encoding: encoding) { return value }
-        if encoding != .utf8, let value = String(data: HTTPTextDecoder.removingBOM(data), encoding: .utf8) { return value }
+        let encoding = HTTPTextDecoder.resolvingDefaultEndianness(declared ?? HTTPTextDecoder.htmlEncoding(data) ?? .utf8)
+        if let value = HTTPTextDecoder.decode(data, encoding: encoding) { return value }
+        if encoding != .utf8, let value = HTTPTextDecoder.decode(data, encoding: .utf8) { return value }
         return String(decoding: data, as: UTF8.self)
     }
 
@@ -101,6 +105,24 @@ public enum HTTPTextDecoder {
         if bytes.starts(with: [0xFF, 0xFE, 0x00, 0x00]) || bytes.starts(with: [0x00, 0x00, 0xFE, 0xFF]) { return data.dropFirst(4) }
         if bytes.starts(with: [0xFF, 0xFE]) || bytes.starts(with: [0xFE, 0xFF]) { return data.dropFirst(2) }
         return data
+    }
+
+    /// 按指定编码解码，并去掉解码结果开头的 BOM 字符（U+FEFF）。
+    ///
+    /// 用具体字节序的编码解码时会保留 BOM 字符，这里只从字符串里剥掉，
+    /// 不影响数据本身的字节序判断。
+    static func decode(_ data: Data, encoding: String.Encoding) -> String? {
+        guard let value = String(data: data, encoding: encoding) else { return nil }
+        return value.hasPrefix("\u{feff}") ? String(value.dropFirst()) : value
+    }
+
+    /// 没有 BOM 时，通用的 UTF-16/UTF-32 按 RFC 2781 默认大端。
+    static func resolvingDefaultEndianness(_ encoding: String.Encoding) -> String.Encoding {
+        switch encoding {
+        case .utf16: return .utf16BigEndian
+        case .utf32: return .utf32BigEndian
+        default: return encoding
+        }
     }
 }
 
