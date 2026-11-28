@@ -1661,7 +1661,16 @@ struct NetworkLogSheet: View {
                         .fontWeight(.semibold)
                 }
             }
-            .onAppear { diagnostics.refresh() }
+            .task {
+                while !Task.isCancelled {
+                    diagnostics.refresh()
+                    do {
+                        try await Task.sleep(for: .seconds(1))
+                    } catch {
+                        break
+                    }
+                }
+            }
         }
     }
 
