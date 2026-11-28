@@ -96,6 +96,13 @@ struct ThemeEditor: View {
         }
         // 编辑器本身在 sheet 内：外层接真实 theme + 护眼层。
         .themedChrome(store)
+        // 编辑器关闭即取消待删除：DelayedUndoController 的 Task 不随视图生命周期
+        // 结束，若不取消，关掉编辑器 5 秒后仍会静默永久删除主题。
+        .onDisappear {
+            deleteUndo.cancel()
+            pendingDelete = nil
+            showRestoreToast = false
+        }
     }
 
     /// 宽屏（iPad / 横屏）沿用左右分栏；窄屏（iPhone 竖屏）改纵向布局，
