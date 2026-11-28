@@ -910,7 +910,7 @@ struct SyncCenterSheet: View {
                         statusCard
                         accountSection
                         syncSection
-                        logSection
+                        logHint
                     }
                     .padding(18)
                 }
@@ -1114,7 +1114,7 @@ struct SyncCenterSheet: View {
 
                 Text(useRealCloud
                      ? "真实模式会读写当前 Apple ID 的 CloudKit 私有数据库；未登录或权限不足会如实报错。"
-                     : "演示同步只写入本机状态并记录请求，不会连接 iCloud。")
+                     : "演示同步只改本机状态，不发送任何请求，也不会连接 iCloud。")
                     .font(.system(size: 10))
                     .foregroundStyle(Palette.tertiary)
             }
@@ -1149,41 +1149,25 @@ struct SyncCenterSheet: View {
         }
     }
 
-    private var logSection: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            SectionHeading(text: "最近请求", trailing: "\(store.backend.requestCount) 次")
-
-            if store.backend.logs.isEmpty {
-                Text("还没有同步请求。")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.tertiary)
-                    .padding(13)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .glassSurface(cornerRadius: 18)
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(store.backend.logs.prefix(4)) { log in
-                        HStack {
-                            Text(log.method)
-                                .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(log.status == 200 ? Palette.jade : Palette.accent)
-                            Text(log.path)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(Palette.secondary)
-                                .lineLimit(1)
-                            Spacer()
-                            Text("\(log.status) · \(log.milliseconds) ms")
-                                .font(.system(size: 9, design: .rounded))
-                                .foregroundStyle(Palette.tertiary)
-                                .monospacedDigit()
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                    }
-                }
-                .glassSurface(cornerRadius: 18)
-            }
+    /// 同步页不再展示「最近请求」。
+    ///
+    /// 那一栏原来读的是 MockBackend 自己记的假记录，连演示模式下的
+    /// “同步成功”都是编出来的状态。现在演示同步与真实 iCloud 都明确标注，
+    /// 真实网络请求统一去「设置 → 网络日志」看（读 LegadoCore 的 DiagnosticLog）。
+    private var logHint: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "list.bullet.rectangle")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.tertiary)
+            Text("真实请求记录在「设置 → 网络日志」；这一页不另外维护一份日志。")
+                .font(.system(size: 10))
+                .foregroundStyle(Palette.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassSurface(cornerRadius: 16)
     }
 }
 
@@ -1386,7 +1370,7 @@ struct CacheSheet: View {
                                 Text("阅读缓存")
                                     .font(.system(size: 16, weight: .semibold, design: .serif))
                                     .foregroundStyle(Palette.text)
-                                Text(store.backend.lastDownloadLabel)
+                                Text(usage == nil ? "正在统计磁盘占用…" : "章节正文、漫画页图与本地音频的磁盘占用")
                                     .font(.system(size: 10.5))
                                     .foregroundStyle(Palette.tertiary)
                             }
