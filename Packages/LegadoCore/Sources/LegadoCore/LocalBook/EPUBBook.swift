@@ -197,16 +197,18 @@ struct EPUBBook {
         let (body, path) = try body(chapter: chapter)
         let value = try render(body: body, from: chapter.startFragmentId, to: chapter.endFragmentId)
         var totalBytes = 0
-        return try value.images.enumerated().map { index, image in
+        var illustrations: [EPUBIllustration] = []
+        for image in value.images {
+            // 远程、缺失或不在清单里的图片直接跳过：整章的插图面板不该因为
+            // 一张坏图而完全打不开。整章都没有可读图片时返回空数组，由调用方提示「无插图」。
             guard let ref = Self.resolve(image.src, relativeTo: path),
-                  let item = manifest.first(where: { $0.path == ref.path }), item.mediaType.hasPrefix("image/") else {
-                throw EPUBError.missingResource(image.src)
-            }
-            let data = try read(ref.path)
+                  let item = manifest.first(where: { $0.path == ref.path }), item.mediaType.hasPrefix("image/"),
+                  let data = try? read(ref.path) else { continue }
             totalBytes += data.count
             guard totalBytes <= Self.resourceLimit else { throw EPUBError.resourceTooLarge }
-            return EPUBIllustration(id: index + 1, caption: image.alt, data: data)
+            illustrations.append(EPUBIllustration(id: illustrations.count + 1, caption: image.alt, data: data))
         }
+        return illustrations
     }
 
     private func body(chapter: BookChapter) throws -> (Element, String) {
