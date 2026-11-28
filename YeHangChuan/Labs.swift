@@ -318,7 +318,7 @@ struct AIStudioSheet: View {
                 )
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
             }
         }
     }

@@ -112,8 +112,10 @@ struct RootView: View {
         }
         .fullScreenCover(isPresented: $player.showFullPlayer) {
             if let book = player.book {
+                // P1-05：全屏播放器此前只挂裸 eyeCareFilter、漏了主题环境，
+                // grep .appChrome 归零抓不到这类半接线弹层。改接完整 themedChrome。
                 AudioPlayerView(book: book)
-                    .eyeCareFilter(store.eyeCare)
+                    .themedChrome(store)
             }
         }
         .onAppear {

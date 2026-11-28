@@ -276,7 +276,7 @@ struct SettingsView: View {
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
                 // sheet 是独立宿主，根视图的护眼层盖不进来；它自己也要跟随明暗。
-                .appChrome(store)
+                .themedChrome(store)
         }
         .sheet(isPresented: $showReaderSettings) {
             ReaderSettingsSheet(
@@ -291,7 +291,7 @@ struct SettingsView: View {
             )
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .fullScreenCover(item: $readerForFrameAdjust) { book in
             ReaderView(book: book, startInFrameAdjust: true)
@@ -300,7 +300,7 @@ struct SettingsView: View {
             DistributionSheet()
                 .presentationDetents([.medium])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .sheet(isPresented: $showGoal) {
             GoalSheet(minutes: store.goalMinutes) { value in
@@ -310,73 +310,73 @@ struct SettingsView: View {
             }
             .presentationDetents([.height(320)])
             .presentationCornerRadius(38)
-            .appChrome(store)
+            .themedChrome(store)
         }
         .sheet(isPresented: $showImport) {
             SmartImportSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .sheet(isPresented: $showSync) {
             SyncCenterSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .sheet(isPresented: $showBackup) {
             BackupSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .sheet(isPresented: $showCache) {
             CacheSheet()
                 .presentationDetents([.medium, .large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .sheet(isPresented: $showNetworkLogs) {
             NetworkLogSheet()
                 .presentationDetents([.medium, .large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .sheet(isPresented: $showExport) {
             DataExportSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .sheet(isPresented: $showAI) {
             AIStudioSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .sheet(isPresented: $showSandbox) {
             JSSandboxSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .sheet(isPresented: $showDiscover) {
             DiscoverSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .sheet(isPresented: $showVoice) {
             VoiceLabSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .sheet(isPresented: $showCompliance) {
             ComplianceSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .task {
             #if DEBUG
@@ -640,7 +640,7 @@ struct EyeCareSheet: View {
             // sheet 是独立宿主：根视图上的护眼层盖不住它，明暗偏好也不会自动
             // 传进来。这两句都得写在这里，否则一边拖暖度/亮度、
             // 一边切深浅，当前这张卡片本身毫无变化。
-            .appChrome(store)
+            .themedChrome(store)
             .onDisappear { store.saveSnapshot() }
             .task {
                 #if DEBUG

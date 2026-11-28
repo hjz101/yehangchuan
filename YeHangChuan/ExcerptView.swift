@@ -84,7 +84,7 @@ struct ExcerptView: View {
                 .presentationDetents([.medium, .large])
                 .presentationCornerRadius(38)
                 .presentationDragIndicator(.visible)
-                .appChrome(store)
+                .themedChrome(store)
         }
     }
 

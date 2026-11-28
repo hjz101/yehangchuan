@@ -135,13 +135,13 @@ struct ShelfView: View {
             ShelfSearchSheet(query: $query)
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .sheet(isPresented: $showImport) {
             SmartImportSheet()
                 .presentationDetents([.large])
                 .presentationCornerRadius(38)
-                .appChrome(store)
+                .themedChrome(store)
         }
         .alert("新建分组", isPresented: $showNewGroup) {
             TextField("分组名称", text: $newGroupName)
@@ -568,7 +568,7 @@ struct MediaDetailView: View {
             )
             .presentationDetents([.large])
             .presentationCornerRadius(38)
-            .appChrome(store)
+            .themedChrome(store)
         }
     }
 
