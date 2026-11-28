@@ -14,6 +14,9 @@ struct SourceView: View {
     @State private var showSandbox = false
     @State private var detailSource: BookSource?
     @State private var enablePrompt: SourceEnablePrompt?
+    @State private var loginTarget: BookSource?
+    @State private var deleteTarget: BookSource?
+    @State private var probeResult: SourceProbe?
 
     private var enabledCount: Int {
         store.sources.filter(\.enabled).count
@@ -98,6 +101,19 @@ struct SourceView: View {
                 .presentationCornerRadius(38)
                 .themedChrome(store)
         }
+        .sheet(item: $loginTarget) { source in
+            SourceLoginSheet(
+                source: source,
+                engineSource: LegadoBridge.engineSource(from: source)
+            ) { state in
+                var updated = source
+                updated.login = state
+                store.updateSource(updated)
+            }
+            .presentationDetents([.large])
+            .presentationCornerRadius(38)
+            .themedChrome(store)
+        }
         .sheet(item: $detailSource) { source in
             SourceDetailSheet(source: source)
                 .presentationDetents([.large])
@@ -129,6 +145,24 @@ struct SourceView: View {
                     secondaryButton: .cancel(Text("取消"))
                 )
             }
+        }
+        .alert(item: $deleteTarget) { source in
+            Alert(
+                title: Text("删除书源"),
+                message: Text("确定删除「\(source.name)」？这个操作不可撤销，本地规则与登录态会被一起移除。"),
+                primaryButton: .destructive(Text("删除")) {
+                    store.removeSource(source.id)
+                    deleteTarget = nil
+                },
+                secondaryButton: .cancel(Text("取消"))
+            )
+        }
+        .alert(item: $probeResult) { probe in
+            Alert(
+                title: Text(probe.ok ? "校验通过" : "校验失败"),
+                message: Text("\(probe.name)\n\(probe.message)\n耗时 \(probe.milliseconds) ms"),
+                dismissButton: .default(Text("知道了"))
+            )
         }
         .task {
             #if DEBUG
@@ -292,15 +326,11 @@ struct SourceView: View {
                         },
                         onOpen: {
                             detailSource = source
+                        },
+                        onAction: { action in
+                            handleSourceAction(action, for: source)
                         }
                     )
-                    .contextMenu {
-                        Button(role: .destructive) {
-                            store.removeSource(source.id)
-                        } label: {
-                            Label("删除书源", systemImage: "trash")
-                        }
-                    }
                 }
 
                 if store.sources.isEmpty {
@@ -328,9 +358,63 @@ struct SourceView: View {
             .padding(.top, 2)
     }
 
+    private func handleSourceAction(_ action: SourceRowAction, for source: BookSource) {
+        switch action {
+        case .edit:
+            detailSource = source
+        case .pinTop:
+            store.moveSource(source.id, to: .top)
+            store.showToast("已置顶：\(source.name)")
+        case .pinBottom:
+            store.moveSource(source.id, to: .bottom)
+            store.showToast("已置底：\(source.name)")
+        case .verify:
+            Task { @MainActor in
+                let result: SourceProbe
+                if let engineSource = LegadoBridge.engineSource(from: source) {
+                    let probe = await store.engine.probe(source: engineSource)
+                    result = SourceProbe(
+                        id: source.id, name: source.name, ok: probe.ok,
+                        milliseconds: probe.milliseconds, message: probe.message
+                    )
+                    var updated = source
+                    updated.latency = probe.milliseconds
+                    updated.lastError = probe.ok ? nil : probe.message
+                    store.updateSource(updated)
+                } else {
+                    result = SourceProbe(
+                        id: source.id, name: source.name, ok: false,
+                        milliseconds: 0, message: "规则无法解析成 Legado 3.0 书源"
+                    )
+                }
+                probeResult = result
+            }
+        case .login:
+            loginTarget = source
+        case .delete:
+            deleteTarget = source
+        case .enable:
+            enablePrompt = .permission(source)
+        case .disable:
+            store.setSourceEnabled(source.id, enabled: false)
+        }
+    }
+
     static func isPrivateHost(_ host: String) -> Bool {
         URLHost.isPrivate(host)
     }
+}
+
+/// 书源长按菜单里的动作。图标由 `SourceRow` 自己渲染。
+enum SourceRowAction {
+    case edit
+    case pinTop
+    case pinBottom
+    case verify
+    case login
+    case delete
+    case enable
+    case disable
 }
 
 enum SourceEnablePrompt: Identifiable {
@@ -345,11 +429,38 @@ enum SourceEnablePrompt: Identifiable {
     }
 }
 
+/// 单条书源导出成 Legado 3.0 JSON，供长按菜单里的「分享」使用。
+/// 能解析的规则原文原样输出，只覆盖名称与启用状态；解析不了才退回元数据。
+private func sourceExportJSON(_ source: BookSource) -> String {
+    let row: [String: Any] = {
+        guard let raw = source.rule.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else {
+            return [
+                "bookSourceName": source.name,
+                "bookSourceUrl": source.host,
+                "bookSourceGroup": source.group,
+                "bookSourceType": 0,
+                "enabled": source.enabled
+            ]
+        }
+        var copy = object
+        copy["bookSourceName"] = source.name
+        copy["enabled"] = source.enabled
+        return copy
+    }()
+    guard let data = try? JSONSerialization.data(
+        withJSONObject: row,
+        options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    ) else { return "" }
+    return String(data: data, encoding: .utf8) ?? ""
+}
+
 struct SourceRow: View {
     @Environment(\.theme) private var theme
     let source: BookSource
     let onToggle: (Bool) -> Void
     var onOpen: (() -> Void)? = nil
+    var onAction: ((SourceRowAction) -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -428,6 +539,66 @@ struct SourceRow: View {
         )
         .contentShape(Rectangle())
         .onTapGesture { onOpen?() }
+        .contextMenu {
+            if let onAction {
+                Button {
+                    onAction(.edit)
+                } label: {
+                    Label("编辑", systemImage: "square.and.pencil")
+                }
+
+                Button {
+                    onAction(.pinTop)
+                } label: {
+                    Label("置顶", systemImage: "arrow.up.to.line")
+                }
+
+                Button {
+                    onAction(.pinBottom)
+                } label: {
+                    Label("置底", systemImage: "arrow.down.to.line")
+                }
+
+                Button {
+                    onAction(.verify)
+                } label: {
+                    Label("校验", systemImage: "checkmark.shield")
+                }
+
+                ShareLink(
+                    item: sourceExportJSON(source),
+                    preview: SharePreview("\(source.name).json")
+                ) {
+                    Label("分享", systemImage: "square.and.arrow.up")
+                }
+
+                Button {
+                    onAction(.login)
+                } label: {
+                    Label("登录", systemImage: "key")
+                }
+
+                Button(role: .destructive) {
+                    onAction(.delete)
+                } label: {
+                    Label("删除", systemImage: "trash")
+                }
+
+                Button {
+                    onAction(.enable)
+                } label: {
+                    Label("启用", systemImage: "checkmark.circle")
+                }
+                .disabled(source.enabled)
+
+                Button {
+                    onAction(.disable)
+                } label: {
+                    Label("禁用", systemImage: "xmark.circle")
+                }
+                .disabled(!source.enabled)
+            }
+        }
     }
 }
 

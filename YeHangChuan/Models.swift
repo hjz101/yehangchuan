@@ -86,6 +86,12 @@ enum SourceKind: String, CaseIterable, Codable {
     case js = "JS"
 }
 
+/// 书源长按菜单里「置顶 / 置底」的目标位置。
+enum SourceMoveEdge {
+    case top
+    case bottom
+}
+
 struct BookSource: Identifiable, Hashable, Codable, Sendable {
     let id: String
     var name: String
@@ -1175,6 +1181,17 @@ final class AppStore {
         sources.removeAll { $0.id == sourceID }
         syncPrivateAllowList()
         showToast("已删除书源")
+        saveSnapshot()
+    }
+
+    /// 长按菜单里的置顶 / 置底。顺序就是界面上的展示顺序，直接改数组即可。
+    func moveSource(_ sourceID: String, to edge: SourceMoveEdge) {
+        guard let index = sources.firstIndex(where: { $0.id == sourceID }) else { return }
+        let moved = sources.remove(at: index)
+        switch edge {
+        case .top: sources.insert(moved, at: 0)
+        case .bottom: sources.append(moved)
+        }
         saveSnapshot()
     }
 
