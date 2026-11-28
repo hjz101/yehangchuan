@@ -11,20 +11,19 @@ import YeHangCore
 /// 的前提。以前一边按字数估算容量、一边交给 SwiftUI 自己排版，两份结果
 /// 对不上，文字被裁掉正是从那里来的。
 enum ReaderMetrics {
-    /// 上下留白的默认值：顶部给悬浮工具栏与页眉，底部给页脚、进度条与工具条。
-    /// 读者可以在阅读设置里改，所以这里只是初值。
-    static let defaultSide: CGFloat = 28
-    static let defaultTop: CGFloat = 96
-    static let defaultBottom: CGFloat = 152
-    /// 工具栏最下沿落在 96 点。< minTop 时读者开工具栏的那一刻，第一行
-    /// 就被压在返回键与页眉底下，读到的边界和屏幕上看到的不一样。
-    /// 所以 96 是上边界的地板，而不是「建议值」。
-    static let minTop: CGFloat = 96
+    /// 默认版心是全屏正文；工具栏是浮层，正文不再为它们预留一整块空白。
+    static let defaultSide: CGFloat = 16
+    static let defaultTop: CGFloat = 0
+    static let defaultBottom: CGFloat = 0
+    /// 适中档保留一套有呼吸感的传统版心，供不想用全屏正文的读者选择。
+    static let balancedSide: CGFloat = 28
+    static let balancedTop: CGFloat = 96
+    static let balancedBottom: CGFloat = 152
+    /// 全屏档允许正文从屏幕边缘开始；其他档位仍保留足够空间避开浮层。
+    static let minTop: CGFloat = 0
     static let maxTop: CGFloat = 240
-    /// 下边界最小 152：底部浮层（进度条 + 工具栏）加页脚就是这条高度，
-    /// 再小就会把正文送进浮层底下。抓手与「完成」按钮另占一条，不需要
-    /// 靠正文让位。
-    static let minBottom: CGFloat = 152
+    /// 全屏档允许正文延伸至屏幕底边；普通档位依旧使用更大的默认留白。
+    static let minBottom: CGFloat = 0
     static let maxBottom: CGFloat = 320
     /// 左右留白的活动范围。26 是页边看起来像书边的下限，68 是窄栏单行的上限。
     static let minSide: CGFloat = 16

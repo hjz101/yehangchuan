@@ -60,6 +60,7 @@ struct ReaderView: View {
     /// 在线书加载失败的原因，显示在正文区而不是静默空白。
     @State private var networkError: String?
     @State private var viewport: CGSize = CGSize(width: 390, height: 844)
+    @State private var safeAreaInsets = EdgeInsets()
     /// 滚动模式下当前可见段落的 ID，与 ScrollReaderView 的 scrollPosition 双向绑定。
     @State private var scrollParagraphID: String?
     /// 滚动模式下据此把段落位置换算成与分页模式一致的百分比。
@@ -169,11 +170,18 @@ struct ReaderView: View {
         effectiveSurface.isDark ? .white : themeTokens.text
     }
 
+    private var usesFullscreenFrame: Bool {
+        settings.sideMargin <= Double(ReaderMetrics.minSide)
+            && settings.topMargin <= Double(ReaderMetrics.minTop)
+            && settings.bottomMargin <= Double(ReaderMetrics.minBottom)
+    }
+
     var body: some View {
         ZStack {
             readerBackground
 
             readingContent
+                .ignoresSafeArea()
                 // 调版心时正文还在底下，只是被遮罩盖住了。触摸照旧会落到
                 // 正文层的翻页热区与长按上：点一下框外就悄悄翻了页，松手
                 // 还停在旧页上，看起来像「拖完边界书跳了」。这段时间干脆
@@ -239,20 +247,24 @@ struct ReaderView: View {
                     initialSideMargin: settings.sideMargin,
                     initialTopMargin: settings.topMargin,
                     initialBottomMargin: settings.bottomMargin,
+                    bottomSafeAreaInset: safeAreaInsets.bottom,
                     onCommit: applyFrame,
                     onDone: {
                         withAnimation(.easeInOut(duration: 0.2)) { showFrameAdjust = false }
                     }
                 )
                 .transition(.opacity)
+                .ignoresSafeArea()
             }
 
             EyeCareLayer(settings: store.eyeCare)
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { newSize in
             guard newSize.width > 1, newSize.height > 1 else { return }
-            guard abs(newSize.width - viewport.width) > 1 || abs(newSize.height - viewport.height) > 1 else { return }
-            viewport = newSize
+            let fullSize = Self.windowBoundsSize
+            let measuredSize = fullSize.width > 1 && fullSize.height > 1 ? fullSize : newSize
+            guard abs(measuredSize.width - viewport.width) > 1 || abs(measuredSize.height - viewport.height) > 1 else { return }
+            viewport = measuredSize
             guard pagination != nil else { return }
             rebuild(restore: false)
         }
@@ -262,12 +274,19 @@ struct ReaderView: View {
         .preferredColorScheme(effectiveSurface.isDark ? .dark : .light)
         .statusBarHidden(!showChrome)
         .persistentSystemOverlays(.hidden)
-        .onAppear(perform: bootstrap)
+        .onAppear {
+            safeAreaInsets = Self.windowSafeAreaInsets
+            viewport = Self.windowBoundsSize
+            bootstrap()
+        }
         .onDisappear { flushReadingTime() }
         .onChange(of: settings.fontSize) { _, _ in rebuild(restore: false) }
         .onChange(of: settings.lineSpacing) { _, _ in rebuild(restore: false) }
         // 三个刻度合成一个观察点：在纸上拖一次边界只重排一次。
         .onChange(of: [settings.sideMargin, settings.topMargin, settings.bottomMargin]) { _, _ in
+            if usesFullscreenFrame {
+                showChrome = false
+            }
             rebuild(restore: false)
         }
         .onChange(of: showFrameAdjust) { _, isShowing in
@@ -282,7 +301,11 @@ struct ReaderView: View {
                     withAnimation(.easeInOut(duration: 0.2)) { showChrome = false }
                 }
             } else {
-                revealChrome()
+                if usesFullscreenFrame {
+                    withAnimation(.easeInOut(duration: 0.2)) { showChrome = false }
+                } else {
+                    revealChrome()
+                }
             }
         }
         .onChange(of: settings.purifyText) { _, _ in rebuild(restore: false) }
@@ -417,6 +440,29 @@ struct ReaderView: View {
             guard !Task.isCancelled else { return }
             showFlash("已读 \(store.eyeCare.restMinutes) 分钟，看看 6 米外 20 秒")
         }
+    }
+
+    @MainActor
+    private static var windowSafeAreaInsets: EdgeInsets {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+        let insets = window?.safeAreaInsets ?? .zero
+        return EdgeInsets(
+            top: insets.top,
+            leading: insets.left,
+            bottom: insets.bottom,
+            trailing: insets.right
+        )
+    }
+
+    @MainActor
+    private static var windowBoundsSize: CGSize {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?.bounds.size ?? UIScreen.main.bounds.size
     }
 
     /// 正文为空时的失败出口：明确说明原因，并给出返回书架的路，
@@ -956,6 +1002,10 @@ struct ReaderView: View {
     }
 
     private func bootstrap() {
+        if usesFullscreenFrame {
+            // 全屏正文不应被首次出现的顶部按钮盖住；点正文仍可唤出工具栏。
+            showChrome = false
+        }
         rebuild(restore: true, targetChapter: initialChapterTitle)
 
         // 在线书：本地还没有目录时先拉目录，拉到再重排。
@@ -1509,6 +1559,14 @@ struct ReaderPageView: View {
     /// 本页正文的范围。绘制层与命中测试共用同一个区域。
     private var textSize: CGSize { pagination.size }
 
+    private var showsHeader: Bool {
+        settings.showHeaderFooter && settings.topMargin >= 24
+    }
+
+    private var showsFooter: Bool {
+        settings.showHeaderFooter && settings.bottomMargin >= 24
+    }
+
     /// 本页每个段落的盒子里有段评的那些。按段下标索引，用来摆胶囊。
     private var commentBoxes: [(box: PageParagraphBox, paragraph: Paragraph)] {
         guard !settings.hideSourceComments, pagination.hasComments else { return [] }
@@ -1530,7 +1588,7 @@ struct ReaderPageView: View {
             .padding(.top, settings.topMargin)
             .padding(.bottom, settings.bottomMargin)
             .overlay(alignment: .top) {
-                if settings.showHeaderFooter {
+                if showsHeader {
                     HStack {
                         Text(page.chapterTitle)
                         Spacer()
@@ -1550,7 +1608,7 @@ struct ReaderPageView: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if settings.showHeaderFooter {
+                if showsFooter {
                     HStack {
                         Text(bookTitle)
                         Spacer()
@@ -1767,8 +1825,8 @@ struct ScrollReaderView: View {
             .scrollTargetLayout()
             .padding(.horizontal, settings.sideMargin)
             // 上下留白与分页共用一套刻度：切到滚动模式时版心不会突然变宽变高。
-            .padding(.top, settings.topMargin - 6)
-            .padding(.bottom, settings.bottomMargin - 22)
+            .padding(.top, max(settings.topMargin - 6, 0))
+            .padding(.bottom, max(settings.bottomMargin - 22, 0))
             .environment(\.layoutDirection, .leftToRight)
         }
         .scrollIndicators(.hidden)
@@ -1851,6 +1909,7 @@ struct ReaderFrameAdjustOverlay: View {
     let initialSideMargin: Double
     let initialTopMargin: Double
     let initialBottomMargin: Double
+    let bottomSafeAreaInset: CGFloat
     let onCommit: (Double, Double, Double) -> Void
     let onDone: () -> Void
 
@@ -1960,7 +2019,7 @@ struct ReaderFrameAdjustOverlay: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.bottom, 14)
+            .padding(.bottom, bottomSafeAreaInset + 14)
         }
         .frame(width: page.width, height: page.height, alignment: .topLeading)
         .animation(.easeInOut(duration: 0.18), value: sideDrag == nil)
@@ -2130,8 +2189,8 @@ struct ReaderFrameAdjustOverlay: View {
         onCommit(sideMargin, topMargin, bottomMargin)
     }
 
-    /// 三个整档：紧凑贴着工具栏把每页字数拉满，宽栏牺牲一些字换行长，
-    /// 适中是默认值。左右放宽时同时收紧上下，保证一行不至于太短。
+    /// 四个整档：全屏是默认值，正文铺到画布边缘；紧凑贴着工具栏把每页字数
+    /// 拉满，宽栏牺牲一些字换行长。左右放宽时同时收紧上下，一行不至于太短。
     private func applyPreset(_ preset: FramePreset) {
         sideDrag = nil
         topDrag = (Double(preset.top), Double(preset.top))
@@ -2153,41 +2212,45 @@ struct ReaderFrameAdjustOverlay: View {
     }
 }
 
-/// 版心的三个整档。左右是读者抱怨「太空」时最该改的刻度：
-/// 默认 28 让一行排到三十多个字，一屏十来行，短章很容易只剩半页。
-/// 窄栏把一行收到二十字上下，行数立刻变多，页面就不空。
+/// 版心的四个整档。左右是读者抱怨「太空」时最该改的刻度：
+/// 全屏档把正文铺到画布边缘；适中与宽栏保留书页留白，
+/// 紧凑则让一行排得更短，短章也不至于只剩半页。
 enum FramePreset: CaseIterable {
-    case compact, balanced, wide
+    case compact, balanced, wide, fullScreen
 
     var title: String {
         switch self {
         case .compact: "紧凑"
         case .balanced: "适中"
         case .wide: "宽栏"
+        case .fullScreen: "全屏"
         }
     }
 
     var side: CGFloat {
         switch self {
-        case .compact: 44
-        case .balanced: ReaderMetrics.defaultSide
+        case .compact: 24
+        case .balanced: ReaderMetrics.balancedSide
         case .wide: 64
+        case .fullScreen: ReaderMetrics.minSide
         }
     }
 
     var top: CGFloat {
         switch self {
-        case .compact: ReaderMetrics.minTop
-        case .balanced: ReaderMetrics.defaultTop
+        case .compact: 48
+        case .balanced: ReaderMetrics.balancedTop
         case .wide: 112
+        case .fullScreen: ReaderMetrics.minTop
         }
     }
 
     var bottom: CGFloat {
         switch self {
-        case .compact: ReaderMetrics.minBottom
-        case .balanced: ReaderMetrics.defaultBottom
+        case .compact: 80
+        case .balanced: ReaderMetrics.balancedBottom
         case .wide: 184
+        case .fullScreen: ReaderMetrics.minBottom
         }
     }
 }

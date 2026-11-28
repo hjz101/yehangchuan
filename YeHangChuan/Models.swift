@@ -396,9 +396,9 @@ final class ReaderSettings {
     var direction: ReadingDirection = .ltr
     var fontDesign: ReaderFontDesign = .serif
     var fontWeight: ReaderWeight = .regular
-    var sideMargin: Double = 28
-    var topMargin: Double = 96
-    var bottomMargin: Double = 152
+    var sideMargin: Double = 16
+    var topMargin: Double = 0
+    var bottomMargin: Double = 0
     var indent: Bool = true
     var showHeaderFooter: Bool = true
     var volumeKeyTurn: Bool = false
@@ -459,9 +459,10 @@ struct ReaderSnapshot: Codable, Equatable, Sendable {
     var direction: ReadingDirection = .ltr
     var fontDesign: ReaderFontDesign = .serif
     var fontWeight: ReaderWeight = .regular
-    var sideMargin: Double = 28
-    var topMargin: Double = 96
-    var bottomMargin: Double = 152
+    var sideMargin: Double = 16
+    var topMargin: Double = 0
+    var bottomMargin: Double = 0
+    private var frameLayoutVersion: Int = 2
     var indent: Bool = true
     var showHeaderFooter: Bool = true
     var volumeKeyTurn: Bool = false
@@ -471,7 +472,7 @@ struct ReaderSnapshot: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case fontSize, lineSpacing, theme, pageMode, pageTurnEffect, direction
-        case fontDesign, fontWeight, sideMargin, topMargin, bottomMargin, indent, showHeaderFooter
+        case fontDesign, fontWeight, sideMargin, topMargin, bottomMargin, frameLayoutVersion, indent, showHeaderFooter
         case volumeKeyTurn, hideSourceComments, purifyText, themeOverride
     }
 
@@ -492,6 +493,16 @@ struct ReaderSnapshot: Codable, Equatable, Sendable {
         sideMargin = try c.decodeIfPresent(Double.self, forKey: .sideMargin) ?? sideMargin
         topMargin = try c.decodeIfPresent(Double.self, forKey: .topMargin) ?? topMargin
         bottomMargin = try c.decodeIfPresent(Double.self, forKey: .bottomMargin) ?? bottomMargin
+        let storedFrameLayoutVersion = try c.decodeIfPresent(Int.self, forKey: .frameLayoutVersion) ?? 1
+        if storedFrameLayoutVersion < 2,
+           sideMargin == 28,
+           topMargin == 96,
+           bottomMargin == 152 {
+            sideMargin = 16
+            topMargin = 0
+            bottomMargin = 0
+        }
+        frameLayoutVersion = 2
         indent = try c.decodeIfPresent(Bool.self, forKey: .indent) ?? indent
         showHeaderFooter = try c.decodeIfPresent(Bool.self, forKey: .showHeaderFooter) ?? showHeaderFooter
         volumeKeyTurn = try c.decodeIfPresent(Bool.self, forKey: .volumeKeyTurn) ?? volumeKeyTurn
