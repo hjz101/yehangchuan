@@ -131,6 +131,8 @@ final class ThemeStore {
             }
             // 内置主题按 builtinRevision 刷新（未 customized 才覆盖）。
             loaded = refreshBuiltins(in: loaded)
+            // 兼容历史数据：旧版把主题 id 截成 32 位，而 activeThemeID 仍是完整 UUID。
+            _ = restoreTruncatedActiveThemeID(in: &loaded)
             // activeThemeID 指向坏主题/不存在 → 回退内置默认并提示。
             if !loaded.themes.contains(where: { $0.id == loaded.activeThemeID }) {
                 loaded.activeThemeID = BuiltinThemes.defaultID
@@ -145,7 +147,9 @@ final class ThemeStore {
         } catch {
             // 整份 catalog 解码失败：先试逐主题兜底（单个坏主题不该丢掉整座主题库）。
             if let partiallyRecovered = decodeCatalogPerTheme(data, decoder: decoder) {
-                catalog = refreshBuiltins(in: partiallyRecovered)
+                var recovered = refreshBuiltins(in: partiallyRecovered)
+                _ = restoreTruncatedActiveThemeID(in: &recovered)
+                catalog = recovered
                 decodeError = "部分主题损坏，已跳过并记录"
                 writeDecodeError(decodeError!)
                 return
@@ -206,6 +210,26 @@ final class ThemeStore {
             result.themes.append(builtin)
         }
         return result
+    }
+
+    /// 兼容历史数据：旧版本曾把主题 id 截断成 32 位（assetID 上限），
+    /// 而 Snapshot 里的 activeThemeID 仍是完整 UUID。精确匹配失败时，
+    /// 用 activeThemeID 的前 32 位与 themes 中 id 做前缀匹配，唯一命中即恢复完整 id。
+    /// 返回是否发生了修复；不直接落盘，交给下一次正常写入持久化。
+    @discardableResult
+    private func restoreTruncatedActiveThemeID(in catalog: inout ThemeCatalog) -> Bool {
+        let activeThemeID = catalog.activeThemeID
+        guard activeThemeID.count > ThemeLimits.assetID,
+              !catalog.themes.contains(where: { $0.id == activeThemeID }) else { return false }
+        let truncated = String(activeThemeID.prefix(ThemeLimits.assetID))
+        let matches = catalog.themes.indices.filter { catalog.themes[$0].id == truncated }
+        guard matches.count == 1, let index = matches.first else { return false }
+        catalog.themes[index].id = activeThemeID
+        // 以该主题为 base 的其他自定义主题同步指向完整 id。
+        for i in catalog.themes.indices where catalog.themes[i].base == truncated {
+            catalog.themes[i].base = activeThemeID
+        }
+        return true
     }
 
     // MARK: 写

@@ -759,14 +759,16 @@ struct Theme: Codable, Identifiable, Equatable, Sendable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        // 主题 id 是 UUID 级别标识，绝不按 assetID（32 位）截断：截断会让
+        // activeThemeID（完整 36 位）在重启后匹配不到，回退默认主题。
         id = (try? c.decodeIfPresent(String.self, forKey: .id)).flatMap {
-            $0.isEmpty ? nil : String($0.prefix(ThemeLimits.assetID))
+            $0.isEmpty ? nil : String($0.prefix(ThemeLimits.themeID))
         } ?? UUID().uuidString
         name = (try? c.decodeIfPresent(String.self, forKey: .name)).flatMap {
             $0.isEmpty ? nil : String($0.prefix(ThemeLimits.name))
         } ?? "自定义主题"
         base = (try? c.decodeIfPresent(String.self, forKey: .base)).flatMap {
-            String($0.prefix(ThemeLimits.assetID))
+            String($0.prefix(ThemeLimits.themeID))
         }
         builtin = (try? c.decodeIfPresent(Bool.self, forKey: .builtin)) ?? false
         customized = (try? c.decodeIfPresent(Bool.self, forKey: .customized)) ?? false
@@ -867,7 +869,7 @@ struct ThemeSelection: Codable, Equatable, Hashable, Sendable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         activeThemeID = (try? c.decodeIfPresent(String.self, forKey: .activeThemeID))
-            .flatMap { $0.isEmpty ? nil : $0 } ?? ""
+            .flatMap { $0.isEmpty ? nil : String($0.prefix(ThemeLimits.themeID)) } ?? ""
         catalogSchemaVersion = (try? c.decodeIfPresent(Int.self, forKey: .catalogSchemaVersion))
             .flatMap { $0 >= 0 ? $0 : nil } ?? ThemeCatalog.currentSchemaVersion
     }
@@ -935,7 +937,8 @@ struct ThemeCatalog: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = (try? c.decodeIfPresent(Int.self, forKey: .schemaVersion))
             .flatMap { $0 >= 0 ? $0 : nil } ?? 0
-        activeThemeID = (try? c.decodeIfPresent(String.self, forKey: .activeThemeID)) ?? ""
+        activeThemeID = (try? c.decodeIfPresent(String.self, forKey: .activeThemeID))
+            .flatMap { String($0.prefix(ThemeLimits.themeID)) } ?? ""
         // 逐个主题解码：单个坏项（非对象/类型错乱）只跳过并记录，不阻断整份 catalog。
         // [Theme] 整体解码会在任一元素坏掉时整数组抛错；FailableTheme 的 try? 解包
         // 让坏元素变成 nil 并被 compactMap 丢弃（unkeyedContainer 失败不前进，不能用循环 try?）。
@@ -1032,6 +1035,8 @@ enum ThemeLimits {
     static let name = 64
     static let title = 120
     static let postScriptName = 128
+    /// 主题 id / base / activeThemeID 的上限（UUID 36 位需完整保留）。
+    static let themeID = 128
     static let assetID = 32
     static let covers = 6
     static let dataLevelMin = 4
