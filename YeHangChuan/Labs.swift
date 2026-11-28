@@ -904,10 +904,7 @@ struct VoiceLabSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var speed = 1.0
-    @State private var background = true
-    @State private var lockScreen = true
     @State private var carPlay = CarPlaySupport.enabled
-    @State private var cache = true
     @State private var preferences = SpeechRolePreferences.load()
 
     private var voices: [SpeechVoiceOption] { VoiceCatalog.availableVoices }
@@ -1066,24 +1063,41 @@ struct VoiceLabSheet: View {
 
     private var backgroundCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeading(text: "播放与缓存")
+            SectionHeading(text: "播放")
 
-            VStack(alignment: .leading, spacing: 10) {
-                Toggle("后台播放", isOn: $background)
-                Toggle("锁屏播放信息", isOn: $lockScreen)
+            VStack(alignment: .leading, spacing: 12) {
                 Toggle("CarPlay", isOn: $carPlay)
+                    .font(.system(size: 12.5))
+                    .tint(Palette.accent)
                     .onChange(of: carPlay) { _, newValue in CarPlaySupport.enabled = newValue }
-                Toggle("音频缓存", isOn: $cache)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Label("后台播放与锁屏信息始终开启", systemImage: "checkmark.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.secondary)
+                    Text("系统语音播放会持续到锁屏与后台，锁屏显示章节与进度，并支持播放、暂停与跳转。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Label("音频缓存不存在", systemImage: "minus.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.secondary)
+                    Text("系统语音不产生音频文件；有声书播放的是你导入的本机音频。")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .font(.system(size: 12.5))
-            .tint(Palette.accent)
             .padding(12)
             .glassSurface(cornerRadius: 18)
         }
     }
 
     private var boundaryNote: some View {
-        Text("系统语音真实发声，各角色切换系统已安装的真实声线，映射保存在本机；对话切分基于引号的启发式规则，不是语义分析。CarPlay 开关控制真实场景是否挂载；车机显示依赖设备已配对且工程开启 CarPlay capability。")
+        Text("系统语音真实发声，各角色切换系统已安装的真实声线，映射保存在本机；对话切分基于引号的启发式规则，不是语义分析。后台播放与锁屏信息随系统语音播放自动生效，没有单独开关。CarPlay 开关控制真实场景是否挂载；车机显示依赖设备已配对且工程开启 CarPlay capability。")
             .font(.system(size: 10))
             .foregroundStyle(Palette.tertiary)
     }
