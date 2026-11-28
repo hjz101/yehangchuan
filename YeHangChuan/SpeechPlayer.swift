@@ -110,7 +110,14 @@ final class SpeechPlayer: NSObject, AVSpeechSynthesizerDelegate {
     func resume() {
         guard isPaused else { return }
         activateSession()
-        synthesizer.continueSpeaking()
+        // 暂停后如果又跳转/拖动过，发音队列已经被 stop() 清空，
+        // continueSpeaking() 没有可继续的语句；此时必须从当前 offset 重新开口，
+        // 否则会出现「进度在走但没有声音」。
+        if synthesizer.isPaused {
+            synthesizer.continueSpeaking()
+        } else {
+            speak(from: offset)
+        }
         isPlaying = true
         isPaused = false
         startedAt = Date()
