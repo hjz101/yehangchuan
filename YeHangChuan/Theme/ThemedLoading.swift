@@ -45,7 +45,7 @@ struct ThemedLoadingView: View {
                 .foregroundStyle(tint)
                 .rotationEffect(reduceMotion ? .degrees(0) : .degrees(360))
                 .animation(
-                    reduceMotion ? nil : .linear(duration: 1.2).repeatForever(autoreverses: false),
+                    reduceMotion ? nil : .linear(duration: 0.6),
                     value: reduceMotion
                 )
         case .artwork:

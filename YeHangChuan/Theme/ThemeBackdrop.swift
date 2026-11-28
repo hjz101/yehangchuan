@@ -1,5 +1,14 @@
 import SwiftUI
 
+private extension Color {
+    init(hex: UInt32) {
+        self.init(.sRGB,
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255)
+    }
+}
+
 // MARK: - 网格解析缓存渲染器（P1-00 性能前置）
 //
 // 全工程 30+ 处挂载背景。旧 AppBackdrop 在 body 里现算网格点/色数组，
@@ -35,20 +44,20 @@ struct ThemeBackdrop: View {
         case let .linear(colors, start, end):
             LinearGradient(
                 colors: colors,
-                startPoint: start,
-                endPoint: end
+                startPoint: UnitPoint(x: start.x, y: start.y),
+                endPoint: UnitPoint(x: end.x, y: end.y)
             )
             .ignoresSafeArea()
         case let .radial(colors, center, startRadius, endRadius):
             RadialGradient(
                 colors: colors,
-                center: center,
+                center: UnitPoint(x: center.x, y: center.y),
                 startRadius: startRadius,
                 endRadius: endRadius
             )
             .ignoresSafeArea()
         case let .mesh(points, colors, rows, cols):
-            // 数据已由引擎算好并 clamp 为 [[Double]]，body 内零变换直接渲染。
+            // 数据已由引擎一次算好为 [SIMD2<Float>]，body 内零变换直接渲染。
             MeshGradient(width: rows, height: cols, points: points, colors: colors)
                 .ignoresSafeArea()
         case let .image(assetID, mode, overlay):
@@ -100,35 +109,29 @@ private struct SystemMeshBackdrop: View {
     }
 
     private var mesh: some View {
-        Group {
-            if scheme == .dark {
-                MeshGradient(
-                    width: 3, height: 3,
-                    points: Self.points,
-                    colors: [
-                        Color(hex: 0x05080E), Color(hex: 0x081019), Color(hex: 0x0C1622),
-                        Color(hex: 0x0A121C), Color(hex: 0x13202D), Color(hex: 0x1A232D),
-                        Color(hex: 0x0E161E), Color(hex: 0x191D24), Color(hex: 0x2A1E15)
-                    ]
-                )
-            } else {
-                MeshGradient(
-                    width: 3, height: 3,
-                    points: Self.points,
-                    colors: [
-                        Color(hex: 0xF7F9FD), Color(hex: 0xEFF3FA), Color(hex: 0xE6EDF7),
-                        Color(hex: 0xF3F6FB), Color(hex: 0xE9F0F8), Color(hex: 0xDEE7F2),
-                        Color(hex: 0xEDF0F5), Color(hex: 0xE5EBF3), Color(hex: 0xF3E7DA)
-                    ]
-                )
-            }
-        }
+        MeshGradient(
+            width: 3, height: 3,
+            points: Self.points,
+            colors: scheme == .dark ? Self.darkColors : Self.lightColors
+        )
     }
 
-    private static let points: [[Double]] = [
-        [0, 0], [0.5, 0], [1, 0],
-        [0, 0.52], [0.52, 0.46], [1, 0.55],
-        [0, 1], [0.48, 1], [1, 1]
+    private static let points: [SIMD2<Float>] = [
+        SIMD2<Float>(0, 0), SIMD2<Float>(0.5, 0), SIMD2<Float>(1, 0),
+        SIMD2<Float>(0, 0.52), SIMD2<Float>(0.52, 0.46), SIMD2<Float>(1, 0.55),
+        SIMD2<Float>(0, 1), SIMD2<Float>(0.48, 1), SIMD2<Float>(1, 1)
+    ]
+
+    private static let darkColors: [Color] = [
+        Color(hex: 0x05080E), Color(hex: 0x081019), Color(hex: 0x0C1622),
+        Color(hex: 0x0A121C), Color(hex: 0x13202D), Color(hex: 0x1A232D),
+        Color(hex: 0x0E161E), Color(hex: 0x191D24), Color(hex: 0x2A1E15)
+    ]
+
+    private static let lightColors: [Color] = [
+        Color(hex: 0xF7F9FD), Color(hex: 0xEFF3FA), Color(hex: 0xE6EDF7),
+        Color(hex: 0xF3F6FB), Color(hex: 0xE9F0F8), Color(hex: 0xDEE7F2),
+        Color(hex: 0xEDF0F5), Color(hex: 0xE5EBF3), Color(hex: 0xF3E7DA)
     ]
 
     private var glows: some View {
@@ -137,7 +140,11 @@ private struct SystemMeshBackdrop: View {
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [Palette.accentSolid.opacity(isDark ? 0.34 : 0.20), .clear],
+                        colors: [
+                            Color(hex: isDark ? 0xF5774D : 0xC2472B)
+                                .opacity(isDark ? 0.34 : 0.20),
+                            .clear
+                        ],
                         center: .center, startRadius: 0, endRadius: 200
                     )
                 )

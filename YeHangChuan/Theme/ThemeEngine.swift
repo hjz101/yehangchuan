@@ -43,7 +43,7 @@ struct ResolvedBackground: Equatable {
         case solid(Color)
         case linear(colors: [Color], start: CGPoint, end: CGPoint)
         case radial(colors: [Color], center: CGPoint, startRadius: CGFloat, endRadius: CGFloat)
-        case mesh(points: [[Double]], colors: [Color], rows: Int, cols: Int)
+        case mesh(points: [SIMD2<Float>], colors: [Color], rows: Int, cols: Int)
         case image(assetID: String, mode: ImageFillMode, overlay: Color?)
     }
 
@@ -260,8 +260,14 @@ enum ThemeEngine {
             let cols = points.first?.count ?? 0
             // points 已由模型层 clamp 到 0...1 且点数校验通过，直接缓存，
             // 渲染器 body 内不做任何数组变换（P1-00 性能红线）。
+            // 在解析阶段一次转换为 iOS 27 MeshGradient 所需的 [SIMD2<Float>]，
+            // 渲染器 body 内零变换（P1-00 性能红线）。
+            let simdPoints = points.compactMap { p -> SIMD2<Float>? in
+                guard p.count >= 2 else { return nil }
+                return SIMD2<Float>(Float(p[0]), Float(p[1]))
+            }
             style = .mesh(
-                points: points,
+                points: simdPoints,
                 colors: colors.map { color($0, scheme: scheme) },
                 rows: rows,
                 cols: cols

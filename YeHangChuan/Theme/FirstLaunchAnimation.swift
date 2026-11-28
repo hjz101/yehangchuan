@@ -15,7 +15,7 @@ struct FirstLaunchAnimation: View {
     var body: some View {
         ZStack {
             if !shown {
-                theme.background.style == .systemMesh ? AnyView(ThemeBackdrop()) : AnyView(theme.background.solidColor)
+                theme.background.style == .systemMesh ? AnyView(ThemeBackdrop()) : AnyView(theme.background.style.solidColor)
                 VStack(spacing: 16) {
                     Image(systemName: "sailboat.fill")
                         .font(.system(size: 56))
