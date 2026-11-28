@@ -1,4 +1,5 @@
 import SwiftUI
+import YeHangCore
 
 // MARK: - 主题编辑器主体框架与 draft 协议（P3-03）
 //
@@ -26,8 +27,8 @@ struct ThemeEditor: View {
     @State private var pendingDelete: Theme?
     @State private var showRestoreToast = false
     /// 删除定时器：撤销/重复删除时取消旧任务，UUID 双重防误删。
-    @State private var deleteTask: Task<Void, Never>?
-    @State private var deleteToken = UUID()
+    /// 状态机放在 YeHangCore，五个关键时序有独立单元测试覆盖。
+    @State private var deleteUndo = DelayedUndoController()
     @State private var selectedGroup: EditorGroup = .colors
 
     enum EditorGroup: String, CaseIterable, Identifiable {
@@ -266,31 +267,19 @@ struct ThemeEditor: View {
     /// 删除进入 5 秒待确认期：先只记 pendingDelete，到期才真正移除。
     private func scheduleDelete(_ theme: Theme) {
         guard !theme.builtin else { return }
-        deleteTask?.cancel()
-        let token = UUID()
-        deleteToken = token
         pendingDelete = theme
         showRestoreToast = true
-        deleteTask = Task { @MainActor in
-            do {
-                try await Task.sleep(for: .seconds(5))
-            } catch {
-                return  // 撤销或重复删除时旧任务被取消
-            }
-            guard deleteToken == token,
-                  let target = pendingDelete, target.id == theme.id else { return }
+        deleteUndo.schedule {
+            guard let target = pendingDelete, target.id == theme.id else { return }
             onDeleteTheme(target)
             pendingDelete = nil
             showRestoreToast = false
-            deleteTask = nil
         }
     }
 
-    /// 撤销：取消定时、清掉待删目标，Task 检查到 nil 后不会删库。
+    /// 撤销：取消定时、清掉待删目标；状态机会换 token，旧任务醒来也被挡住。
     private func undoDelete() {
-        deleteTask?.cancel()
-        deleteTask = nil
-        deleteToken = UUID()
+        deleteUndo.cancel()
         pendingDelete = nil
         showRestoreToast = false
     }
