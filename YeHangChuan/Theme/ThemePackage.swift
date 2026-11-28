@@ -192,7 +192,10 @@ enum ThemePackage {
         // ④ 逐资产 checksums 核对（完整 256bit，自校验非来源认证）。
         var assets: [(ref: AssetRef, data: Data)] = []
         for (name, checksum) in manifest.checksums {
-            guard let assetData = extracted[name] else { continue }
+            // 清单声明了资产但包内缺失：完整性错误，不允许静默跳过。
+            guard let assetData = extracted[name] else {
+                throw ThemePackageError.checksumMismatch(name)
+            }
             let actual = SHA256.hash(data: assetData).map { String(format: "%02x", $0) }.joined()
             guard actual == checksum else { throw ThemePackageError.checksumMismatch(name) }
             let parts = name.split(separator: ".", maxSplits: 1)
