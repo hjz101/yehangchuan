@@ -486,7 +486,10 @@ public struct NetworkBookService: Sendable {
                     itemContext.variables = pay.variables
                     diagnostics += [name, url, volume, vip, pay, info].flatMap(\.diagnostics)
                     guard nonempty(chapter.title) != nil else { continue }
-                    chapter.url = resolve(chapter.url, against: response.finalURL)
+                    // 分卷占位 URL 不参与绝对化，否则会变成目录页地址，被当成正文请求。
+                    if !chapter.url.hasPrefix("#volume-") {
+                        chapter.url = resolve(chapter.url, against: response.finalURL)
+                    }
                     chapter.isPay = truthy(pay.joinedString)
                     chapter.variable = encodeVariables(itemContext.variables)
                     chapters.append(chapter)
@@ -541,8 +544,11 @@ public struct NetworkBookService: Sendable {
         nextChapterURL: String? = nil,
         maxPages: Int = 20
     ) async -> ChapterContentReport {
-        if chapter.isVolume, chapter.url.hasPrefix(chapter.title) {
-            return .init(content: chapter.tag ?? "")
+        // 分卷只是目录里的分隔项，没有正文；不要拿目录页当正文请求，
+        // 也不要把 chapter.tag（更新时间）当作内容返回。
+        if chapter.isVolume,
+           chapter.url.hasPrefix("#volume-") || chapter.url.hasPrefix(chapter.title) {
+            return .init(content: "")
         }
         guard let rules = source.ruleContent,
               let contentRule = nonempty(rules.content) else {
