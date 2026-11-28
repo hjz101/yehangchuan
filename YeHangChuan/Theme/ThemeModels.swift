@@ -57,6 +57,11 @@ enum ColorSpec: Codable, Hashable, Sendable {
     case adaptive(light: UInt32, dark: UInt32, lightOpacity: Double, darkOpacity: Double)
     case fixed(UInt32, opacity: Double)
 
+    /// 便捷工厂：自定义双档色默认不透明（枚举 case 本身不支持默认参数）。
+    static func adaptive(light: UInt32, dark: UInt32) -> ColorSpec {
+        .adaptive(light: light, dark: dark, lightOpacity: 1, darkOpacity: 1)
+    }
+
     private enum Kind: String, Codable { case system, adaptive, fixed }
     private enum CodingKeys: String, CodingKey {
         case kind, light, dark, lightOpacity, darkOpacity, hex, opacity
@@ -322,6 +327,20 @@ struct GlowSpec: Codable, Equatable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case enabled, color, radius, opacity, position
+    }
+
+    init(
+        enabled: Bool = true,
+        color: ColorSpec = .system,
+        radius: Double = 180,
+        opacity: Double = 0.5,
+        position: ThemePoint = ThemePoint(x: 0.5, y: 0.5)
+    ) {
+        self.enabled = enabled
+        self.color = color
+        self.radius = (radius.isFinite ? radius : 180).clamped(to: 16...480)
+        self.opacity = ThemeColor.clampOpacity(opacity)
+        self.position = position
     }
 
     init(from decoder: Decoder) throws {
@@ -791,6 +810,23 @@ struct AssetRef: Codable, Equatable, Hashable, Sendable {
 
     static let allowedExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "webp", "ttf", "otf"]
 
+    init(
+        id: String,
+        kind: AssetKind,
+        ext: String,
+        byteCount: Int,
+        pixelWidth: Int? = nil,
+        pixelHeight: Int? = nil
+    ) {
+        self.id = Self.isValidAssetID(id) ? id : ""
+        self.kind = kind
+        let lower = ext.lowercased()
+        self.ext = Self.allowedExtensions.contains(lower) ? lower : ""
+        self.byteCount = max(0, byteCount)
+        self.pixelWidth = pixelWidth.flatMap { $0 > 0 ? $0 : nil }
+        self.pixelHeight = pixelHeight.flatMap { $0 > 0 ? $0 : nil }
+    }
+
     /// assetID 必须是 32 位小写 hex。这是路径穿越的硬防线（安全评审 G3）。
     static func isValidAssetID(_ id: String) -> Bool {
         id.count == 32 && id.unicodeScalars.allSatisfy { c in
@@ -856,6 +892,22 @@ struct ThemeCatalog: Codable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion, activeThemeID, themes, assets, skippedThemes, pendingDelete
+    }
+
+    init(
+        schemaVersion: Int = currentSchemaVersion,
+        activeThemeID: String,
+        themes: [Theme] = [],
+        assets: [AssetRef] = [],
+        skippedThemes: [String]? = nil,
+        pendingDelete: [PendingDelete] = []
+    ) {
+        self.schemaVersion = schemaVersion
+        self.activeThemeID = activeThemeID
+        self.themes = themes
+        self.assets = assets
+        self.skippedThemes = skippedThemes
+        self.pendingDelete = pendingDelete
     }
 
     init(from decoder: Decoder) throws {

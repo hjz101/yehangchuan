@@ -1,7 +1,10 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#endif
 
 // 本地私有扩展：与 Theme.swift 的 Palette 辅助保持同值，避免引擎依赖视图层文件。
+#if canImport(UIKit)
 private extension UIColor {
     convenience init(themeHex hex: UInt32) {
         self.init(
@@ -12,6 +15,7 @@ private extension UIColor {
         )
     }
 }
+#endif
 
 private extension Color {
     init(themeHex hex: UInt32, opacity: Double = 1) {
@@ -180,6 +184,7 @@ enum ThemeEngine {
     static func color(_ spec: ColorSpec, scheme: ColorScheme = .light) -> Color {
         switch spec {
         case .system:
+            #if canImport(UIKit)
             // .system 语义：跟随 Palette 的默认动态行为，这里用中性墨色 provider。
             // 具体业务色由 Palette 兼容壳提供（P1-01），令牌层只保留可覆盖的动态色。
             return Color(uiColor: UIColor { (traits: UITraitCollection) -> UIColor in
@@ -187,23 +192,39 @@ enum ThemeEngine {
                     ? UIColor(themeHex: 0xF4F0E8)
                     : UIColor(themeHex: 0x111A24)
             })
+            #else
+            return scheme == .dark
+                ? Color(themeHex: 0xF4F0E8) : Color(themeHex: 0x111A24)
+            #endif
         case let .adaptive(light, dark, lightOpacity, darkOpacity):
+            #if canImport(UIKit)
             return Color(uiColor: UIColor { (traits: UITraitCollection) -> UIColor in
                 traits.userInterfaceStyle == .dark
                     ? UIColor(themeHex: dark).withAlphaComponent(darkOpacity)
                     : UIColor(themeHex: light).withAlphaComponent(lightOpacity)
             })
+            #else
+            return scheme == .dark
+                ? Color(themeHex: dark, opacity: darkOpacity)
+                : Color(themeHex: light, opacity: lightOpacity)
+            #endif
         case let .fixed(hex, opacity):
             return Color(themeHex: hex, opacity: opacity)
         }
     }
 
     static func color(_ tc: ThemeColor, scheme: ColorScheme) -> Color {
+        #if canImport(UIKit)
         let light = UIColor(themeHex: tc.light).withAlphaComponent(tc.lightOpacity)
         let dark = UIColor(themeHex: tc.dark).withAlphaComponent(tc.darkOpacity)
         return Color(uiColor: UIColor { (traits: UITraitCollection) -> UIColor in
             traits.userInterfaceStyle == .dark ? dark : light
         })
+        #else
+        return scheme == .dark
+            ? Color(themeHex: tc.dark, opacity: tc.darkOpacity)
+            : Color(themeHex: tc.light, opacity: tc.lightOpacity)
+        #endif
     }
 
     // MARK: 背景解析
