@@ -406,6 +406,9 @@ struct SmartImportSheet: View {
     }
 
     nonisolated static func decode(_ data: Data) -> String? {
+        // isoLatin1 对任何字节都能"解码成功"，导致二进制文件被当成 TXT 导入。
+        // 先按原始字节判断文本性，二进制直接返回 nil，让导入界面如实报错。
+        guard !looksBinary(data) else { return nil }
         if let value = String(data: data, encoding: .utf8) { return value }
         let gb = String.Encoding(
             rawValue: UInt(
@@ -417,6 +420,48 @@ struct SmartImportSheet: View {
         if let value = String(data: data, encoding: gb) { return value }
         if let value = String(data: data, encoding: .utf16) { return value }
         return String(data: data, encoding: .isoLatin1)
+    }
+
+    /// 粗略的文本性判断：只看前 64 KB，够用且不拖慢大文件。
+    /// - 带 BOM 的 UTF-16 里零字节是编码的一部分，必须放行；
+    /// - 无 BOM 的 UTF-16 会有大量零字节集中在同一奇偶位，也放行；
+    /// - 其余出现零字节的按二进制处理；
+    /// - 制表、换行之外的轻微控制符允许，比例过高才算二进制。
+    nonisolated private static func looksBinary(_ data: Data) -> Bool {
+        let bytes = [UInt8](data.prefix(64 * 1_024))
+        guard !bytes.isEmpty else { return false }
+
+        if bytes.count >= 2,
+           (bytes[0] == 0xFF && bytes[1] == 0xFE) || (bytes[0] == 0xFE && bytes[1] == 0xFF) {
+            return false
+        }
+
+        var nulls = 0
+        var evenNulls = 0
+        var oddNulls = 0
+        var controls = 0
+        for (offset, byte) in bytes.enumerated() {
+            if byte == 0 {
+                nulls += 1
+                if offset.isMultiple(of: 2) { evenNulls += 1 } else { oddNulls += 1 }
+                continue
+            }
+            if byte < 0x20 || byte == 0x7F {
+                switch byte {
+                case 0x09, 0x0A, 0x0B, 0x0C, 0x0D: continue
+                default: controls += 1
+                }
+            }
+        }
+
+        if nulls > 0 {
+            let dominant = max(evenNulls, oddNulls)
+            let likelyUTF16 = nulls * 4 >= bytes.count
+                && Double(dominant) >= Double(nulls) * 0.9
+            return !likelyUTF16
+        }
+
+        return controls * 10 > bytes.count
     }
 
     nonisolated static func encodingName(_ data: Data) -> String {
