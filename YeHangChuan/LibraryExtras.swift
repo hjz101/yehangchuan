@@ -341,21 +341,17 @@ struct SmartImportSheet: View {
     /// 其余类型（音频、漫画压缩包）走本地文件导入，链接路径明确拒绝。
     nonisolated static func fetchLink(_ url: URL) async -> LocalImportReader.Outcome {
         do {
-            try PrivateHostGate.check(URLRequest(url: url))
             var request = URLRequest(url: url)
+            try PrivateHostGate.check(request)
             request.timeoutInterval = 30
             request.setValue("text/plain, application/epub+zip, application/octet-stream;q=0.8, */*;q=0.1",
                              forHTTPHeaderField: "Accept")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                return .failure("链接没有返回 HTTP 响应，可能不是网页或文件地址。")
-            }
+            let download = try await downloadLink(request)
+            let http = download.response
             guard (200..<300).contains(http.statusCode) else {
                 return .failure("下载失败：服务器返回 \(http.statusCode)。")
             }
-            guard data.count <= 64 * 1_048_576 else {
-                return .failure("文件超过 64 MB，请先下载到本机再从文件导入。")
-            }
+            let data = download.data
             let contentType = (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
             let ext = url.pathExtension.lowercased()
 
@@ -386,6 +382,8 @@ struct SmartImportSheet: View {
                 chapters: parsed.chapters
             ))
         } catch let error as PrivateHostError {
+            return .failure(error.localizedDescription)
+        } catch let error as LinkDownloadError {
             return .failure(error.localizedDescription)
         } catch {
             return .failure("链接读取失败：\(error.localizedDescription)")
@@ -516,6 +514,127 @@ struct SmartImportSheet: View {
         return (title, author?.isEmpty == false ? author! : "佚名", cleaned)
     }
 
+}
+
+// MARK: - Link download
+
+/// 链接导入的下载看守：`URLSession` 自动跟随 302 时只检查首跳会漏掉私网，
+/// 这里在 `willPerformHTTPRedirection` 对每一跳重新判定；同时按块累计大小，
+/// 超过 64 MB 立即取消任务，而不是先把整包读进内存再判断。
+private final class LinkDownloadGuard: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let limit: Int
+    private let lock = NSLock()
+    private var buffer = Data()
+    private var blockedHost: String?
+    private var tooLarge = false
+    private var httpResponse: HTTPURLResponse?
+
+    init(limit: Int) {
+        self.limit = limit
+        super.init()
+    }
+
+    var downloadedData: Data { lock.withLock { buffer } }
+    var blocked: String? { lock.withLock { blockedHost } }
+    var exceededLimit: Bool { lock.withLock { tooLarge } }
+    var response: HTTPURLResponse? { lock.withLock { httpResponse } }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        if let host = request.url?.host, PrivateHostGate.shouldBlock(host) {
+            lock.withLock { if blockedHost == nil { blockedHost = host } }
+            completionHandler(nil)
+            return
+        }
+        completionHandler(request)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void
+    ) {
+        if let http = response as? HTTPURLResponse {
+            lock.withLock { httpResponse = http }
+            // Content-Length 已经超限就不用再收一个字节。
+            if http.expectedContentLength > Int64(limit) {
+                lock.withLock { tooLarge = true }
+                completionHandler(.cancel)
+                return
+            }
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        let over = lock.withLock { () -> Bool in
+            if tooLarge { return true }
+            buffer.append(data)
+            if buffer.count > limit { tooLarge = true; return true }
+            return false
+        }
+        if over { dataTask.cancel() }
+    }
+}
+
+private struct LinkDownload {
+    let data: Data
+    let response: HTTPURLResponse
+}
+
+private enum LinkDownloadError: LocalizedError {
+    case tooLarge
+    case nonHTTP
+
+    var errorDescription: String? {
+        switch self {
+        case .tooLarge: "文件超过 64 MB，请先下载到本机再从文件导入。"
+        case .nonHTTP: "链接没有返回 HTTP 响应，可能不是网页或文件地址。"
+        }
+    }
+}
+
+extension SmartImportSheet {
+    /// 流式下载：每一跳都过私网闸门，大小超限即取消。
+    nonisolated private static func downloadLink(_ request: URLRequest) async throws -> LinkDownload {
+        let limit = 64 * 1_048_576
+        let guardDelegate = LinkDownloadGuard(limit: limit)
+        let session = URLSession(
+            configuration: .ephemeral,
+            delegate: guardDelegate,
+            delegateQueue: nil
+        )
+        defer { session.finishTasksAndInvalidate() }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let task = session.dataTask(with: request) { _, response, error in
+                if let host = guardDelegate.blocked {
+                    continuation.resume(throwing: PrivateHostError.blocked(host))
+                    return
+                }
+                if guardDelegate.exceededLimit {
+                    continuation.resume(throwing: LinkDownloadError.tooLarge)
+                    return
+                }
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let http = (response as? HTTPURLResponse) ?? guardDelegate.response else {
+                    continuation.resume(throwing: LinkDownloadError.nonHTTP)
+                    return
+                }
+                continuation.resume(returning: LinkDownload(data: guardDelegate.downloadedData, response: http))
+            }
+            task.resume()
+        }
+    }
 }
 
 // MARK: - Comic Reader
