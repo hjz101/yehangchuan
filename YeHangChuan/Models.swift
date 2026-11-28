@@ -395,6 +395,8 @@ final class ReaderSettings {
     var volumeKeyTurn: Bool = false
     var hideSourceComments = false
     var purifyText = false
+    /// 阅读页对全局主题的覆盖（P2-02）：默认跟随全局，老行为不变。
+    var themeOverride: ReaderThemeOverride = ReaderThemeOverride()
 
     var snapshot: ReaderSnapshot {
         ReaderSnapshot(
@@ -413,7 +415,8 @@ final class ReaderSettings {
             showHeaderFooter: showHeaderFooter,
             volumeKeyTurn: volumeKeyTurn,
             hideSourceComments: hideSourceComments,
-            purifyText: purifyText
+            purifyText: purifyText,
+            themeOverride: themeOverride
         )
     }
 
@@ -434,6 +437,7 @@ final class ReaderSettings {
         volumeKeyTurn = snapshot.volumeKeyTurn
         hideSourceComments = snapshot.hideSourceComments
         purifyText = snapshot.purifyText
+        themeOverride = snapshot.themeOverride
     }
 }
 
@@ -454,11 +458,12 @@ struct ReaderSnapshot: Codable, Equatable, Sendable {
     var volumeKeyTurn: Bool = false
     var hideSourceComments: Bool = false
     var purifyText: Bool = false
+    var themeOverride: ReaderThemeOverride = ReaderThemeOverride()
 
     private enum CodingKeys: String, CodingKey {
         case fontSize, lineSpacing, theme, pageMode, pageTurnEffect, direction
         case fontDesign, fontWeight, sideMargin, topMargin, bottomMargin, indent, showHeaderFooter
-        case volumeKeyTurn, hideSourceComments, purifyText
+        case volumeKeyTurn, hideSourceComments, purifyText, themeOverride
     }
 
     /// 逐个字段兜底。阅读设置全是「可以再调」的偏好：
@@ -483,6 +488,8 @@ struct ReaderSnapshot: Codable, Equatable, Sendable {
         volumeKeyTurn = try c.decodeIfPresent(Bool.self, forKey: .volumeKeyTurn) ?? volumeKeyTurn
         hideSourceComments = try c.decodeIfPresent(Bool.self, forKey: .hideSourceComments) ?? hideSourceComments
         purifyText = try c.decodeIfPresent(Bool.self, forKey: .purifyText) ?? purifyText
+        themeOverride = (try? c.decodeIfPresent(ReaderThemeOverride.self, forKey: .themeOverride))
+            ?? ReaderThemeOverride()
     }
 
     init() {}
@@ -503,7 +510,8 @@ struct ReaderSnapshot: Codable, Equatable, Sendable {
         showHeaderFooter: Bool,
         volumeKeyTurn: Bool,
         hideSourceComments: Bool,
-        purifyText: Bool
+        purifyText: Bool,
+        themeOverride: ReaderThemeOverride = ReaderThemeOverride()
     ) {
         self.fontSize = fontSize
         self.lineSpacing = lineSpacing
@@ -521,6 +529,7 @@ struct ReaderSnapshot: Codable, Equatable, Sendable {
         self.volumeKeyTurn = volumeKeyTurn
         self.hideSourceComments = hideSourceComments
         self.purifyText = purifyText
+        self.themeOverride = themeOverride
     }
 }
 
