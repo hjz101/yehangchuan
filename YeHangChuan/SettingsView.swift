@@ -33,6 +33,7 @@ struct SettingsView: View {
     @State private var showVoice = false
     @State private var showCompliance = false
     @State private var showEyeCare = false
+    @State private var showThemeEditor = false
     @State private var readerForFrameAdjust: Book?
     /// 各类缓存的真实占用，进页面后异步统计一次。
     /// nil 表示还没算出来，这时候显示「计算中」而不是显示一个假的 0。
@@ -92,6 +93,20 @@ struct SettingsView: View {
                                 .tint(Palette.accent)
                                 .padding(.horizontal, 15)
                                 .padding(.vertical, 10)
+
+                                // P3-03：入口统一为「外观与主题」，护眼/主题为其子项。
+                                Button {
+                                    showThemeEditor = true
+                                } label: {
+                                    SettingsRow(
+                                        title: "主题",
+                                        value: ThemeStore.shared.activeTheme.name,
+                                        systemImage: "paintpalette",
+                                        iconTint: Palette.accent,
+                                        isLast: false
+                                    )
+                                }
+                                .buttonStyle(.plain)
 
                                 Button {
                                     showEyeCare = true
@@ -270,6 +285,15 @@ struct SettingsView: View {
             }
             .navigationTitle("设置")
             .toolbarTitleDisplayMode(.inlineLarge)
+        }
+        .sheet(isPresented: $showThemeEditor) {
+            ThemeEditor(theme: ThemeStore.shared.activeTheme) { applied in
+                ThemeStore.shared.catalog.themes.removeAll { $0.id == applied.id }
+                ThemeStore.shared.catalog.themes.append(applied)
+                ThemeStore.shared.selectTheme(id: applied.id)
+            }
+            .presentationDetents([.large])
+            .presentationCornerRadius(38)
         }
         .sheet(isPresented: $showEyeCare) {
             EyeCareSheet()
