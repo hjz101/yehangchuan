@@ -214,6 +214,9 @@ public actor HttpTTSService {
                 if attempt == 5 { throw lastError }
             } catch let error as RuleEngineError {
                 throw error
+            } catch let error as HttpTTSServiceError {
+                // 登录失效、文本过长等确定性错误重试也不会变好，立即上抛。
+                throw error
             } catch {
                 lastError = error
                 if attempt == 5 { throw error }
