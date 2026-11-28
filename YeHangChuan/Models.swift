@@ -1119,6 +1119,10 @@ final class AppStore {
     func removeBook(_ bookID: String) {
         books.removeAll { $0.id == bookID }
         bookmarks.removeAll { $0.bookID == bookID }
+        // 阅读位置与摘录同样按书 ID 存；书都不在了，留着只会在统计 / 摘录页里
+        // 指向一本不存在的书。换源不改 ID，所以这里按 ID 一次清干净。
+        positions[bookID] = nil
+        excerpts.removeAll { $0.bookID == bookID }
         // 目录缓存按书 ID 存，而换源不改 ID。删书后如果留着缓存，
         // 下次从原书源重新入架会拿到「上一个源」的章节，正文却去原源取 —— 对不上。
         // 顺带也避免快照里堆积已删书籍的整份正文。
