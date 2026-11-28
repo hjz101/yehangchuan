@@ -702,6 +702,7 @@ final class AudioPlayer {
     @ObservationIgnored private var avPlayer: AVPlayer?
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var endObserver: NSObjectProtocol?
+    @ObservationIgnored private var durationTask: Task<Void, Never>?
 
     /// 有真实音频文件时走 AVPlayer，否则是演示计时器。
     var usesRealAudio: Bool { avPlayer != nil }
@@ -844,8 +845,9 @@ final class AudioPlayer {
     private func setupRealAudio(url: URL, autoplay: Bool) {
         let player = AVPlayer(url: url)
         avPlayer = player
-        let seconds = CMTimeGetSeconds(player.currentItem?.duration ?? .zero)
-        duration = seconds.isFinite && seconds > 0 ? seconds : (Self.seconds(book?.duration) ?? 340)
+        // 刚创建的 AVPlayer 读 currentItem.duration 通常是 indefinite，
+        // 先按已知文案兜底，等 AVPlayerItem 就绪后异步换成真实时长。
+        duration = Self.seconds(book?.duration) ?? 340
         elapsed = 0
         let interval = CMTime(value: 1, timescale: 4)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
@@ -871,9 +873,24 @@ final class AudioPlayer {
         isPlaying = autoplay
         player.rate = autoplay ? Float(speed) : 0
         updateNowPlaying()
+
+        // 长音频靠 340 秒兜底就永远拖不到后面，就绪后必须换成真实时长。
+        durationTask?.cancel()
+        durationTask = Task { [weak self] in
+            guard let item = player.currentItem,
+                  let loaded = try? await item.asset.load(.duration) else { return }
+            let seconds = CMTimeGetSeconds(loaded)
+            guard seconds.isFinite, seconds > 0 else { return }
+            guard !Task.isCancelled, let self, self.avPlayer === player else { return }
+            self.duration = seconds
+            self.elapsed = min(self.elapsed, max(seconds - 0.25, 0))
+            self.updateNowPlaying()
+        }
     }
 
     private func teardownRealAudio() {
+        durationTask?.cancel()
+        durationTask = nil
         if let timeObserver, let avPlayer { avPlayer.removeTimeObserver(timeObserver) }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         avPlayer?.pause()
