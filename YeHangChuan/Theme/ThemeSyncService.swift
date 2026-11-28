@@ -38,11 +38,19 @@ struct ThemeSyncService {
         assets: [(id: String, data: Data)],
         deviceID: String
     ) async throws {
-        let record = CKRecord(recordType: Self.recordType, recordID: CKRecord.ID(recordName: theme.id))
+        let recordID = CKRecord.ID(recordName: theme.id)
+        // 先取回云端已有记录（带 changeTag）再改字段保存；直接 new 一个同名
+        // record 在默认 .ifServerRecordUnchanged 策略下第二次上传必被拒绝。
+        let record: CKRecord
+        do {
+            record = try await database.privateCloudDatabase.record(for: recordID)
+        } catch let error as CKError where error.code == .unknownItem {
+            record = CKRecord(recordType: Self.recordType, recordID: recordID)
+        }
 
         // 先按 assetID 去重上传资产（远端已有则跳过）。
         let existing = try await remoteAssetIDs()
-        var assetAssets: [CKAsset] = []
+        var newAssets: [CKAsset] = []
         var uploadedIDs: [String] = []
         for asset in assets {
             guard !existing.contains(asset.id) else {
@@ -53,13 +61,17 @@ struct ThemeSyncService {
             let file = FileManager.default.temporaryDirectory
                 .appendingPathComponent("theme-asset-\(asset.id).bin")
             try asset.data.write(to: file)
-            assetAssets.append(CKAsset(fileURL: file))
+            newAssets.append(CKAsset(fileURL: file))
             uploadedIDs.append(asset.id)
         }
 
         let payloadFile = FileManager.default.temporaryDirectory
             .appendingPathComponent("theme-\(theme.id).json")
         try payload.write(to: payloadFile)
+
+        // 保留该记录此前挂载的资产，只追加本次新上传的，避免覆盖丢引用。
+        let previousAssets = record["assets"] as? [CKAsset] ?? []
+        let mergedAssets = previousAssets + newAssets
 
         record["themeID"] = theme.id
         record["name"] = theme.name
@@ -68,10 +80,11 @@ struct ThemeSyncService {
         record["deviceID"] = deviceID
         record["assetIDs"] = uploadedIDs
         record["payload"] = CKAsset(fileURL: payloadFile)
-        record["assets"] = assetAssets.isEmpty ? nil : assetAssets
+        record["assets"] = mergedAssets.isEmpty ? nil : mergedAssets
         record["deletedAt"] = nil
 
-        _ = try await database.privateCloudDatabase.modifyRecords(saving: [record], deleting: [])
+        // 逐条校验保存结果：任一失败都抛错，调用方如实提示。
+        try await database.privateCloudDatabase.saveChecked([record])
     }
 
     // MARK: Pull
@@ -117,7 +130,7 @@ struct ThemeSyncService {
             for: CKRecord.ID(recordName: themeID)
         ) else { return }
         record["deletedAt"] = Date()
-        _ = try await database.privateCloudDatabase.modifyRecords(saving: [record], deleting: [])
+        try await database.privateCloudDatabase.saveChecked([record])
     }
 
     private func remoteAssetIDs() async throws -> Set<String> {
