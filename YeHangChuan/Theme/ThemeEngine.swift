@@ -122,6 +122,8 @@ struct ThemeTokens: Equatable {
     var faint: Color
     var glassTint: Color
     var covers: [Color]
+    /// 封面渐变的深档（与 covers 一一对应），对齐旧 Palette.cover(_:) 的双 hex。
+    var coversDeep: [Color]
     var dataLevels: [Color]
     var background: ResolvedBackground
     var reader: ResolvedReaderStyle
@@ -158,7 +160,8 @@ enum ThemeEngine {
             hairline: color(c.hairline, scheme: scheme),
             faint: color(c.faint, scheme: scheme),
             glassTint: color(c.glassTint, scheme: scheme),
-            covers: c.covers.map { color($0, scheme: scheme) },
+            covers: c.covers.map { color(ThemeColor(light: $0.light, dark: $0.light), scheme: scheme) },
+            coversDeep: c.covers.map { color(ThemeColor(light: $0.dark, dark: $0.dark), scheme: scheme) },
             dataLevels: c.dataLevels.map { color($0, scheme: scheme) },
             background: resolveBackground(theme.backdrop, glows: theme.glows, scheme: scheme),
             reader: resolveReader(theme.reading, scheme: scheme),

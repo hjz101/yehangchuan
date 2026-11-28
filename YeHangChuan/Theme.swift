@@ -215,14 +215,16 @@ struct GlassIconButton: View {
     let symbol: String
     var diameter: CGFloat = 44
     var tint: Color?
-    var foreground: Color = Palette.text
+    var foreground: Color? = nil   // 默认跟随主题 text
     let action: () -> Void
+
+    @Environment(\.theme) private var theme
 
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: diameter * 0.36, weight: .semibold))
-                .foregroundStyle(foreground)
+                .foregroundStyle(foreground ?? theme.text)
                 .glassCircle(diameter: diameter, tint: tint)
                 .contentShape(Circle())
         }
@@ -231,35 +233,49 @@ struct GlassIconButton: View {
     }
 }
 
-/// 轻微按下缩放，替代默认高亮
+/// 轻微按下缩放，替代默认高亮。
+/// P1-03（D37）：按压参数读 ShapeSpec，默认 scale 0.94 / opacity 0.92 / spring 0.28·0.7
+/// 与旧值一致（零回归）；scale 是控件级反馈，不违反背景无动画红线。
+/// 注意：scaleEffect 不改变 hitTest 热区，44pt 触控核验看 frame（P4-04）。
 struct PressableStyle: ButtonStyle {
-    var scale: CGFloat = 0.94
+    @Environment(\.theme) private var theme
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? scale : 1)
-            .opacity(configuration.isPressed ? 0.92 : 1)
-            .animation(.spring(response: 0.28, dampingFraction: 0.7), value: configuration.isPressed)
+        let shape = theme.shape
+        return configuration.label
+            .scaleEffect(configuration.isPressed ? shape.pressScale : 1)
+            .opacity(configuration.isPressed ? shape.pressOpacity : 1)
+            .animation(
+                reduceMotion ? nil : .spring(
+                    response: shape.pressSpringResponse,
+                    dampingFraction: shape.pressSpringDamping
+                ),
+                value: configuration.isPressed
+            )
     }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 }
 
 struct SectionHeading: View {
     let text: String
     var trailing: String?
 
+    @Environment(\.theme) private var theme
+
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(text)
                 .font(.system(size: 12, weight: .semibold))
                 .tracking(1.6)
-                .foregroundStyle(Palette.secondary)
+                .foregroundStyle(theme.secondary)
 
             Spacer(minLength: 8)
 
             if let trailing {
                 Text(trailing)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Palette.tertiary)
+                    .foregroundStyle(theme.tertiary)
             }
         }
     }
@@ -267,18 +283,22 @@ struct SectionHeading: View {
 
 struct ProgressBar: View {
     let value: Double
-    var tint: Color = Palette.accent
-    var track: Color = Palette.faint
+    var tint: Color? = nil        // 默认跟随主题 accent（P1-03 默认参数陷阱）
+    var track: Color? = nil       // 默认跟随主题 faint
     var height: CGFloat = 3
 
+    @Environment(\.theme) private var theme
+
     var body: some View {
+        let barTint = tint ?? theme.accent
+        let barTrack = track ?? theme.faint
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                Capsule().fill(track)
+                Capsule().fill(barTrack)
                 Capsule()
                     .fill(
                         LinearGradient(
-                            colors: [tint, tint.opacity(0.7)],
+                            colors: [barTint, barTint.opacity(0.7)],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -294,19 +314,23 @@ struct ProgressBar: View {
 struct RingProgress: View {
     let value: Double
     var lineWidth: CGFloat = 8
-    var tint: Color = Palette.accent
-    var track: Color = Palette.faint
+    var tint: Color? = nil        // 默认跟随主题 accent
+    var track: Color? = nil       // 默认跟随主题 faint
     var label: String?
     var caption: String?
 
+    @Environment(\.theme) private var theme
+
     var body: some View {
+        let ringTint = tint ?? theme.accent
+        let ringTrack = track ?? theme.faint
         ZStack {
-            Circle().stroke(track, lineWidth: lineWidth)
+            Circle().stroke(ringTrack, lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: min(max(value, 0), 1))
                 .stroke(
                     AngularGradient(
-                        colors: [tint.opacity(0.55), tint, tint.opacity(0.85)],
+                        colors: [ringTint.opacity(0.55), ringTint, ringTint.opacity(0.85)],
                         center: .center
                     ),
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
@@ -317,12 +341,12 @@ struct RingProgress: View {
                 if let label {
                     Text(label)
                         .font(.system(size: 17, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Palette.text)
+                        .foregroundStyle(theme.text)
                 }
                 if let caption {
                     Text(caption)
                         .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(Palette.tertiary)
+                        .foregroundStyle(theme.tertiary)
                 }
             }
         }
@@ -336,10 +360,14 @@ struct BookCover: View {
     /// 大尺寸展示（继续阅读卡、详情页、播放页）时使用更大的书名比例
     var prominent = false
 
+    @Environment(\.theme) private var theme
+
     var body: some View {
         GeometryReader { geometry in
             let width = geometry.size.width
-            let colors = Palette.cover(book.coverStyle)
+            // covers / coversDeep 与旧 Palette.cover(_:) 的 (light, dark) 双 hex 逐色一致（零回归）。
+            let idx = abs(book.coverStyle) % theme.covers.count
+            let colors: (Color, Color) = (theme.covers[idx], theme.coversDeep[idx])
             let titleSize = prominent
                 ? min(26, max(8, width * 0.155))
                 : min(14, max(7, width * 0.105))
@@ -427,14 +455,15 @@ struct BookCover: View {
 /// 玻璃提示条
 struct ToastView: View {
     let text: String
+    @Environment(\.theme) private var theme
 
     var body: some View {
         Text(text)
             .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(Palette.text)
+            .foregroundStyle(theme.text)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .glassCapsule(tint: Palette.accent.opacity(0.12))
+            .glassCapsule(tint: theme.accent.opacity(0.12))
     }
 }
 
@@ -457,31 +486,34 @@ struct SettingsRow: View {
     let title: String
     var value: String?
     var systemImage: String?
-    var iconTint: Color = Palette.accent
+    var iconTint: Color? = nil   // 默认跟随主题 accent
     var showsChevron = true
     var isLast = false
 
+    @Environment(\.theme) private var theme
+
     var body: some View {
+        let rowTint = iconTint ?? theme.accent
         VStack(spacing: 0) {
             HStack(spacing: 13) {
                 if let systemImage {
                     Image(systemName: systemImage)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(iconTint)
+                        .foregroundStyle(rowTint)
                         .frame(width: 30, height: 30)
-                        .background(iconTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .background(rowTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
 
                 Text(title)
                     .font(.system(size: 15))
-                    .foregroundStyle(Palette.text)
+                    .foregroundStyle(theme.text)
 
                 Spacer(minLength: 8)
 
                 if let value {
                     Text(value)
                         .font(.system(size: 13))
-                        .foregroundStyle(Palette.secondary)
+                        .foregroundStyle(theme.secondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .multilineTextAlignment(.trailing)
@@ -490,7 +522,7 @@ struct SettingsRow: View {
                 if showsChevron {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Palette.tertiary.opacity(0.5))
+                        .foregroundStyle(theme.tertiary.opacity(0.5))
                 }
             }
             .padding(.horizontal, 15)
@@ -499,7 +531,7 @@ struct SettingsRow: View {
 
             if !isLast {
                 Rectangle()
-                    .fill(Palette.hairline)
+                    .fill(theme.hairline)
                     .frame(height: 0.6)
                     .padding(.leading, systemImage == nil ? 15 : 58)
             }
@@ -513,6 +545,7 @@ struct GlassSegmented<T: Hashable>: View {
     let title: (T) -> String
     @Binding var selection: T
     @Namespace private var namespace
+    @Environment(\.theme) private var theme
 
     var body: some View {
         HStack(spacing: 4) {
@@ -525,16 +558,16 @@ struct GlassSegmented<T: Hashable>: View {
                 } label: {
                     Text(title(item))
                         .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? Palette.text : Palette.secondary)
+                        .foregroundStyle(isSelected ? theme.text : theme.secondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .background {
                             if isSelected {
                                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                    .fill(Palette.glassTint)
+                                    .fill(theme.glassTint)
                                     .overlay {
                                         RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                            .strokeBorder(Palette.hairline, lineWidth: 0.6)
+                                            .strokeBorder(theme.hairline, lineWidth: 0.6)
                                     }
                                     .matchedGeometryEffect(id: "segment", in: namespace)
                             }
