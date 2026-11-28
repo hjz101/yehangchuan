@@ -633,9 +633,33 @@ struct AddSourceSheet: View {
     @State private var validationError = ""
     @State private var config = """
     {
-      "name": "我的书源",
-      "search": "https://example.com/search?q={kw}",
-      "chapter": "https://example.com/chapter/{id}"
+      "bookSourceName": "我的书源",
+      "bookSourceUrl": "https://www.example.com",
+      "bookSourceGroup": "自建",
+      "bookSourceType": 0,
+      "enabled": false,
+      "searchUrl": "https://www.example.com/search?q={{key}}",
+      "ruleSearch": {
+        "bookList": "class.result-list@tag.li",
+        "name": "tag.h3@text",
+        "author": "class.author@text",
+        "bookUrl": "tag.a@href",
+        "intro": "class.intro@text",
+        "lastChapter": "class.last@text"
+      },
+      "ruleBookInfo": {
+        "name": "tag.h1@text",
+        "author": "id.info@tag.p.1@text",
+        "tocUrl": "id.list@tag.a@href"
+      },
+      "ruleToc": {
+        "chapterList": "id.list@tag.li",
+        "chapterName": "tag.a@text",
+        "chapterUrl": "tag.a@href"
+      },
+      "ruleContent": {
+        "content": "id.content@html"
+      }
     }
     """
 
@@ -713,9 +737,9 @@ struct AddSourceSheet: View {
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return "规则不是合法的 JSON 对象。"
         }
-        let rawURL = (object["bookSourceUrl"] ?? object["host"]) as? String ?? ""
+        let rawURL = (object["bookSourceUrl"] ?? object["host"] ?? object["searchUrl"] ?? object["search"]) as? String ?? ""
         guard !rawURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return "缺少 bookSourceUrl，无法确定书源站点。"
+            return "缺少 bookSourceUrl / searchUrl，无法确定书源站点。"
         }
         guard hasUsableRule(object) else {
             return "至少需要配置一条可用的搜索、详情、目录或正文规则。"
