@@ -791,6 +791,9 @@ public struct SourceRateLimit: Sendable, Equatable {
     public var accessLimit: Int
     public var intervalMilliseconds: Int64
 
+    /// 限速间隔上限：超过 24 小时按 24 小时处理，避免纳秒换算溢出和离谱等待。
+    public static let maximumIntervalMilliseconds: Int64 = 24 * 60 * 60 * 1_000
+
     public init?(rawValue: String?) {
         guard let rawValue else { return nil }
         let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -800,13 +803,17 @@ public struct SourceRateLimit: Sendable, Equatable {
            let interval = Int64(value[value.index(after: slash)...]),
            count > 0, interval > 0 {
             accessLimit = count
-            intervalMilliseconds = interval
+            intervalMilliseconds = Self.clampedInterval(interval)
         } else if let interval = Int64(value), interval > 0 {
             accessLimit = 1
-            intervalMilliseconds = interval
+            intervalMilliseconds = Self.clampedInterval(interval)
         } else {
             return nil
         }
+    }
+
+    static func clampedInterval(_ value: Int64) -> Int64 {
+        min(max(value, 0), maximumIntervalMilliseconds)
     }
 }
 
@@ -820,7 +827,9 @@ public struct SourceRateWindow: Sendable, Equatable {
     }
 
     public mutating func reserve(now: Int64, limit: SourceRateLimit) -> Int64 {
-        if frequency == 0 || now >= startedAt + limit.intervalMilliseconds {
+        // 间隔来自书源，使用前再夹一次上限，防止外部直接改字段造成溢出。
+        let interval = SourceRateLimit.clampedInterval(limit.intervalMilliseconds)
+        if frequency == 0 || now >= startedAt + interval {
             startedAt = now
             frequency = 1
             return 0
@@ -829,7 +838,7 @@ public struct SourceRateWindow: Sendable, Equatable {
             frequency += 1
             return 0
         }
-        return max(startedAt + limit.intervalMilliseconds - now, 0)
+        return max(startedAt + interval - now, 0)
     }
 }
 
@@ -1129,7 +1138,11 @@ public actor SourceNetworkPolicy {
             let wait = window.reserve(now: now, limit: limit)
             windows[source.id] = window
             guard wait > 0 else { return }
-            try await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000)
+            let capped = min(wait, SourceRateLimit.maximumIntervalMilliseconds)
+            let (nanoseconds, overflow) = UInt64(capped).multipliedReportingOverflow(by: 1_000_000)
+            try await Task.sleep(nanoseconds: overflow
+                ? UInt64(SourceRateLimit.maximumIntervalMilliseconds) * 1_000_000
+                : nanoseconds)
         }
     }
 
